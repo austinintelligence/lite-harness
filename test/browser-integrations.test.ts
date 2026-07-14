@@ -1,0 +1,164 @@
+import { createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  DockerBrowserDriver,
+  ManagedBrowserBroker,
+  assertBrowserUrlAllowed,
+  type BrowserAction,
+  type BrowserActionResult,
+  type BrowserDriver,
+  type BrowserNetworkPolicy,
+} from "@lite-harness/browser";
+import {
+  DiscordConnector,
+  InboundRunRouter,
+  SlackConnector,
+  SqliteIntegrationStore,
+  TelegramConnector,
+  normalizeInbound,
+  verifyDiscordRequest,
+  verifySlackRequest,
+  verifyTelegramSecret,
+} from "@lite-harness/integrations";
+import { SchedulerEngine, SqliteTriggerStore } from "@lite-harness/automation";
+
+const cleanup: string[] = [];
+afterEach(() => {
+  for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
+});
+
+describe("managed browser broker", () => {
+  it("denies reserved and IPv4-mapped private destinations", async () => {
+    await expect(assertBrowserUrlAllowed("https://reserved.example", {}, async () => ["203.0.113.4"]))
+      .rejects.toThrow(/private or metadata/);
+    await expect(assertBrowserUrlAllowed("https://mapped.example", {}, async () => ["::ffff:127.0.0.1"]))
+      .rejects.toThrow(/private or metadata/);
+  });
+
+  it("isolates owners, audits actions, and removes an idle driver", async () => {
+    const drivers: FakeBrowserDriver[] = [];
+    const audit: Array<{ allowed: boolean; action: string }> = [];
+    const broker = new ManagedBrowserBroker(() => {
+      const driver = new FakeBrowserDriver(); drivers.push(driver); return driver;
+    }, { idleTtlMs: 10, audit: (record) => audit.push(record) });
+    const owner = { appId: "app", tenantId: "tenant", userId: "user", runId: "run" };
+    const session = broker.create(owner, { allowedOrigins: ["https://example.com"] });
+    await expect(broker.execute(session, { ...owner, runId: "other" }, { action: "snapshot" }))
+      .rejects.toThrow(/does not belong/);
+    await expect(broker.execute(session, owner, { action: "snapshot" })).resolves.toMatchObject({ title: "fixture" });
+    expect(audit).toMatchObject([{ allowed: true, action: "snapshot" }]);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(broker.activeCount).toBe(0);
+    expect(drivers[0]?.stops).toBe(1);
+  });
+
+  it("requires an immutable managed-browser image", () => {
+    expect(() => new DockerBrowserDriver({ image: "playwright:latest" })).toThrow(/pinned by sha256/);
+  });
+
+  it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("runs the pinned Chromium sidecar and stops it", async () => {
+    const driver = new DockerBrowserDriver({ image: process.env.LITE_HARNESS_TEST_BROWSER_IMAGE as string, timeoutMs: 60_000 });
+    try {
+      await driver.start({ allowedOrigins: ["https://example.com"] });
+      await expect(driver.execute({ action: "navigate", url: "https://example.com" })).resolves.toMatchObject({
+        url: "https://example.com/", title: "Example Domain",
+      });
+      await expect(driver.execute({ action: "snapshot" })).resolves.toMatchObject({
+        snapshot: { text: expect.stringContaining("Example Domain") },
+      });
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+});
+
+describe("durable automation", () => {
+  it("survives restart and does not fire one occurrence twice", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-automation-")); cleanup.push(directory);
+    const path = join(directory, "automation.db");
+    const runs = vi.fn(async () => undefined);
+    let store = new SqliteTriggerStore(path);
+    store.put({ id: "minute", intervalMs: 60_000, nextFireAt: 1_000, payload: { input: "work" } });
+    const first = new SchedulerEngine(store, "manager-a", runs);
+    const overlapping = new SchedulerEngine(store, "manager-a", runs);
+    expect(await Promise.all([first.tick(1_000), overlapping.tick(1_000)])).toEqual([1, 0]);
+    expect(store.listFirings("minute")).toMatchObject([{ status: "COMPLETED", scheduledAt: 1_000 }]);
+    store.close();
+
+    store = new SqliteTriggerStore(path);
+    expect(await new SchedulerEngine(store, "manager-b", runs).tick(1_000)).toBe(0);
+    expect(await new SchedulerEngine(store, "manager-b", runs).tick(61_000)).toBe(1);
+    expect(runs).toHaveBeenCalledTimes(2);
+    store.close();
+  });
+});
+
+describe("durable connectors", () => {
+  it("deduplicates an inbound delivery after a process restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-integrations-")); cleanup.push(directory);
+    const path = join(directory, "integrations.db");
+    const envelope = normalizeInbound({
+      connectorId: "webhook", accountId: "primary", deliveryId: "delivery-1",
+      senderExternalId: "sender-1", conversationExternalId: "conversation-1", text: "hello",
+    });
+    let store = new SqliteIntegrationStore(path);
+    store.bind({
+      connectorId: "webhook", accountId: "primary", senderExternalId: "sender-1",
+      appId: "app", tenantId: "tenant", userId: "user", agentId: "agent",
+      workspaceId: "workspace", sessionPrefix: "connector",
+    });
+    const starts = vi.fn(async () => "run-one");
+    expect(await new InboundRunRouter(store, starts).route(envelope)).toEqual({ duplicate: false, runId: "run-one" });
+    store.close();
+    store = new SqliteIntegrationStore(path);
+    expect(await new InboundRunRouter(store, starts).route(envelope)).toEqual({ duplicate: true, runId: "run-one" });
+    expect(starts).toHaveBeenCalledOnce();
+    store.close();
+  });
+
+  it("verifies Telegram, Slack, and Discord webhook authenticity", () => {
+    expect(verifyTelegramSecret("secret", "secret")).toBe(true);
+    const body = Buffer.from("{\"event\":1}");
+    const timestamp = String(Math.floor(Date.now() / 1_000));
+    const crypto = requireHmac(body, timestamp, "slack-secret");
+    expect(verifySlackRequest(body, timestamp, crypto, Buffer.from("slack-secret"))).toBe(true);
+    const keys = generateKeyPairSync("ed25519");
+    const discordTimestamp = "1700000000";
+    const signature = sign(null, Buffer.concat([Buffer.from(discordTimestamp), body]), keys.privateKey).toString("hex");
+    const rawPublicKey = Buffer.from(keys.publicKey.export({ format: "der", type: "spki" })).subarray(-32).toString("hex");
+    expect(verifyDiscordRequest(body, discordTimestamp, signature, rawPublicKey)).toBe(true);
+  });
+
+  it("sends normalized outbound messages through fixed provider origins", async () => {
+    const fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("telegram")) return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), { status: 200 });
+      if (url.includes("discord")) return new Response(JSON.stringify({ id: "discord-1" }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, ts: "slack-1" }), { status: 200 });
+    });
+    const secret = async () => "connector-token";
+    const message = { accountId: "primary", conversationExternalId: "channel", text: "hello" };
+    const transport = fetch as unknown as typeof globalThis.fetch;
+    await expect(new TelegramConnector(secret, transport).send(message)).resolves.toEqual({ externalId: "1" });
+    await expect(new DiscordConnector(secret, transport).send(message)).resolves.toEqual({ externalId: "discord-1" });
+    await expect(new SlackConnector(secret, transport).send(message)).resolves.toEqual({ externalId: "slack-1" });
+    expect(fetch.mock.calls.map(([url]) => new URL(String(url)).origin)).toEqual([
+      "https://api.telegram.org", "https://discord.com", "https://slack.com",
+    ]);
+  });
+});
+
+class FakeBrowserDriver implements BrowserDriver {
+  starts = 0;
+  stops = 0;
+  async start(_policy: BrowserNetworkPolicy): Promise<void> { this.starts += 1; }
+  async execute(_command: BrowserAction): Promise<BrowserActionResult> { return { title: "fixture" }; }
+  async stop(): Promise<void> { this.stops += 1; }
+}
+
+function requireHmac(body: Buffer, timestamp: string, secret: string): string {
+  return `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:`).update(body).digest("hex")}`;
+}

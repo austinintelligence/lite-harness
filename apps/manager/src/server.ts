@@ -11,11 +11,16 @@ import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { randomUUID } from "node:crypto";
 import { RunService } from "@lite-harness/control-plane";
 import type { LocalArtifactStore } from "@lite-harness/workspace";
+import type { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
+import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
 
 export interface ManagerServerOptions {
   runService: RunService;
   internalToken: string;
   artifactStore?: LocalArtifactStore;
+  integrationRouter?: InboundRunRouter;
+  integrationStore?: SqliteIntegrationStore;
+  webhookSecret?: (accountId: string) => Promise<Buffer | undefined>;
   logger?: boolean;
 }
 
@@ -32,6 +37,28 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   });
 
   app.get("/healthz", async () => ({ ok: true, role: "manager" }));
+
+  app.post<{ Params: { accountId: string }; Body: { envelope?: unknown; signature?: string } }>(
+    "/internal/integrations/webhook/:accountId/inbound",
+    async (request, reply) => {
+      if (!options.integrationRouter || !options.integrationStore || !options.webhookSecret ||
+          !request.body?.envelope || typeof request.body.signature !== "string") {
+        return reply.code(404).send({ error: { code: "integration_unavailable", message: "Webhook integration is not configured" } });
+      }
+      const secret = await options.webhookSecret(request.params.accountId);
+      const canonical = Buffer.from(JSON.stringify(request.body.envelope));
+      if (!secret || !verifyHmacSha256(canonical, request.body.signature, secret)) {
+        return reply.code(401).send({ error: { code: "invalid_signature", message: "Webhook signature is invalid" } });
+      }
+      try {
+        const source = request.body.envelope as Record<string, unknown>;
+        const envelope = normalizeInbound({ ...source, connectorId: "webhook", accountId: request.params.accountId });
+        return reply.code(202).send(await options.integrationRouter.route(envelope));
+      } catch (error) {
+        return reply.code(400).send({ error: { code: "invalid_envelope", message: error instanceof Error ? error.message : String(error) } });
+      }
+    },
+  );
 
   app.post<{ Body: InternalStartRunRequest }>("/internal/runs", async (request, reply) => {
     const body = request.body;

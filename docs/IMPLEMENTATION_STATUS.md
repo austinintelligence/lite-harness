@@ -30,9 +30,15 @@ Date: 2026-07-14
   health/crash-backoff/idle supervision, deterministic SKILL.md discovery, and
   process-backed MCP stdio supervision with discovery filters
 - Monotonic agent tool allowlists enforced before runtime execution
-- Reference optional packs for browser ownership/network policy, integration
-  signature/dedupe, scheduler leases, subagent budgets/cancellation, offline
-  FTS memory, and conservative exact-recoverable context rendering
+- Managed Chromium sidecar with digest-pinned reproducible image, non-root
+  process, bounded resources/artifacts, lazy owner-scoped sessions, stable
+  element refs, typed actions, downloads/uploads, audit, and idle teardown
+- Durable signed webhook ingress and binding/receipt/dedupe storage, native
+  Telegram/Discord/Slack verification and fixed-origin outbound adapters
+- Opt-in durable interval/one-shot automation with leases, deterministic
+  jitter, firing history, restart preservation, retry, and idempotent run keys
+- Reference optional packs for subagent budgets/cancellation, offline FTS
+  memory, and conservative exact-recoverable context rendering
 - CLI doctor, snapshot key generation, workspace snapshot/restore/delete
 - Public API/SDK docs, OpenAPI, threat model, recovery guide, provider/plugin
   guides, CI matrix, secret/provenance/release checks, and community files
@@ -41,10 +47,14 @@ Date: 2026-07-14
 
 - Clean pnpm install succeeds under the pinned pnpm 11.7.0 policy.
 - Strict TypeScript and dependency boundaries pass.
-- 50 credential-free unit/integration/security/conformance tests pass.
+- 57 credential-free unit/integration/security/conformance tests pass.
 - The environment-gated real Docker test passed on Docker Desktop Linux/WSL2:
   create volume, write in a disposable container, export archive, mutate,
   staging/backup restore, read from a new container, and remove the volume.
+- The pinned browser image built on Docker Desktop/WSL2 and its real Chromium
+  integration navigated, snapshotted stable content, shut down, and left zero
+  running browser containers. Verified local image ID:
+  `sha256:af820e2cfeb4648d23663a486391750c5180693555fc716d1cfd8c4954823851`.
 - Secret exposure, provenance, repository structure, pinned-image, and OpenClaw
   ancestry checks pass.
 
@@ -54,11 +64,12 @@ before a stable 1.0 claim.
 
 ## Staged preview boundaries
 
-The browser, integrations, automation, subagents, memory, skills, plugin,
-and context packages currently provide secure contracts and tested reference
-behavior. They are not claims of full OpenClaw ecosystem parity. In particular,
-managed Chromium execution, Telegram/Discord/Slack workers, remote MCP HTTP,
-and the quarantined OpenClaw compatibility worker remain preview work.
+The browser, integrations, automation, subagents, memory, skills, plugin, and
+context packages are staged alpha capabilities, not claims of full OpenClaw
+ecosystem parity. Managed Chromium is operational; strict DNS-rebinding
+resistance still requires a brokered egress proxy rather than route-time DNS
+checks. Telegram/Discord/Slack polling or socket workers, remote MCP HTTP, and
+the quarantined OpenClaw compatibility worker remain preview work.
 
 ## Remaining before the complete architecture-plan claim
 
@@ -67,10 +78,10 @@ and the quarantined OpenClaw compatibility worker remain preview work.
 - Published multi-architecture runtime images and Linux/macOS/Windows host matrix
 - Staged plugin package copying, atomic upgrade rollback, and bounded OpenClaw
   compatibility worker
-- Managed Chromium sidecar with stable refs, actions, downloads, screenshots,
-  private-network/redirect enforcement, and profile isolation
-- Production Web/API/webhook plus Telegram/Discord/Slack connectors and durable
-  scheduler/receipt storage
+- Brokered browser egress, remote-CDP conformance, persistent encrypted browser
+  profiles, and cross-platform recorded-task evidence
+- Live Telegram/Discord/Slack polling/socket workers, connector reply delivery,
+  attachments, approvals, schedule time zones, and missed-run policies
 - Durable subagent graphs and memory integration in the live Manager loop
 - Measured pxpipe evaluation; it remains correctly disabled by default
 - Installer/service management, SBOM, performance budgets, recovery drills,

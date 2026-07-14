@@ -7,6 +7,7 @@ these claims from trusted app identity rather than accepting arbitrary headers.
 
 ## Routes
 
+- `POST /hooks/webhook/{accountId}` - signed, durable integration ingress
 - `POST /v1/runs` - create or replay a run (`Idempotency-Key` recommended)
 - `GET /v1/runs/{runId}` - get authorized run state
 - `GET /v1/runs/{runId}/events?after=N` - replay and follow SSE events
@@ -35,3 +36,8 @@ session execute serially, and every execution is recorded as a run attempt.
 
 The TypeScript SDK exposes the same operations through `LiteHarnessClient`.
 The machine-readable contract is [`openapi.json`](openapi.json).
+
+The webhook route does not use the app bearer token. It requires
+`X-Lite-Signature` and resolves a preconfigured account/sender binding inside
+Manager. Its canonical envelope, connector adapters, receipts, and durable
+schedule configuration are documented in [`INTEGRATIONS.md`](INTEGRATIONS.md).

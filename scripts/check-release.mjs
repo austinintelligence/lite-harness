@@ -6,14 +6,16 @@ const root = resolve(import.meta.dirname, "..");
 const required = [
   "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "UPSTREAM.md",
   "PROVENANCE.json", "THIRD_PARTY_NOTICES.md", "docs/ARCHITECTURE.md",
-  "docs/API.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md", "docs/openapi.json",
-  ".github/workflows/ci.yml", "docker/tool-runtime/Dockerfile",
+  "docs/API.md", "docs/BROWSER.md", "docs/INTEGRATIONS.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md", "docs/openapi.json",
+  ".github/workflows/ci.yml", "docker/tool-runtime/Dockerfile", "docker/browser-runtime/Dockerfile",
 ];
 const failures = required.filter((file) => !existsSync(resolve(root, file))).map((file) => `missing ${file}`);
 
 JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "utf8"));
 const dockerfile = readFileSync(resolve(root, "docker/tool-runtime/Dockerfile"), "utf8");
 if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) failures.push("tool runtime base image is not digest-pinned");
+const browserDockerfile = readFileSync(resolve(root, "docker/browser-runtime/Dockerfile"), "utf8");
+if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(browserDockerfile)) failures.push("browser runtime base image is not digest-pinned");
 
 for (const directory of [resolve(root, "apps"), resolve(root, "packages")]) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {

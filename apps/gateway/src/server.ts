@@ -44,6 +44,7 @@ export interface ManagerTransport {
   createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   listWorkspaces(principal: InternalPrincipal): Promise<WorkspaceRecord[]>;
+  ingestWebhook(accountId: string, envelope: unknown, signature: string): Promise<{ duplicate: boolean; runId?: string }>;
 }
 
 export interface GatewayServerOptions {
@@ -56,7 +57,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   const app = Fastify({ logger: options.logger ?? false });
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/healthz") {
+    if (request.url === "/healthz" || request.url.startsWith("/hooks/")) {
       return;
     }
     if (!constantTimeBearerMatch(request.headers.authorization, options.appToken)) {
@@ -65,6 +66,18 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   });
 
   app.get("/healthz", async () => ({ ok: true, role: "gateway" }));
+
+  app.post<{ Params: { accountId: string }; Body: unknown }>("/hooks/webhook/:accountId", async (request, reply) => {
+    const signature = stringHeader(request.headers["x-lite-signature"]);
+    if (!signature || !request.body || typeof request.body !== "object") {
+      return reply.code(400).send({ error: { code: "invalid_webhook", message: "Webhook body and X-Lite-Signature are required" } });
+    }
+    try {
+      return reply.code(202).send(await options.manager.ingestWebhook(request.params.accountId, request.body, signature));
+    } catch (error) {
+      return reply.code(401).send({ error: { code: "webhook_rejected", message: error instanceof Error ? error.message : String(error) } });
+    }
+  });
 
   app.post<{ Body: CreateRunRequest }>("/v1/runs", async (request, reply) => {
     if (!Value.Check(CreateRunRequestSchema, request.body)) {

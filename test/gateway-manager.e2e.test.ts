@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import { RunService } from "@lite-harness/control-plane";
 import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore } from "@lite-harness/workspace";
+import { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
 import { buildGatewayServer } from "../apps/gateway/src/server.js";
 import type { ManagerTransport } from "../apps/gateway/src/server.js";
 import { buildManagerServer } from "../apps/manager/src/server.js";
@@ -28,7 +30,21 @@ describe("Gateway to Manager vertical slice", () => {
     const runtime = new InMemoryToolRuntime();
     const artifactStore = new LocalArtifactStore(join(directory, "artifacts"));
     const service = new RunService(store, new AgentRunner(new FakeModelGateway(), runtime));
-    const manager = buildManagerServer({ runService: service, internalToken, artifactStore });
+    const integrationStore = new SqliteIntegrationStore(join(directory, "integrations.db"));
+    integrationStore.bind({
+      connectorId: "webhook", accountId: "primary", senderExternalId: "*",
+      appId: "app_local", tenantId: "tenant-a", userId: "user-a", agentId: "coder",
+      workspaceId: "webhook-workspace", sessionPrefix: "hook",
+    });
+    const integrationRouter = new InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => service.createRun({
+      agent: binding.agentId, workspace: binding.workspaceId, session: sessionId, input: envelope.text,
+      idempotencyKey: `webhook:${envelope.accountId}:${envelope.deliveryId}`,
+      principal: { appId: binding.appId, tenantId: binding.tenantId, userId: binding.userId, scopes: ["runs:create"] },
+    }).runId);
+    const manager = buildManagerServer({
+      runService: service, internalToken, artifactStore, integrationStore, integrationRouter,
+      webhookSecret: async (accountId) => accountId === "primary" ? Buffer.from("webhook-secret") : undefined,
+    });
     const managerTransport: ManagerTransport = {
       startRun: async (request) => service.createRun(request),
       getRun: async (runId) => {
@@ -113,6 +129,14 @@ describe("Gateway to Manager vertical slice", () => {
         return workspace;
       },
       listWorkspaces: async (principal) => service.listWorkspaces(principal),
+      ingestWebhook: async (accountId, envelope, signature) => {
+        const response = await manager.inject({
+          method: "POST", url: `/internal/integrations/webhook/${accountId}/inbound`,
+          headers: { "x-lite-internal-token": internalToken }, payload: { envelope, signature },
+        });
+        if (response.statusCode >= 400) throw new Error(response.body);
+        return response.json<{ duplicate: boolean; runId?: string }>();
+      },
     };
     const gateway = buildGatewayServer({
       manager: managerTransport,
@@ -123,6 +147,7 @@ describe("Gateway to Manager vertical slice", () => {
       await gateway.close();
       await manager.close();
       store.close();
+      integrationStore.close();
       rmSync(directory, { recursive: true, force: true });
     });
 
@@ -269,6 +294,23 @@ describe("Gateway to Manager vertical slice", () => {
       method: "GET", url: "/v1/agents",
       headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },
     })).json<{ agents: unknown[] }>().agents.length).toBeGreaterThanOrEqual(2);
+
+    const webhookEnvelope = {
+      deliveryId: "hook-delivery", senderExternalId: "sender", conversationExternalId: "thread", text: "from webhook",
+    };
+    const webhookSignature = `sha256=${createHmac("sha256", "webhook-secret").update(JSON.stringify(webhookEnvelope)).digest("hex")}`;
+    const webhook = await gateway.inject({
+      method: "POST", url: "/hooks/webhook/primary",
+      headers: { "x-lite-signature": webhookSignature }, payload: webhookEnvelope,
+    });
+    expect(webhook.statusCode).toBe(202);
+    const webhookRunId = webhook.json<{ runId: string }>().runId;
+    await expect(service.waitForTerminal(webhookRunId)).resolves.toMatchObject({ status: "SUCCEEDED" });
+    const replayedWebhook = await gateway.inject({
+      method: "POST", url: "/hooks/webhook/primary",
+      headers: { "x-lite-signature": webhookSignature }, payload: webhookEnvelope,
+    });
+    expect(replayedWebhook.json()).toMatchObject({ duplicate: true, runId: webhookRunId });
   });
 
   it("rejects unauthenticated public requests", async () => {

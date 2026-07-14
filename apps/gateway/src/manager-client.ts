@@ -123,6 +123,10 @@ export class ManagerClient {
     return this.#request<{ workspaces: WorkspaceRecord[] }>("GET", "/internal/workspaces", undefined, principalHeaders(principal)).then((value) => value.workspaces);
   }
 
+  ingestWebhook(accountId: string, envelope: unknown, signature: string): Promise<{ duplicate: boolean; runId?: string }> {
+    return this.#request("POST", `/internal/integrations/webhook/${encodeURIComponent(accountId)}/inbound`, { envelope, signature });
+  }
+
   #request<T>(
     method: "GET" | "POST",
     path: string,

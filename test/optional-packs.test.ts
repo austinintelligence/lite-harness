@@ -12,7 +12,7 @@ describe("optional capability packs", () => {
       assertBrowserUrlAllowed("http://metadata.example/latest", {}, async () => ["169.254.169.254"]),
     ).rejects.toThrow(/private or metadata/);
     await expect(
-      assertBrowserUrlAllowed("https://public.example", {}, async () => ["203.0.113.10"]),
+      assertBrowserUrlAllowed("https://public.example", {}, async () => ["93.184.216.34"]),
     ).resolves.toMatchObject({ origin: "https://public.example" });
 
     const broker = new BrowserSessionBroker();

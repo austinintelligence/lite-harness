@@ -28,10 +28,15 @@ Lite-owned kernel and lazy capability packs.
   artifact publish/download
 - Thin TypeScript SDK and replayable SSE
 - Manifest-first lazy plugins, deterministic SKILL.md snapshots, isolated MCP
-  stdio supervision, process Plugin Host RPC/install locks, browser
-  network/ownership policy, signed integration envelopes,
-  scheduler leases, subagent graphs, offline FTS memory, and conservative
-  exact-recoverable context rendering
+  stdio supervision, and process Plugin Host RPC/install locks
+- On-demand managed Chromium in a digest-pinned, non-root Docker sidecar with
+  run-owned sessions, stable refs, typed actions, bounded binary artifacts,
+  private-network policy, action audit, and idle cleanup
+- Signed webhook-to-run ingress with durable bindings/receipts/dedupe, native
+  Telegram/Discord/Slack verification and outbound adapters, and an opt-in
+  restart-safe interval scheduler
+- Subagent graphs, offline FTS memory, and conservative exact-recoverable
+  context rendering foundations
 - Windows, macOS, and Linux CI definitions; real Docker lifecycle tests are
   environment-gated and have been exercised on Docker Desktop/WSL2
 
@@ -78,6 +83,18 @@ Build the pinned local tool image and record its immutable image ID:
 docker build -t lite-harness/tool-runtime:dev docker/tool-runtime
 $env:LITE_HARNESS_RUNTIME_IMAGE = docker image inspect lite-harness/tool-runtime:dev --format '{{.Id}}'
 ```
+
+The browser pack has a separate, lazy image and does not need to be built for
+ordinary runs:
+
+```powershell
+docker build -t lite-harness/browser-runtime:dev docker/browser-runtime
+$env:LITE_HARNESS_TEST_BROWSER_IMAGE = docker image inspect lite-harness/browser-runtime:dev --format '{{.Id}}'
+pnpm vitest run test/browser-integrations.test.ts -t "runs the pinned Chromium sidecar"
+```
+
+See [`docs/BROWSER.md`](docs/BROWSER.md) and
+[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
 ## Run locally
 

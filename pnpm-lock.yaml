@@ -47,12 +47,18 @@ importers:
       '@lite-harness/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
+      '@lite-harness/automation':
+        specifier: workspace:*
+        version: link:../../packages/automation
       '@lite-harness/control-plane':
         specifier: workspace:*
         version: link:../../packages/control-plane
       '@lite-harness/delegated-runtime':
         specifier: workspace:*
         version: link:../../packages/delegated-runtime
+      '@lite-harness/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@lite-harness/provider-anthropic':
         specifier: workspace:*
         version: link:../../packages/provider-anthropic
@@ -95,7 +101,11 @@ importers:
 
   packages/automation: {}
 
-  packages/browser: {}
+  packages/browser:
+    dependencies:
+      '@lite-harness/process-rpc':
+        specifier: workspace:*
+        version: link:../process-rpc
 
   packages/context: {}
 

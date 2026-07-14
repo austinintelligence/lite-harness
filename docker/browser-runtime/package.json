@@ -1,0 +1,6 @@
+{
+  "name": "lite-harness-browser-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": { "playwright": "1.61.0" }
+}

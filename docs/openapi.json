@@ -44,12 +44,37 @@
           "id": { "type": "string" }, "mode": { "const": "managed" }
         }, "additionalProperties": false
       },
+      "InboundEnvelope": {
+        "type": "object",
+        "required": ["deliveryId", "senderExternalId", "text"],
+        "properties": {
+          "deliveryId": { "type": "string", "maxLength": 512 },
+          "senderExternalId": { "type": "string", "maxLength": 512 },
+          "conversationExternalId": { "type": "string", "maxLength": 512 },
+          "threadExternalId": { "type": "string", "maxLength": 512 },
+          "text": { "type": "string", "maxLength": 200000 },
+          "attachmentUrls": { "type": "array", "maxItems": 32, "items": { "type": "string", "format": "uri" } },
+          "receivedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
       "Error": { "type": "object", "properties": { "error": { "type": "object" } } }
     }
   },
   "security": [{ "appToken": [] }],
   "paths": {
     "/healthz": { "get": { "security": [], "responses": { "200": { "description": "healthy" } } } },
+    "/hooks/webhook/{accountId}": {
+      "post": {
+        "security": [],
+        "parameters": [
+          { "name": "accountId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "X-Lite-Signature", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^sha256=[a-fA-F0-9]{64}$" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InboundEnvelope" } } } },
+        "responses": { "202": { "description": "accepted or duplicate delivery" }, "401": { "description": "signature rejected" } }
+      }
+    },
     "/v1/runs": { "post": { "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateRun" } } } }, "responses": { "202": { "description": "accepted or replayed" } } } },
     "/v1/runs/{runId}": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "run" }, "404": { "description": "not found" } } } },
     "/v1/runs/{runId}/events": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "after", "in": "query", "schema": { "type": "integer", "minimum": 0 } }], "responses": { "200": { "description": "SSE event stream", "content": { "text/event-stream": {} } } } } },

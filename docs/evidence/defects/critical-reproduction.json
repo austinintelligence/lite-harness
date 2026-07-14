@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "batch": "critical",
+  "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
+  "sourceCommit": "4ee564e98447c7bc7e25d4179f5d128034ca5961",
+  "recordedAt": "2026-07-14T22:46:06.815Z",
+  "platform": "win32-x64",
+  "node": "v24.14.0",
+  "command": "pnpm reproduce:defects:critical",
+  "testPath": "test/reproduction/critical.repro.ts",
+  "testSha256": "3053d4e772c6b7ce006437a055824854014187c63b14525ee3428ce46956ab70",
+  "expectedFailures": 8,
+  "observedFailures": 8,
+  "skips": 0,
+  "results": [
+    {
+      "id": "BD-001",
+      "testId": "BD-001-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected { statusCode: 202, (1) } to deeply equal { statusCode: 403, (1) }"
+    },
+    {
+      "id": "BD-002",
+      "testId": "BD-002-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected { Object (workspaceId, ownerRunId, ...) } to be undefined"
+    },
+    {
+      "id": "BD-003",
+      "testId": "BD-003-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'hung' to be 'settled' // Object.is equality"
+    },
+    {
+      "id": "BD-004",
+      "testId": "BD-004-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'workspace.lease.released' to be 'run.cancelled' // Object.is equality"
+    },
+    {
+      "id": "BD-005",
+      "testId": "BD-005-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'RUNNING' not to be 'RUNNING' // Object.is equality"
+    },
+    {
+      "id": "BD-006",
+      "testId": "BD-006-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected false to be true // Object.is equality"
+    },
+    {
+      "id": "BD-007",
+      "testId": "BD-007-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected [Function] to throw an error"
+    },
+    {
+      "id": "BD-008",
+      "testId": "BD-008-REPRO",
+      "status": "failed",
+      "observed": "Error: promise resolved \"'host-only-secret'\" instead of rejecting"
+    }
+  ]
+}

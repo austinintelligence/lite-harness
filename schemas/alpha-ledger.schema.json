@@ -43,7 +43,15 @@
           "implementationPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
           "testIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
           "ciJob": { "type": ["string", "null"] },
-          "evidenceArtifacts": { "type": "array", "items": { "$ref": "release-evidence.schema.json#/$defs/evidenceReference" } },
+          "evidenceArtifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path"],
+              "properties": { "path": { "type": "string", "minLength": 1 } },
+              "additionalProperties": false
+            }
+          },
           "status": { "enum": ["blocked", "in-progress", "verified"] },
           "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
         },

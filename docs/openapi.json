@@ -10,9 +10,39 @@
         "required": ["agent", "workspace", "input"],
         "properties": {
           "agent": { "type": "string" }, "workspace": { "type": "string" },
-          "session": { "type": "string" }, "input": { "type": "string" }
+          "session": { "type": "string" }, "input": { "type": "string" },
+          "budget": { "$ref": "#/components/schemas/RunBudgetOverrides" }
         },
         "additionalProperties": false
+      },
+      "RunBudgetOverrides": {
+        "type": "object",
+        "properties": {
+          "maxTurns": { "type": "integer", "minimum": 1, "maximum": 128 },
+          "maxToolCalls": { "type": "integer", "minimum": 0 },
+          "maxInputTokens": { "type": "integer", "minimum": 1 },
+          "maxOutputTokens": { "type": "integer", "minimum": 1 },
+          "maxCostUsd": { "type": "number", "minimum": 0 },
+          "totalTimeoutMs": { "type": "integer", "minimum": 100 },
+          "modelIdleTimeoutMs": { "type": "integer", "minimum": 100 },
+          "commandTimeoutMs": { "type": "integer", "minimum": 100 }
+        },
+        "additionalProperties": false
+      },
+      "CreateAgent": {
+        "type": "object", "required": ["name"],
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" },
+          "instructions": { "type": "string" },
+          "modelCapabilities": { "type": "array", "items": { "type": "string" } },
+          "allowedTools": { "type": "array", "items": { "type": "string" } },
+          "defaultBudget": { "$ref": "#/components/schemas/RunBudgetOverrides" }
+        }, "additionalProperties": false
+      },
+      "CreateWorkspace": {
+        "type": "object", "properties": {
+          "id": { "type": "string" }, "mode": { "const": "managed" }
+        }, "additionalProperties": false
       },
       "Error": { "type": "object", "properties": { "error": { "type": "object" } } }
     }
@@ -23,12 +53,23 @@
     "/v1/runs": { "post": { "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateRun" } } } }, "responses": { "202": { "description": "accepted or replayed" } } } },
     "/v1/runs/{runId}": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "run" }, "404": { "description": "not found" } } } },
     "/v1/runs/{runId}/events": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "after", "in": "query", "schema": { "type": "integer", "minimum": 0 } }], "responses": { "200": { "description": "SSE event stream", "content": { "text/event-stream": {} } } } } },
+    "/v1/runs/{runId}/attempts": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "durable execution attempts" } } } },
     "/v1/runs/{runId}/cancel": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "cancelled or terminal run" } } } },
     "/v1/runs/{runId}/steer": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "instruction queued" } } } },
     "/v1/sessions/{sessionId}": { "get": { "parameters": [{ "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "session" } } } },
     "/v1/sessions/{sessionId}/messages": { "get": { "parameters": [{ "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "messages" } } } },
     "/v1/approvals/{approvalId}": { "post": { "parameters": [{ "name": "approvalId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "approval resolved" } } } },
     "/v1/runs/{runId}/artifacts": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "201": { "description": "artifact published" } } } },
-    "/v1/artifacts/{artifactId}": { "get": { "parameters": [{ "name": "artifactId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "artifact metadata and base64 data" } } } }
+    "/v1/artifacts/{artifactId}": { "get": { "parameters": [{ "name": "artifactId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "artifact metadata and base64 data" } } } },
+    "/v1/agents": {
+      "get": { "responses": { "200": { "description": "owned agent profiles" } } },
+      "post": { "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAgent" } } } }, "responses": { "201": { "description": "agent profile created" } } }
+    },
+    "/v1/agents/{agentId}": { "get": { "parameters": [{ "name": "agentId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "agent profile" }, "404": { "description": "not found" } } } },
+    "/v1/workspaces": {
+      "get": { "responses": { "200": { "description": "owned workspaces" } } },
+      "post": { "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateWorkspace" } } } }, "responses": { "201": { "description": "managed workspace created" } } }
+    },
+    "/v1/workspaces/{workspaceId}": { "get": { "parameters": [{ "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "workspace" }, "404": { "description": "not found" } } } }
   }
 }

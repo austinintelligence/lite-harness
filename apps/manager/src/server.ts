@@ -4,7 +4,11 @@ import type {
   InternalPrincipal,
   InternalPublishArtifactRequest,
   InternalStartRunRequest,
+  InternalCreateAgentProfileRequest,
+  InternalCreateWorkspaceRequest,
 } from "@lite-harness/contracts";
+import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
+import { randomUUID } from "node:crypto";
 import { RunService } from "@lite-harness/control-plane";
 import type { LocalArtifactStore } from "@lite-harness/workspace";
 
@@ -57,6 +61,12 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     const waitMs = boundedInteger(request.query.wait_ms, 0, 10_000, 0);
     const events = await options.runService.waitForEvents(request.params.runId, after, waitMs);
     return reply.send({ events });
+  });
+
+  app.get<{ Params: { runId: string } }>("/internal/runs/:runId/attempts", async (request, reply) => {
+    return options.runService.getRun(request.params.runId)
+      ? { attempts: options.runService.listRunAttempts(request.params.runId) }
+      : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
   });
 
   app.post<{ Params: { runId: string } }>(
@@ -153,6 +163,67 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       return response;
     },
   );
+
+  app.post<{ Body: InternalCreateAgentProfileRequest }>("/internal/agents", async (request, reply) => {
+    const body = request.body;
+    if (!body?.principal || typeof body.name !== "string" || !body.name.trim()) {
+      return reply.code(400).send({ error: { code: "invalid_request", message: "Agent name and principal are required" } });
+    }
+    const now = new Date().toISOString();
+    return reply.code(201).send(options.runService.createAgentProfile({
+      id: body.id ?? `agt_${randomUUID().replaceAll("-", "")}`,
+      version: 1,
+      appId: body.principal.appId,
+      tenantId: body.principal.tenantId,
+      userId: body.principal.userId,
+      name: body.name,
+      instructions: body.instructions ?? "",
+      modelCapabilities: body.modelCapabilities ?? ["text", "tools"],
+      allowedTools: body.allowedTools ?? ["read_file", "write_file"],
+      defaultBudget: { ...DEFAULT_RUN_BUDGET, ...(body.defaultBudget ?? {}) },
+      createdAt: now,
+    }));
+  });
+
+  app.get("/internal/agents", async (request) => ({
+    agents: options.runService.listAgentProfiles(principalFromInternalHeaders(request.headers)),
+  }));
+
+  app.get<{ Params: { agentId: string } }>("/internal/agents/:agentId", async (request, reply) => {
+    const agent = options.runService.getAgentProfile(request.params.agentId);
+    return agent && samePrincipal(agent, principalFromInternalHeaders(request.headers))
+      ? agent
+      : reply.code(404).send({ error: { code: "not_found", message: "Agent not found" } });
+  });
+
+  app.post<{ Body: InternalCreateWorkspaceRequest }>("/internal/workspaces", async (request, reply) => {
+    const body = request.body;
+    if (!body?.principal || (body.mode !== undefined && body.mode !== "managed")) {
+      return reply.code(400).send({ error: { code: "invalid_request", message: "Only managed public workspaces are supported" } });
+    }
+    const now = new Date().toISOString();
+    return reply.code(201).send(options.runService.createWorkspace({
+      id: body.id ?? `wsp_${randomUUID().replaceAll("-", "")}`,
+      appId: body.principal.appId,
+      tenantId: body.principal.tenantId,
+      userId: body.principal.userId,
+      mode: "managed",
+      state: "WARM",
+      createdAt: now,
+      updatedAt: now,
+    }));
+  });
+
+  app.get("/internal/workspaces", async (request) => ({
+    workspaces: options.runService.listWorkspaces(principalFromInternalHeaders(request.headers)),
+  }));
+
+  app.get<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId", async (request, reply) => {
+    const workspace = options.runService.getWorkspace(request.params.workspaceId);
+    return workspace && samePrincipal(workspace, principalFromInternalHeaders(request.headers))
+      ? workspace
+      : reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } });
+  });
 
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId/messages",

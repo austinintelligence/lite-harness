@@ -12,9 +12,12 @@ Lite-owned kernel and lazy capability packs.
 ## What works today
 
 - Separate authenticated Gateway and privileged Manager process roles
-- Durable SQLite runs, sessions, messages, approvals, and ordered event replay
+- Durable SQLite agents, workspaces, runs, attempts, sessions, messages,
+  approvals, usage ledgers, and ordered event replay
 - Idempotent run creation, cancellation, steering, restart reconciliation, and
-  one-writer workspace leases with monotonic fencing tokens
+  one-writer workspace/session queues and leases with monotonic fencing tokens
+- Agent-default and per-run turn/tool/token/cost budgets plus total,
+  model-idle, and command timeouts
 - Host-side provider plane with capability-aware routing, opaque credential
   profiles, normalized usage/errors, and side-effect-safe fallback
 - Fake, OpenAI-compatible, and Anthropic direct provider routes
@@ -107,6 +110,7 @@ const run = await lite.createRun({
   agent: "coder",
   workspace: "demo",
   input: "Create hello.txt",
+  budget: { maxTurns: 6, totalTimeoutMs: 300_000 },
 });
 
 for await (const event of lite.events(run.runId)) {

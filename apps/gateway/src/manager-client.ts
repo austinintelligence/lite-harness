@@ -4,6 +4,11 @@ import type {
   ArtifactPayloadResponse,
   ArtifactRecord,
   ApprovalRecord,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
+  CreateAgentProfileRequest,
+  CreateWorkspaceRequest,
   InternalPrincipal,
   PublishArtifactRequest,
   InternalStartRunRequest,
@@ -52,6 +57,12 @@ export class ManagerClient {
     return result.events;
   }
 
+  async getRunAttempts(runId: string): Promise<RunAttemptRecord[]> {
+    return (await this.#request<{ attempts: RunAttemptRecord[] }>(
+      "GET", `/internal/runs/${encodeURIComponent(runId)}/attempts`,
+    )).attempts;
+  }
+
   getSession(sessionId: string): Promise<SessionRecord> {
     return this.#request<SessionRecord>("GET", `/internal/sessions/${encodeURIComponent(sessionId)}`);
   }
@@ -86,6 +97,30 @@ export class ManagerClient {
         "x-lite-user-id": principal.userId,
       },
     );
+  }
+
+  createAgent(request: CreateAgentProfileRequest, principal: InternalPrincipal): Promise<AgentProfileRecord> {
+    return this.#request<AgentProfileRecord>("POST", "/internal/agents", { ...request, principal });
+  }
+
+  getAgent(agentId: string, principal: InternalPrincipal): Promise<AgentProfileRecord> {
+    return this.#request<AgentProfileRecord>("GET", `/internal/agents/${encodeURIComponent(agentId)}`, undefined, principalHeaders(principal));
+  }
+
+  listAgents(principal: InternalPrincipal): Promise<AgentProfileRecord[]> {
+    return this.#request<{ agents: AgentProfileRecord[] }>("GET", "/internal/agents", undefined, principalHeaders(principal)).then((value) => value.agents);
+  }
+
+  createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord> {
+    return this.#request<WorkspaceRecord>("POST", "/internal/workspaces", { ...request, principal });
+  }
+
+  getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord> {
+    return this.#request<WorkspaceRecord>("GET", `/internal/workspaces/${encodeURIComponent(workspaceId)}`, undefined, principalHeaders(principal));
+  }
+
+  listWorkspaces(principal: InternalPrincipal): Promise<WorkspaceRecord[]> {
+    return this.#request<{ workspaces: WorkspaceRecord[] }>("GET", "/internal/workspaces", undefined, principalHeaders(principal)).then((value) => value.workspaces);
   }
 
   #request<T>(
@@ -141,4 +176,12 @@ export class ManagerClient {
       request.end(payload);
     });
   }
+}
+
+function principalHeaders(principal: InternalPrincipal): Record<string, string> {
+  return {
+    "x-lite-app-id": principal.appId,
+    "x-lite-tenant-id": principal.tenantId,
+    "x-lite-user-id": principal.userId,
+  };
 }

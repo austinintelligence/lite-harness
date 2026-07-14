@@ -6,6 +6,11 @@ import type {
   InternalStartRunRequest,
   ApprovalRecord,
   ApprovalStatus,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
+  RunBudget,
+  RunUsage,
   RunEvent,
   RunEventType,
   RunRecord,
@@ -15,6 +20,7 @@ import type {
   SessionRecord,
   WorkspaceLease,
 } from "@lite-harness/contracts";
+import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import type { AppendRunEvent, RunStore } from "@lite-harness/domain";
 
 interface RunRow {
@@ -28,12 +34,52 @@ interface RunRow {
   workspace_id: string;
   session_id: string | null;
   input: string;
+  budget_json: string;
+  usage_input_tokens: number;
+  usage_output_tokens: number;
+  usage_cost_usd: number;
+  usage_tool_calls: number;
   status: RunStatus;
   last_sequence: number;
   error_code: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface AgentRow {
+  id: string;
+  version: number;
+  app_id: string;
+  tenant_id: string;
+  user_id: string;
+  name: string;
+  instructions: string;
+  model_capabilities_json: string;
+  allowed_tools_json: string;
+  default_budget_json: string;
+  created_at: string;
+}
+
+interface WorkspaceRow {
+  id: string;
+  app_id: string;
+  tenant_id: string;
+  user_id: string;
+  mode: WorkspaceRecord["mode"];
+  state: WorkspaceRecord["state"];
+  registered_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AttemptRow {
+  id: string;
+  run_id: string;
+  attempt: number;
+  status: RunAttemptRecord["status"];
+  started_at: string;
+  ended_at: string | null;
 }
 
 interface EventRow {
@@ -93,12 +139,60 @@ function toRunRecord(row: RunRow): RunRecord {
     workspaceId: row.workspace_id,
     ...(row.session_id ? { sessionId: row.session_id } : {}),
     input: row.input,
+    budget: normalizeBudget(JSON.parse(row.budget_json || "{}") as Partial<RunBudget>),
+    usage: {
+      inputTokens: row.usage_input_tokens ?? 0,
+      outputTokens: row.usage_output_tokens ?? 0,
+      costUsd: row.usage_cost_usd ?? 0,
+      toolCalls: row.usage_tool_calls ?? 0,
+    },
     status: row.status,
     lastSequence: row.last_sequence,
     ...(row.error_code ? { errorCode: row.error_code } : {}),
     ...(row.error_message ? { errorMessage: row.error_message } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function toAgentProfile(row: AgentRow): AgentProfileRecord {
+  return {
+    id: row.id,
+    version: row.version,
+    appId: row.app_id,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    name: row.name,
+    instructions: row.instructions,
+    modelCapabilities: JSON.parse(row.model_capabilities_json) as string[],
+    allowedTools: JSON.parse(row.allowed_tools_json) as string[],
+    defaultBudget: normalizeBudget(JSON.parse(row.default_budget_json) as Partial<RunBudget>),
+    createdAt: row.created_at,
+  };
+}
+
+function toWorkspace(row: WorkspaceRow): WorkspaceRecord {
+  return {
+    id: row.id,
+    appId: row.app_id,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    mode: row.mode,
+    state: row.state,
+    ...(row.registered_path ? { registeredPath: row.registered_path } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toAttempt(row: AttemptRow): RunAttemptRecord {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    attempt: row.attempt,
+    status: row.status,
+    startedAt: row.started_at,
+    ...(row.ended_at ? { endedAt: row.ended_at } : {}),
   };
 }
 
@@ -243,13 +337,63 @@ export class SqliteRunStore implements RunStore {
         resolved_at TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS agent_profiles (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        app_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        instructions TEXT NOT NULL,
+        model_capabilities_json TEXT NOT NULL,
+        allowed_tools_json TEXT NOT NULL,
+        default_budget_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        app_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        state TEXT NOT NULL,
+        registered_path TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS run_attempts (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        attempt INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        UNIQUE(run_id, attempt)
+      );
+
       INSERT OR IGNORE INTO schema_migrations(version, applied_at)
         VALUES (1, datetime('now'));
       INSERT OR IGNORE INTO schema_migrations(version, applied_at)
         VALUES (2, datetime('now'));
       INSERT OR IGNORE INTO schema_migrations(version, applied_at)
         VALUES (3, datetime('now'));
+      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+        VALUES (4, datetime('now'));
     `);
+    this.#ensureColumn("runs", "budget_json", "TEXT NOT NULL DEFAULT '{}'");
+    this.#ensureColumn("runs", "usage_input_tokens", "INTEGER NOT NULL DEFAULT 0");
+    this.#ensureColumn("runs", "usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
+    this.#ensureColumn("runs", "usage_cost_usd", "REAL NOT NULL DEFAULT 0");
+    this.#ensureColumn("runs", "usage_tool_calls", "INTEGER NOT NULL DEFAULT 0");
+  }
+
+  #ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.#database.prepare(`PRAGMA table_info(${table})`).all() as unknown as Array<{ name: string }>;
+    if (!columns.some((item) => item.name === column)) {
+      this.#database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   createOrGetRun(
@@ -277,6 +421,31 @@ export class SqliteRunStore implements RunStore {
       }
 
       const now = new Date().toISOString();
+      const agent = this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(request.agent) as AgentRow | undefined;
+      if (agent && !sameOwner(agent, request.principal)) throw new Error("Agent profile does not belong to the requesting principal");
+      if (!agent) {
+        this.#database.prepare(
+          `INSERT INTO agent_profiles(id, version, app_id, tenant_id, user_id, name, instructions,
+            model_capabilities_json, allowed_tools_json, default_budget_json, created_at)
+           VALUES (?, 1, ?, ?, ?, ?, '', '["text","tools"]', '["read_file","write_file"]', ?, ?)`,
+        ).run(
+          request.agent, request.principal.appId, request.principal.tenantId, request.principal.userId,
+          request.agent, JSON.stringify(DEFAULT_RUN_BUDGET), now,
+        );
+      }
+      const workspace = this.#database.prepare("SELECT * FROM workspaces WHERE id = ?").get(request.workspace) as WorkspaceRow | undefined;
+      if (workspace && !sameOwner(workspace, request.principal)) throw new Error("Workspace does not belong to the requesting principal");
+      if (!workspace) {
+        this.#database.prepare(
+          `INSERT INTO workspaces(id, app_id, tenant_id, user_id, mode, state, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'managed', 'WARM', ?, ?)`,
+        ).run(request.workspace, request.principal.appId, request.principal.tenantId, request.principal.userId, now, now);
+      }
+      const effectiveAgent = agent ?? this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(request.agent) as unknown as AgentRow;
+      const budget = normalizeBudget({
+        ...JSON.parse(effectiveAgent.default_budget_json) as Partial<RunBudget>,
+        ...(request.budget ?? {}),
+      });
       const sessionId = request.session ?? `ses_${id.slice(4)}`;
       const session = this.#database.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId) as
         | SessionRow
@@ -310,9 +479,9 @@ export class SqliteRunStore implements RunStore {
         .prepare(
           `INSERT INTO runs (
             id, idempotency_key, request_fingerprint, app_id, tenant_id, user_id, agent_id,
-            workspace_id, session_id, input, status, last_sequence,
+            workspace_id, session_id, input, budget_json, status, last_sequence,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
         )
         .run(
           id,
@@ -325,6 +494,7 @@ export class SqliteRunStore implements RunStore {
           request.workspace,
           sessionId,
           request.input,
+          JSON.stringify(budget),
           now,
           now,
         );
@@ -549,6 +719,100 @@ export class SqliteRunStore implements RunStore {
     return this.getApproval(id);
   }
 
+  createAgentProfile(record: AgentProfileRecord): AgentProfileRecord {
+    this.#database.prepare(
+      `INSERT INTO agent_profiles(id, version, app_id, tenant_id, user_id, name, instructions,
+        model_capabilities_json, allowed_tools_json, default_budget_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      record.id, record.version, record.appId, record.tenantId, record.userId, record.name,
+      record.instructions, JSON.stringify(record.modelCapabilities), JSON.stringify(record.allowedTools),
+      JSON.stringify(normalizeBudget(record.defaultBudget)), record.createdAt,
+    );
+    return this.getAgentProfile(record.id) as AgentProfileRecord;
+  }
+
+  getAgentProfile(id: string): AgentProfileRecord | undefined {
+    const row = this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(id) as AgentRow | undefined;
+    return row ? toAgentProfile(row) : undefined;
+  }
+
+  listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM agent_profiles WHERE app_id = ? AND tenant_id = ? AND user_id = ? ORDER BY created_at",
+    ).all(principal.appId, principal.tenantId, principal.userId) as unknown as AgentRow[]).map(toAgentProfile);
+  }
+
+  createWorkspace(record: WorkspaceRecord): WorkspaceRecord {
+    this.#database.prepare(
+      `INSERT INTO workspaces(id, app_id, tenant_id, user_id, mode, state, registered_path, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      record.id, record.appId, record.tenantId, record.userId, record.mode, record.state,
+      record.registeredPath ?? null, record.createdAt, record.updatedAt,
+    );
+    return this.getWorkspace(record.id) as WorkspaceRecord;
+  }
+
+  getWorkspace(id: string): WorkspaceRecord | undefined {
+    const row = this.#database.prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as WorkspaceRow | undefined;
+    return row ? toWorkspace(row) : undefined;
+  }
+
+  listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM workspaces WHERE app_id = ? AND tenant_id = ? AND user_id = ? ORDER BY created_at",
+    ).all(principal.appId, principal.tenantId, principal.userId) as unknown as WorkspaceRow[]).map(toWorkspace);
+  }
+
+  createRunAttempt(runId: string, id: string): RunAttemptRecord {
+    const count = this.#database.prepare("SELECT COUNT(*) AS count FROM run_attempts WHERE run_id = ?").get(runId) as { count: number };
+    const startedAt = new Date().toISOString();
+    this.#database.prepare(
+      "INSERT INTO run_attempts(id, run_id, attempt, status, started_at) VALUES (?, ?, ?, 'RUNNING', ?)",
+    ).run(id, runId, count.count + 1, startedAt);
+    return toAttempt(this.#database.prepare("SELECT * FROM run_attempts WHERE id = ?").get(id) as unknown as AttemptRow);
+  }
+
+  completeRunAttempt(id: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): RunAttemptRecord {
+    this.#database.prepare(
+      "UPDATE run_attempts SET status = ?, ended_at = ? WHERE id = ? AND status = 'RUNNING'",
+    ).run(status, new Date().toISOString(), id);
+    const row = this.#database.prepare("SELECT * FROM run_attempts WHERE id = ?").get(id) as AttemptRow | undefined;
+    if (!row) throw new Error(`Run attempt not found: ${id}`);
+    return toAttempt(row);
+  }
+
+  completeRunningAttempts(
+    runId: string,
+    status: Exclude<RunAttemptRecord["status"], "RUNNING">,
+  ): number {
+    const result = this.#database.prepare(
+      "UPDATE run_attempts SET status = ?, ended_at = ? WHERE run_id = ? AND status = 'RUNNING'",
+    ).run(status, new Date().toISOString(), runId);
+    return Number(result.changes);
+  }
+
+  listRunAttempts(runId: string): RunAttemptRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM run_attempts WHERE run_id = ? ORDER BY attempt ASC",
+    ).all(runId) as unknown as AttemptRow[]).map(toAttempt);
+  }
+
+  recordUsage(runId: string, delta: Partial<RunUsage>): RunRecord {
+    this.#database.prepare(
+      `UPDATE runs SET usage_input_tokens = usage_input_tokens + ?,
+        usage_output_tokens = usage_output_tokens + ?, usage_cost_usd = usage_cost_usd + ?,
+        usage_tool_calls = usage_tool_calls + ?, updated_at = ? WHERE id = ?`,
+    ).run(
+      delta.inputTokens ?? 0, delta.outputTokens ?? 0, delta.costUsd ?? 0, delta.toolCalls ?? 0,
+      new Date().toISOString(), runId,
+    );
+    const run = this.getRun(runId);
+    if (!run) throw new Error(`Run not found: ${runId}`);
+    return run;
+  }
+
   close(): void {
     this.#database.close();
   }
@@ -565,7 +829,28 @@ function requestFingerprint(request: InternalStartRunRequest): string {
         workspace: request.workspace,
         session: request.session ?? null,
         input: request.input,
+        budget: request.budget ?? null,
       }),
     )
     .digest("hex");
+}
+
+function normalizeBudget(value: Partial<RunBudget>): RunBudget {
+  return {
+    maxTurns: value.maxTurns ?? DEFAULT_RUN_BUDGET.maxTurns,
+    maxToolCalls: value.maxToolCalls ?? DEFAULT_RUN_BUDGET.maxToolCalls,
+    maxInputTokens: value.maxInputTokens ?? DEFAULT_RUN_BUDGET.maxInputTokens,
+    maxOutputTokens: value.maxOutputTokens ?? DEFAULT_RUN_BUDGET.maxOutputTokens,
+    maxCostUsd: value.maxCostUsd ?? DEFAULT_RUN_BUDGET.maxCostUsd,
+    totalTimeoutMs: value.totalTimeoutMs ?? DEFAULT_RUN_BUDGET.totalTimeoutMs,
+    modelIdleTimeoutMs: value.modelIdleTimeoutMs ?? DEFAULT_RUN_BUDGET.modelIdleTimeoutMs,
+    commandTimeoutMs: value.commandTimeoutMs ?? DEFAULT_RUN_BUDGET.commandTimeoutMs,
+  };
+}
+
+function sameOwner(
+  row: { app_id: string; tenant_id: string; user_id: string },
+  principal: { appId: string; tenantId: string; userId: string },
+): boolean {
+  return row.app_id === principal.appId && row.tenant_id === principal.tenantId && row.user_id === principal.userId;
 }

@@ -21,6 +21,9 @@ export class AgentRunner {
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
     beforeToolCall?: (call: ToolCall) => Promise<void>;
+    maxTurns?: number;
+    modelIdleTimeoutMs?: number;
+    commandTimeoutMs?: number;
     signal?: AbortSignal;
     onEvent: (event: AgentRuntimeEvent) => void;
   }): Promise<void> {
@@ -28,7 +31,8 @@ export class AgentRunner {
       ? params.history.map((message) => ({ ...message }))
       : [{ role: "user", content: params.input }];
 
-    for (let turn = 0; turn < this.maxTurns; turn += 1) {
+    const turnLimit = params.maxTurns ?? this.maxTurns;
+    for (let turn = 0; turn < turnLimit; turn += 1) {
       params.signal?.throwIfAborted();
       const steering = params.takeSteering?.() ?? [];
       messages.push(...steering.map((message) => ({ ...message })));
@@ -36,10 +40,18 @@ export class AgentRunner {
       const toolCalls: ToolCall[] = [];
       let finishReason: "stop" | "tool_calls" | undefined;
 
-      for await (const event of this.model.streamTurn({
+      const stream = this.model.streamTurn({
         messages,
         ...(params.signal ? { signal: params.signal } : {}),
-      })) {
+      })[Symbol.asyncIterator]();
+      while (true) {
+        const next = await nextWithIdleTimeout(
+          stream,
+          params.modelIdleTimeoutMs ?? 120_000,
+          params.signal,
+        );
+        if (next.done) break;
+        const event = next.value;
         if (event.type === "text.delta") {
           assistantText += event.delta;
           params.onEvent({
@@ -67,10 +79,13 @@ export class AgentRunner {
           payload: { callId: call.id, name: call.name, arguments: call.arguments },
         });
         await params.beforeToolCall?.(call);
+        const commandSignal = params.signal
+          ? AbortSignal.any([params.signal, AbortSignal.timeout(params.commandTimeoutMs ?? 300_000)])
+          : AbortSignal.timeout(params.commandTimeoutMs ?? 300_000);
         const result = await this.tools.execute({
           workspaceId: params.workspaceId,
           call,
-          ...(params.signal ? { signal: params.signal } : {}),
+          signal: commandSignal,
         });
         params.onEvent({
           type: "tool.call.completed",
@@ -92,7 +107,7 @@ export class AgentRunner {
       }
     }
 
-    throw new Error(`Agent exceeded the ${this.maxTurns}-turn limit`);
+    throw new Error(`Agent exceeded the ${turnLimit}-turn limit`);
   }
 }
 
@@ -130,3 +145,27 @@ export class FakeModelGateway implements ModelGateway {
 
 export type { ToolResult };
 export type { ModelEvent, ModelGateway, ModelMessage } from "@lite-harness/provider-core";
+
+async function nextWithIdleTimeout<T>(
+  iterator: AsyncIterator<T>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<IteratorResult<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abortHandler: (() => void) | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`Model stream was idle for ${timeoutMs}ms`)), timeoutMs);
+    timer.unref?.();
+  });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abortHandler = () => reject(signal?.reason instanceof Error ? signal.reason : new Error("Run aborted"));
+    signal?.addEventListener("abort", abortHandler, { once: true });
+  });
+  try {
+    signal?.throwIfAborted();
+    return await Promise.race([iterator.next(), timeout, aborted]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
+  }
+}

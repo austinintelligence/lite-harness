@@ -2,6 +2,9 @@ import { EventEmitter } from "node:events";
 import type {
   CreateRunResponse,
   ApprovalRecord,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
   InternalStartRunRequest,
   RunEvent,
   RunEventType,
@@ -25,6 +28,7 @@ export class RunService {
   readonly #active = new Map<string, AbortController>();
   readonly #steering = new Map<string, ModelMessage[]>();
   readonly #approvalWaiters = new Map<string, { resolve: (approved: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
+  readonly #queueTails = new Map<string, Promise<void>>();
 
   constructor(
     private readonly store: RunStore,
@@ -44,10 +48,7 @@ export class RunService {
     if (result.created) {
       this.#notify(result.run.id);
       setImmediate(() => {
-        void this.#execute(result.run.id).catch(() => {
-          // #execute persists terminal failures. The detached task must not
-          // create an unhandled rejection in the host process.
-        });
+        this.#enqueue(result.run);
       });
     }
     return {
@@ -60,6 +61,30 @@ export class RunService {
 
   getRun(runId: string): RunRecord | undefined {
     return this.store.getRun(runId);
+  }
+
+  createAgentProfile(record: AgentProfileRecord): AgentProfileRecord {
+    return this.store.createAgentProfile(record);
+  }
+
+  getAgentProfile(agentId: string): AgentProfileRecord | undefined {
+    return this.store.getAgentProfile(agentId);
+  }
+
+  listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[] {
+    return this.store.listAgentProfiles(principal);
+  }
+
+  createWorkspace(record: WorkspaceRecord): WorkspaceRecord {
+    return this.store.createWorkspace(record);
+  }
+
+  getWorkspace(workspaceId: string): WorkspaceRecord | undefined {
+    return this.store.getWorkspace(workspaceId);
+  }
+
+  listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[] {
+    return this.store.listWorkspaces(principal);
   }
 
   getSession(sessionId: string): SessionRecord | undefined {
@@ -115,6 +140,7 @@ export class RunService {
   reconcileInterruptedRuns(): number {
     const interrupted = this.store.listNonTerminalRuns();
     for (const run of interrupted) {
+      this.store.completeRunningAttempts(run.id, "ORPHANED");
       this.store.appendEvent({
         runId: run.id,
         type: "run.orphaned",
@@ -134,6 +160,10 @@ export class RunService {
 
   listEvents(runId: string, after = 0): RunEvent[] {
     return this.store.listEvents(runId, after);
+  }
+
+  listRunAttempts(runId: string): RunAttemptRecord[] {
+    return this.store.listRunAttempts(runId);
   }
 
   async waitForEvents(runId: string, after: number, waitMs = 1_000): Promise<RunEvent[]> {
@@ -182,11 +212,25 @@ export class RunService {
     return this.getRun(runId);
   }
 
+  #enqueue(run: RunRecord): void {
+    const keys = [`workspace:${run.workspaceId}`, ...(run.sessionId ? [`session:${run.sessionId}`] : [])].sort();
+    const predecessors = keys.map((key) => this.#queueTails.get(key) ?? Promise.resolve());
+    const execution = Promise.allSettled(predecessors).then(() => this.#execute(run.id));
+    const tail = execution.catch(() => undefined);
+    for (const key of keys) this.#queueTails.set(key, tail);
+    void tail.finally(() => {
+      for (const key of keys) if (this.#queueTails.get(key) === tail) this.#queueTails.delete(key);
+    });
+  }
+
   async #execute(runId: string): Promise<void> {
     const controller = new AbortController();
     this.#active.set(runId, controller);
     let lease: WorkspaceLease | undefined;
+    let attempt: RunAttemptRecord | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
+      attempt = this.store.createRunAttempt(runId, createId("att"));
       if (!this.#transitionIfActive(runId, "QUEUED", "run.queued")) return;
       if (!this.#transitionIfActive(runId, "PREPARING", "run.preparing")) return;
 
@@ -194,6 +238,12 @@ export class RunService {
       if (!run) {
         throw new Error(`Run disappeared: ${runId}`);
       }
+
+      timeout = setTimeout(
+        () => controller.abort(new RunTimeoutError(run.budget.totalTimeoutMs)),
+        run.budget.totalTimeoutMs,
+      );
+      timeout.unref?.();
 
       lease = await this.#waitForWorkspaceLease(run, controller.signal);
       this.store.appendEvent({
@@ -213,6 +263,9 @@ export class RunService {
         workspaceId: run.workspaceId,
         ...(history?.length ? { history } : {}),
         signal: controller.signal,
+        maxTurns: run.budget.maxTurns,
+        modelIdleTimeoutMs: run.budget.modelIdleTimeoutMs,
+        commandTimeoutMs: run.budget.commandTimeoutMs,
         takeSteering: () => this.#takeSteering(runId),
         beforeToolCall: (call) => this.#approveToolIfRequired(run, call, controller.signal),
         onEvent: (event) => this.#appendAgentEvent(run, event),
@@ -225,13 +278,29 @@ export class RunService {
     } catch (error) {
       const run = this.getRun(runId);
       if (run && !isTerminalRunStatus(run.status)) {
-        this.#transition(runId, "FAILED", "run.failed", {
-          code: "agent_run_failed",
-          message: error instanceof Error ? error.message : String(error),
-        });
+        const reason = controller.signal.reason;
+        if (reason instanceof RunTimeoutError) {
+          this.#transition(runId, "TIMED_OUT", "run.timed_out", {
+            code: "run_timeout",
+            message: reason.message,
+            retryable: true,
+          });
+        } else if (reason instanceof BudgetExceededError) {
+          this.#transition(runId, "FAILED", "run.failed", {
+            code: "budget_exceeded",
+            message: reason.message,
+            retryable: false,
+          });
+        } else {
+          this.#transition(runId, "FAILED", "run.failed", {
+            code: "agent_run_failed",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       throw error;
     } finally {
+      if (timeout) clearTimeout(timeout);
       if (lease && this.store.releaseWorkspaceLease(lease)) {
         const latest = this.getRun(runId);
         if (latest) {
@@ -245,6 +314,12 @@ export class RunService {
       }
       this.#active.delete(runId);
       this.#steering.delete(runId);
+      if (attempt) {
+        const status = this.getRun(runId)?.status;
+        const attemptStatus = status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED" ||
+          status === "TIMED_OUT" || status === "ORPHANED" ? status : "FAILED";
+        this.store.completeRunAttempt(attempt.id, attemptStatus);
+      }
     }
   }
 
@@ -305,6 +380,17 @@ export class RunService {
 
   #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent): void {
     this.store.appendEvent({ runId: run.id, type: event.type, payload: event.payload });
+    if (event.type === "usage.updated") {
+      const updated = this.store.recordUsage(run.id, {
+        inputTokens: numberValue(event.payload.inputTokens),
+        outputTokens: numberValue(event.payload.outputTokens),
+        costUsd: numberValue(event.payload.costUsd),
+      });
+      this.#enforceBudget(updated);
+    } else if (event.type === "tool.call.requested") {
+      const updated = this.store.recordUsage(run.id, { toolCalls: 1 });
+      this.#enforceBudget(updated);
+    }
     if (run.sessionId && event.type === "agent.message.completed") {
       this.store.appendSessionMessage({
         id: createId("msg"),
@@ -325,6 +411,15 @@ export class RunService {
       });
     }
     this.#notify(run.id);
+  }
+
+  #enforceBudget(run: RunRecord): void {
+    const exceeded =
+      run.usage.inputTokens > run.budget.maxInputTokens ? "input token" :
+      run.usage.outputTokens > run.budget.maxOutputTokens ? "output token" :
+      run.usage.costUsd > run.budget.maxCostUsd ? "cost" :
+      run.usage.toolCalls > run.budget.maxToolCalls ? "tool call" : undefined;
+    if (exceeded) this.#active.get(run.id)?.abort(new BudgetExceededError(exceeded));
   }
 
   #transitionIfActive(
@@ -355,8 +450,8 @@ export class RunService {
       type,
       payload: { status, ...payload },
       status,
-      ...(status === "FAILED" ? { errorCode: String(payload.code ?? "run_failed") } : {}),
-      ...(status === "FAILED" ? { errorMessage: String(payload.message ?? "Run failed") } : {}),
+      ...(typeof payload.code === "string" ? { errorCode: payload.code } : {}),
+      ...(typeof payload.message === "string" ? { errorMessage: payload.message } : {}),
     });
     this.#notify(runId);
   }
@@ -364,6 +459,24 @@ export class RunService {
   #notify(runId: string): void {
     this.#events.emit(runId);
   }
+}
+
+class RunTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Run exceeded its total timeout of ${timeoutMs}ms`);
+    this.name = "RunTimeoutError";
+  }
+}
+
+class BudgetExceededError extends Error {
+  constructor(kind: string) {
+    super(`Run exceeded its ${kind} budget`);
+    this.name = "BudgetExceededError";
+  }
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 function toModelMessage(message: SessionMessageRecord): ModelMessage {

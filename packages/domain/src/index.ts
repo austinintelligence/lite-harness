@@ -3,6 +3,11 @@ import type {
   InternalStartRunRequest,
   ApprovalRecord,
   ApprovalStatus,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
+  RunBudget,
+  RunUsage,
   RunEvent,
   RunEventType,
   RunRecord,
@@ -47,6 +52,17 @@ export interface RunStore {
   createApproval(record: ApprovalRecord): ApprovalRecord;
   getApproval(id: string): ApprovalRecord | undefined;
   resolveApproval(id: string, status: Exclude<ApprovalStatus, "PENDING">): ApprovalRecord | undefined;
+  createAgentProfile(record: AgentProfileRecord): AgentProfileRecord;
+  getAgentProfile(id: string): AgentProfileRecord | undefined;
+  listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[];
+  createWorkspace(record: WorkspaceRecord): WorkspaceRecord;
+  getWorkspace(id: string): WorkspaceRecord | undefined;
+  listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[];
+  createRunAttempt(runId: string, id: string): RunAttemptRecord;
+  completeRunAttempt(id: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): RunAttemptRecord;
+  completeRunningAttempts(runId: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): number;
+  listRunAttempts(runId: string): RunAttemptRecord[];
+  recordUsage(runId: string, delta: Partial<RunUsage>): RunRecord;
 }
 
 const allowedTransitions: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
@@ -77,6 +93,6 @@ export function assertRunTransition(from: RunStatus, to: RunStatus): void {
   }
 }
 
-export function createId(prefix: "run" | "evt" | "tool" | "ses" | "msg" | "art" | "apr"): string {
+export function createId(prefix: "run" | "evt" | "tool" | "ses" | "msg" | "art" | "apr" | "agt" | "wsp" | "att"): string {
   return `${prefix}_${randomUUID().replaceAll("-", "")}`;
 }

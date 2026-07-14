@@ -8,8 +8,11 @@ Date: 2026-07-14
   `834810b3d6e367cbdf69b4c822d220f1a150b14c`
 - pnpm/TypeScript monorepo with strict dependency-boundary ratchet
 - Separate Gateway and Manager roles with authenticated local IPC
-- Durable SQLite runs, sessions, messages, approvals, idempotency, ordered
-  event replay, cancellation, steering, and restart reconciliation
+- Durable SQLite agent profiles, workspaces, runs, attempts, sessions,
+  messages, approvals, usage ledgers, idempotency, ordered event replay,
+  cancellation, steering, and restart reconciliation
+- Workspace/session serialization plus inherited per-run turn, tool, token,
+  cost, total, model-idle, and command limits
 - One-writer workspace leases with monotonic fencing tokens
 - Provider core with model capability registry, credential broker, frozen route
   plans, typed retry/fallback, usage records, and redaction
@@ -33,7 +36,7 @@ Date: 2026-07-14
 
 - Clean pnpm install succeeds under the pinned pnpm 11.7.0 policy.
 - Strict TypeScript and dependency boundaries pass.
-- 40 credential-free unit/integration/security/conformance tests pass.
+- 44 credential-free unit/integration/security/conformance tests pass.
 - The environment-gated real Docker test passed on Docker Desktop Linux/WSL2:
   create volume, write in a disposable container, export archive, mutate,
   staging/backup restore, read from a new container, and remove the volume.
@@ -57,8 +60,7 @@ stdio, and a production isolated plugin worker remain preview work.
 - OS-keychain credential and snapshot-key providers with refresh single-flight
 - Streaming direct adapters plus official Codex app-server and Claude delegated
   runtime conformance
-- Durable agent/profile/workspace catalogs, attempts, queues, budget ledger,
-  total/model-idle timeouts, and artifact publication as an agent tool
+- Artifact publication as an agent tool
 - Published multi-architecture runtime images and Linux/macOS/Windows host matrix
 - Process-backed Plugin Host RPC, install lockfile, upgrade/migration, crash
   backoff, and bounded OpenClaw compatibility worker

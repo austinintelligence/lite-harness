@@ -15,12 +15,24 @@ export const RunStatusSchema = Type.Union([
 
 export type RunStatus = Static<typeof RunStatusSchema>;
 
+export const RunBudgetOverridesSchema = Type.Object({
+  maxTurns: Type.Optional(Type.Integer({ minimum: 1, maximum: 128 })),
+  maxToolCalls: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
+  maxInputTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+  maxOutputTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+  maxCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+  totalTimeoutMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 86_400_000 })),
+  modelIdleTimeoutMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 3_600_000 })),
+  commandTimeoutMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 3_600_000 })),
+}, { additionalProperties: false });
+
 export const CreateRunRequestSchema = Type.Object(
   {
     agent: Type.String({ minLength: 1, maxLength: 128 }),
     workspace: Type.String({ minLength: 1, maxLength: 128 }),
     session: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     input: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+    budget: Type.Optional(RunBudgetOverridesSchema),
   },
   { additionalProperties: false },
 );
@@ -49,6 +61,8 @@ export interface RunRecord {
   workspaceId: string;
   sessionId?: string;
   input: string;
+  budget: RunBudget;
+  usage: RunUsage;
   status: RunStatus;
   lastSequence: number;
   errorCode?: string;
@@ -56,6 +70,106 @@ export interface RunRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface RunBudget {
+  maxTurns: number;
+  maxToolCalls: number;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  maxCostUsd: number;
+  totalTimeoutMs: number;
+  modelIdleTimeoutMs: number;
+  commandTimeoutMs: number;
+}
+
+export interface RunUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  toolCalls: number;
+}
+
+export interface AgentProfileRecord {
+  id: string;
+  version: number;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  name: string;
+  instructions: string;
+  modelCapabilities: string[];
+  allowedTools: string[];
+  defaultBudget: RunBudget;
+  createdAt: string;
+}
+
+export interface CreateAgentProfileRequest {
+  id?: string;
+  name: string;
+  instructions?: string;
+  modelCapabilities?: string[];
+  allowedTools?: string[];
+  defaultBudget?: Partial<RunBudget>;
+}
+
+export const CreateAgentProfileRequestSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  name: Type.String({ minLength: 1, maxLength: 128 }),
+  instructions: Type.Optional(Type.String({ maxLength: 1_000_000 })),
+  modelCapabilities: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256 })),
+  allowedTools: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 })),
+  defaultBudget: Type.Optional(RunBudgetOverridesSchema),
+}, { additionalProperties: false });
+
+export interface InternalCreateAgentProfileRequest extends CreateAgentProfileRequest {
+  principal: InternalPrincipal;
+}
+
+export interface WorkspaceRecord {
+  id: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  mode: "managed" | "registered-bind";
+  state: "WARM" | "COLD" | "RESTORING" | "ERROR";
+  registeredPath?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWorkspaceRequest {
+  id?: string;
+  mode?: "managed";
+}
+
+export const CreateWorkspaceRequestSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  mode: Type.Optional(Type.Literal("managed")),
+}, { additionalProperties: false });
+
+export interface InternalCreateWorkspaceRequest extends CreateWorkspaceRequest {
+  principal: InternalPrincipal;
+}
+
+export interface RunAttemptRecord {
+  id: string;
+  runId: string;
+  attempt: number;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "TIMED_OUT" | "ORPHANED";
+  startedAt: string;
+  endedAt?: string;
+}
+
+export const DEFAULT_RUN_BUDGET: RunBudget = Object.freeze({
+  maxTurns: 8,
+  maxToolCalls: 32,
+  maxInputTokens: 250_000,
+  maxOutputTokens: 64_000,
+  maxCostUsd: 25,
+  totalTimeoutMs: 15 * 60_000,
+  modelIdleTimeoutMs: 2 * 60_000,
+  commandTimeoutMs: 5 * 60_000,
+});
 
 export type SessionMessageRole = "system" | "user" | "assistant" | "tool";
 
@@ -141,6 +255,7 @@ export type RunEventType =
   | "run.queued"
   | "run.preparing"
   | "run.started"
+  | "run.timed_out"
   | "run.steered"
   | "agent.message.delta"
   | "agent.message.completed"

@@ -4,6 +4,11 @@ import type {
   ArtifactPayloadResponse,
   ArtifactRecord,
   ApprovalRecord,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
+  CreateAgentProfileRequest,
+  CreateWorkspaceRequest,
   CreateRunResponse,
   RunEvent,
   RunRecord,
@@ -41,6 +46,12 @@ export class LiteHarnessClient {
 
   cancelRun(runId: string): Promise<RunRecord> {
     return this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+  }
+
+  async getRunAttempts(runId: string): Promise<RunAttemptRecord[]> {
+    return (await this.#json<{ attempts: RunAttemptRecord[] }>(
+      `/v1/runs/${encodeURIComponent(runId)}/attempts`,
+    )).attempts;
   }
 
   steerRun(runId: string, instruction: string): Promise<RunRecord> {
@@ -81,6 +92,34 @@ export class LiteHarnessClient {
   async downloadArtifact(artifactId: string): Promise<{ record: ArtifactRecord; data: Uint8Array }> {
     const payload = await this.#json<ArtifactPayloadResponse>(`/v1/artifacts/${encodeURIComponent(artifactId)}`);
     return { record: payload.record, data: Uint8Array.from(Buffer.from(payload.dataBase64, "base64")) };
+  }
+
+  createAgent(request: CreateAgentProfileRequest): Promise<AgentProfileRecord> {
+    return this.#json<AgentProfileRecord>("/v1/agents", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+    });
+  }
+
+  getAgent(agentId: string): Promise<AgentProfileRecord> {
+    return this.#json<AgentProfileRecord>(`/v1/agents/${encodeURIComponent(agentId)}`);
+  }
+
+  async listAgents(): Promise<AgentProfileRecord[]> {
+    return (await this.#json<{ agents: AgentProfileRecord[] }>("/v1/agents")).agents;
+  }
+
+  createWorkspace(request: CreateWorkspaceRequest = {}): Promise<WorkspaceRecord> {
+    return this.#json<WorkspaceRecord>("/v1/workspaces", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+    });
+  }
+
+  getWorkspace(workspaceId: string): Promise<WorkspaceRecord> {
+    return this.#json<WorkspaceRecord>(`/v1/workspaces/${encodeURIComponent(workspaceId)}`);
+  }
+
+  async listWorkspaces(): Promise<WorkspaceRecord[]> {
+    return (await this.#json<{ workspaces: WorkspaceRecord[] }>("/v1/workspaces")).workspaces;
   }
 
   async *events(runId: string, after = 0): AsyncIterable<RunEvent> {
@@ -153,6 +192,11 @@ export type {
   ArtifactPayloadResponse,
   ArtifactRecord,
   ApprovalRecord,
+  AgentProfileRecord,
+  WorkspaceRecord,
+  RunAttemptRecord,
+  CreateAgentProfileRequest,
+  CreateWorkspaceRequest,
   CreateRunResponse,
   RunEvent,
   RunRecord,

@@ -100,4 +100,31 @@ describe("SqliteRunStore", () => {
     expect(first && store.validateWorkspaceLease(first)).toBe(false);
     expect(second && store.validateWorkspaceLease(second)).toBe(true);
   });
+
+  it("persists explicit catalogs, run attempts, budgets, and usage", () => {
+    const store = new SqliteRunStore(":memory:");
+    stores.push(store);
+    const now = new Date().toISOString();
+    store.createAgentProfile({
+      id: "agent-explicit", version: 1, appId: "app-1", tenantId: "tenant-1", userId: "user-1",
+      name: "Explicit", instructions: "Be precise", modelCapabilities: ["text"], allowedTools: ["read_file"],
+      defaultBudget: {
+        maxTurns: 4, maxToolCalls: 3, maxInputTokens: 100, maxOutputTokens: 100,
+        maxCostUsd: 1, totalTimeoutMs: 10_000, modelIdleTimeoutMs: 1_000, commandTimeoutMs: 1_000,
+      },
+      createdAt: now,
+    });
+    store.createWorkspace({
+      id: "workspace-explicit", appId: "app-1", tenantId: "tenant-1", userId: "user-1",
+      mode: "managed", state: "WARM", createdAt: now, updatedAt: now,
+    });
+    const created = store.createOrGetRun("run-budget", {
+      ...request("budgeted"), idempotencyKey: "budgeted", agent: "agent-explicit", workspace: "workspace-explicit",
+      budget: { maxTurns: 2 },
+    });
+    expect(created.run.budget).toMatchObject({ maxTurns: 2, maxToolCalls: 3 });
+    const attempt = store.createRunAttempt(created.run.id, "att-1");
+    expect(store.completeRunAttempt(attempt.id, "SUCCEEDED")).toMatchObject({ status: "SUCCEEDED", endedAt: expect.any(String) });
+    expect(store.recordUsage(created.run.id, { inputTokens: 5, toolCalls: 1 }).usage).toMatchObject({ inputTokens: 5, toolCalls: 1 });
+  });
 });

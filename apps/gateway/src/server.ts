@@ -6,7 +6,14 @@ import {
   type ArtifactPayloadResponse,
   type ArtifactRecord,
   type ApprovalRecord,
+  type AgentProfileRecord,
+  type WorkspaceRecord,
+  type RunAttemptRecord,
+  type CreateAgentProfileRequest,
+  type CreateWorkspaceRequest,
+  CreateAgentProfileRequestSchema,
   CreateRunRequestSchema,
+  CreateWorkspaceRequestSchema,
   isTerminalRunStatus,
   type CreateRunRequest,
   type InternalPrincipal,
@@ -26,10 +33,17 @@ export interface ManagerTransport {
   getApproval(approvalId: string): Promise<ApprovalRecord>;
   resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord>;
   getEvents(runId: string, after: number, waitMs: number): Promise<RunEvent[]>;
+  getRunAttempts(runId: string): Promise<RunAttemptRecord[]>;
   getSession(sessionId: string): Promise<SessionRecord>;
   getSessionMessages(sessionId: string): Promise<SessionMessageRecord[]>;
   publishArtifact(runId: string, request: PublishArtifactRequest, principal: InternalPrincipal): Promise<ArtifactRecord>;
   getArtifact(artifactId: string, principal: InternalPrincipal): Promise<ArtifactPayloadResponse>;
+  createAgent(request: CreateAgentProfileRequest, principal: InternalPrincipal): Promise<AgentProfileRecord>;
+  getAgent(agentId: string, principal: InternalPrincipal): Promise<AgentProfileRecord>;
+  listAgents(principal: InternalPrincipal): Promise<AgentProfileRecord[]>;
+  createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord>;
+  getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord>;
+  listWorkspaces(principal: InternalPrincipal): Promise<WorkspaceRecord[]>;
 }
 
 export interface GatewayServerOptions {
@@ -192,6 +206,18 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     },
   );
 
+  app.get<{ Params: { runId: string } }>("/v1/runs/:runId/attempts", async (request, reply) => {
+    const principal = principalFromHeaders(request.headers);
+    try {
+      const run = await options.manager.getRun(request.params.runId);
+      return ownsRun(run, principal)
+        ? { attempts: await options.manager.getRunAttempts(run.id) }
+        : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+    } catch {
+      return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+    }
+  });
+
   app.get<{ Params: { sessionId: string } }>(
     "/v1/sessions/:sessionId",
     async (request, reply) => {
@@ -231,6 +257,38 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       }
     },
   );
+
+  app.post<{ Body: CreateAgentProfileRequest }>("/v1/agents", async (request, reply) => {
+    if (!Value.Check(CreateAgentProfileRequestSchema, request.body)) {
+      return reply.code(400).send({ error: { code: "invalid_request", message: "Agent body does not match the schema" } });
+    }
+    return reply.code(201).send(await options.manager.createAgent(request.body, principalFromHeaders(request.headers)));
+  });
+
+  app.get("/v1/agents", async (request) => ({
+    agents: await options.manager.listAgents(principalFromHeaders(request.headers)),
+  }));
+
+  app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
+    try { return await options.manager.getAgent(request.params.agentId, principalFromHeaders(request.headers)); }
+    catch { return reply.code(404).send({ error: { code: "not_found", message: "Agent not found" } }); }
+  });
+
+  app.post<{ Body: CreateWorkspaceRequest }>("/v1/workspaces", async (request, reply) => {
+    if (!Value.Check(CreateWorkspaceRequestSchema, request.body ?? {})) {
+      return reply.code(400).send({ error: { code: "invalid_request", message: "Workspace body does not match the schema" } });
+    }
+    return reply.code(201).send(await options.manager.createWorkspace(request.body ?? {}, principalFromHeaders(request.headers)));
+  });
+
+  app.get("/v1/workspaces", async (request) => ({
+    workspaces: await options.manager.listWorkspaces(principalFromHeaders(request.headers)),
+  }));
+
+  app.get<{ Params: { workspaceId: string } }>("/v1/workspaces/:workspaceId", async (request, reply) => {
+    try { return await options.manager.getWorkspace(request.params.workspaceId, principalFromHeaders(request.headers)); }
+    catch { return reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } }); }
+  });
 
   app.get<{ Params: { sessionId: string } }>(
     "/v1/sessions/:sessionId/messages",

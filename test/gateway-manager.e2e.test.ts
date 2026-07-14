@@ -53,6 +53,7 @@ describe("Gateway to Manager vertical slice", () => {
         return approval;
       },
       getEvents: (runId, after, waitMs) => service.waitForEvents(runId, after, waitMs),
+      getRunAttempts: async (runId) => service.listRunAttempts(runId),
       getSession: async (sessionId) => {
         const session = service.getSession(sessionId);
         if (!session) throw new Error("Session not found");
@@ -76,6 +77,42 @@ describe("Gateway to Manager vertical slice", () => {
         if (!payload) throw new Error("Artifact not found");
         return { record: payload.record, dataBase64: payload.data.toString("base64") };
       },
+      createAgent: async (request, principal) => service.createAgentProfile({
+        id: request.id ?? "agt-test",
+        version: 1,
+        appId: principal.appId,
+        tenantId: principal.tenantId,
+        userId: principal.userId,
+        name: request.name,
+        instructions: request.instructions ?? "",
+        modelCapabilities: request.modelCapabilities ?? ["text", "tools"],
+        allowedTools: request.allowedTools ?? ["read_file", "write_file"],
+        defaultBudget: {
+          maxTurns: 8, maxToolCalls: 32, maxInputTokens: 250_000, maxOutputTokens: 64_000,
+          maxCostUsd: 25, totalTimeoutMs: 900_000, modelIdleTimeoutMs: 120_000, commandTimeoutMs: 300_000,
+          ...(request.defaultBudget ?? {}),
+        },
+        createdAt: new Date().toISOString(),
+      }),
+      getAgent: async (agentId) => {
+        const agent = service.getAgentProfile(agentId);
+        if (!agent) throw new Error("Agent not found");
+        return agent;
+      },
+      listAgents: async (principal) => service.listAgentProfiles(principal),
+      createWorkspace: async (request, principal) => {
+        const now = new Date().toISOString();
+        return service.createWorkspace({
+          id: request.id ?? "wsp-test", appId: principal.appId, tenantId: principal.tenantId,
+          userId: principal.userId, mode: "managed", state: "WARM", createdAt: now, updatedAt: now,
+        });
+      },
+      getWorkspace: async (workspaceId) => {
+        const workspace = service.getWorkspace(workspaceId);
+        if (!workspace) throw new Error("Workspace not found");
+        return workspace;
+      },
+      listWorkspaces: async (principal) => service.listWorkspaces(principal),
     };
     const gateway = buildGatewayServer({
       manager: managerTransport,
@@ -113,6 +150,9 @@ describe("Gateway to Manager vertical slice", () => {
     const terminal = await service.waitForTerminal(firstBody.runId);
     expect(terminal.status).toBe("SUCCEEDED");
     expect(runtime.readFile("workspace-a", "hello.txt")).toContain("first vertical slice");
+    expect((await managerTransport.getRunAttempts(firstBody.runId))).toMatchObject([
+      { attempt: 1, status: "SUCCEEDED" },
+    ]);
     expect(terminal.sessionId).toMatch(/^ses_/);
 
     const messages = await gateway.inject({
@@ -210,6 +250,25 @@ describe("Gateway to Manager vertical slice", () => {
       },
     });
     expect(crossTenantDownload.statusCode).toBe(404);
+
+    const createdAgent = await gateway.inject({
+      method: "POST",
+      url: "/v1/agents",
+      headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },
+      payload: { id: "agent-explicit", name: "Explicit agent", allowedTools: ["read_file"] },
+    });
+    expect(createdAgent.statusCode).toBe(201);
+    const createdWorkspace = await gateway.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },
+      payload: { id: "workspace-explicit" },
+    });
+    expect(createdWorkspace.statusCode).toBe(201);
+    expect((await gateway.inject({
+      method: "GET", url: "/v1/agents",
+      headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },
+    })).json<{ agents: unknown[] }>().agents.length).toBeGreaterThanOrEqual(2);
   });
 
   it("rejects unauthenticated public requests", async () => {

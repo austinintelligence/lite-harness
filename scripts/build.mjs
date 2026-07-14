@@ -43,11 +43,17 @@ writePackage(sdkRoot, {
 const packageOutput = resolve(dist, "packages");
 mkdirSync(packageOutput, { recursive: true });
 for (const directory of [contractsRoot, sdkRoot]) {
-  const npmCli = resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-  execFileSync(process.execPath, [npmCli, "pack", directory, "--pack-destination", packageOutput], {
+  const npm = npmCommand();
+  execFileSync(npm.command, [...npm.prefix, "pack", directory, "--pack-destination", packageOutput], {
     cwd: root,
     stdio: "inherit",
   });
+}
+
+function npmCommand() {
+  return process.platform === "win32"
+    ? { command: process.execPath, prefix: [resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")] }
+    : { command: "npm", prefix: [] };
 }
 process.stdout.write(`Built ${applications.length} applications and 2 npm packages at ${dist}\n`);
 

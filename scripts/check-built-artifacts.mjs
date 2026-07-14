@@ -22,9 +22,9 @@ const fixture = mkdtempSync(join(tmpdir(), "lite-artifact-check-"));
 const children = [];
 let logs = "";
 try {
-  const npmCli = resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-  execFileSync(process.execPath, [npmCli, "init", "-y"], { cwd: fixture, stdio: "pipe" });
-  execFileSync(process.execPath, [npmCli, "install", "--ignore-scripts", "--no-audit", "--no-fund",
+  const npm = npmCommand();
+  execFileSync(npm.command, [...npm.prefix, "init", "-y"], { cwd: fixture, stdio: "pipe" });
+  execFileSync(npm.command, [...npm.prefix, "install", "--ignore-scripts", "--no-audit", "--no-fund",
     resolve(root, required[4]), resolve(root, required[5])], { cwd: fixture, stdio: "pipe" });
 
   const port = await availablePort();
@@ -112,4 +112,10 @@ async function waitForReady(url) {
 
 function delay(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+function npmCommand() {
+  return process.platform === "win32"
+    ? { command: process.execPath, prefix: [resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")] }
+    : { command: "npm", prefix: [] };
 }

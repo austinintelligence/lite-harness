@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -65,6 +65,31 @@ process.stdout.write(JSON.stringify({ runId: run.id, status: run.status }));
   const result = execFileSync(process.execPath, [smoke, baseUrl], { cwd: fixture, encoding: "utf8" });
   const parsed = JSON.parse(result);
   if (parsed.status !== "SUCCEEDED") throw new Error(`Unexpected packaged smoke result: ${result}`);
+  if (process.argv.includes("--python-wheel")) {
+    const wheel = readdirOne(resolve(root, "dist", "python"), (name) => name.endsWith(".whl"));
+    const environmentRoot = resolve(fixture, "python-env");
+    const pythonCommand = process.env.PYTHON?.trim() || (process.platform === "win32" ? "python" : "python3");
+    execFileSync(pythonCommand, ["-m", "venv", environmentRoot], { cwd: fixture, stdio: "pipe" });
+    const python = resolve(environmentRoot, process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+    execFileSync(python, ["-m", "pip", "install", "--no-deps", "--no-index", wheel], { cwd: fixture, stdio: "pipe" });
+    const pythonSmoke = resolve(fixture, "smoke.py");
+    writeFileSync(pythonSmoke, `import json, sys, time
+from lite_harness import LiteHarnessClient
+client = LiteHarnessClient(sys.argv[1], "artifact-app-token", tenant_id="tenant", user_id="user")
+created = client.create_run(agent="coder", workspace="python-packaged-workspace", input="create the Python fixture", idempotency_key="python-packaged-ipc-smoke")
+run = None
+for _ in range(100):
+    run = client.get_run(created["runId"])
+    if run["status"] in {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"}:
+        break
+    time.sleep(0.025)
+if not run or run["status"] != "SUCCEEDED":
+    raise RuntimeError("Packaged Python run did not succeed: " + json.dumps(run))
+print(json.dumps({"runId": run["id"], "status": run["status"]}))
+`);
+    const pythonResult = JSON.parse(execFileSync(python, ["-I", pythonSmoke, baseUrl], { cwd: fixture, encoding: "utf8" }));
+    if (pythonResult.status !== "SUCCEEDED") throw new Error(`Unexpected Python packaged smoke result: ${JSON.stringify(pythonResult)}`);
+  }
   process.stdout.write(`Built artifact checks passed through real packaged IPC (${parsed.runId}).\n`);
 } catch (error) {
   throw new Error(`${error instanceof Error ? error.message : String(error)}\nProcess logs:\n${logs.slice(-16_000)}`);
@@ -112,6 +137,12 @@ async function waitForReady(url) {
 
 function delay(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+function readdirOne(directory, predicate) {
+  const matches = readdirSync(directory).filter(predicate);
+  if (matches.length !== 1) throw new Error(`Expected one matching artifact in ${directory}, found ${matches.join(", ")}`);
+  return resolve(directory, matches[0]);
 }
 
 function npmCommand() {

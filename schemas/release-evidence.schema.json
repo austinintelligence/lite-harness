@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lite-harness.invalid/schemas/release-evidence.schema.json",
+  "title": "Lite-Harness release evidence",
+  "type": "object",
+  "required": ["schemaVersion", "evidenceId", "commit", "dirty", "capturedAt", "platform", "runtime", "artifacts", "test", "externalGates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "evidenceId": { "type": "string", "minLength": 1 },
+    "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "dirty": { "type": "boolean" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "platform": {
+      "type": "object",
+      "required": ["os", "release", "architecture", "cpu"],
+      "properties": {
+        "os": { "type": "string" }, "release": { "type": "string" },
+        "architecture": { "type": "string" }, "cpu": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["node", "pnpm", "docker"],
+      "properties": {
+        "node": { "type": "string" }, "pnpm": { "type": "string" },
+        "docker": {
+          "type": "object",
+          "required": ["available", "context"],
+          "properties": {
+            "available": { "type": "boolean" }, "context": { "type": ["string", "null"] },
+            "clientVersion": { "type": ["string", "null"] }, "serverVersion": { "type": ["string", "null"] },
+            "serverOs": { "type": ["string", "null"] }, "serverArchitecture": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["packages", "images"],
+      "properties": {
+        "packages": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } }
+      },
+      "additionalProperties": false
+    },
+    "test": {
+      "type": "object",
+      "required": ["suite", "result", "tests", "failures", "skips", "durationMs"],
+      "properties": {
+        "suite": { "type": "string" }, "result": { "enum": ["pass", "fail", "not-run"] },
+        "tests": { "type": "integer", "minimum": 0 }, "failures": { "type": "integer", "minimum": 0 },
+        "skips": { "type": "integer", "minimum": 0 }, "durationMs": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "externalGates": { "type": "object", "additionalProperties": { "enum": ["pass", "fail", "missing", "not-applicable"] } }
+  },
+  "$defs": {
+    "digestedArtifact": {
+      "type": "object",
+      "required": ["name", "sha256"],
+      "properties": { "name": { "type": "string" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } },
+      "additionalProperties": true
+    },
+    "evidenceReference": {
+      "type": "object",
+      "required": ["path", "commit", "result", "skips"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }, "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "result": { "const": "pass" }, "skips": { "const": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

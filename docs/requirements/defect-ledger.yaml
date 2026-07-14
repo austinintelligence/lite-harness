@@ -1,0 +1,1863 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
+  "closureRule": "A defect may close only when its regression test passes on the current commit with a zero-skip evidence artifact.",
+  "defects": [
+    {
+      "id": "BD-001",
+      "title": "Gateway owner impersonation",
+      "description": "A static bearer token plus caller-controlled tenant and user headers permits owner impersonation; constructed scopes are unenforced.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 1",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-001-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-001-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-002",
+      "title": "Lease renewal and fencing absent",
+      "description": "Workspace leases are acquired once, are not renewed, and fencing epochs are not validated at filesystem or Docker mutation boundaries.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 2",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-002-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-002-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-003",
+      "title": "Provider cleanup defeats hard deadlines",
+      "description": "A non-cooperative provider iterator can hang stream return cleanup and defeat idle and total deadlines.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 3",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-003-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-003-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-004",
+      "title": "Terminal state is not final",
+      "description": "Run terminal state is committed before attempts, side effects, cleanup, checkpointing, and lease release complete.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 4",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-004-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-004-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-005",
+      "title": "Manager shutdown does not drain",
+      "description": "Manager shutdown closes stores without draining or cancelling active runs and child processes.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 5",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-005-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-005-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-006",
+      "title": "Unix Manager split brain",
+      "description": "A second Manager can unlink a live Unix socket and bind the same pathname.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 6",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-006-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-006-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-007",
+      "title": "Plugin version path traversal",
+      "description": "A plugin version containing traversal can move an install outside the configured root and make uninstall remove an out-of-root path.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 7",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-007-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-007-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-008",
+      "title": "Plugin grants are advisory",
+      "description": "Isolated and compatibility plugins are ambient host Node children with HOME, PATH, filesystem, and network authority.",
+      "severity": "critical",
+      "category": "lifecycle-trust-boundary",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 8",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-008-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-008-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-009",
+      "title": "Browser profile owner collision",
+      "description": "Browser profile storage hashes profile ID without owner, allowing different owners with the same profile name to overwrite one another.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 9",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-009-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-009-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-010",
+      "title": "Session history drops newest messages",
+      "description": "History orders ascending before LIMIT and therefore retains the oldest messages instead of the newest current context.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 10",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-010-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-010-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-011",
+      "title": "Assistant tool calls are not persisted",
+      "description": "Assistant tool-call structure is lost while later tool results remain, producing orphan tool results in provider history.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 11",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-011-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-011-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-012",
+      "title": "Queue wait excluded from total timeout",
+      "description": "The accepted-to-terminal total deadline does not include time spent waiting in a queue.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 12",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-012-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-012-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-013",
+      "title": "Friendly IDs are globally unique",
+      "description": "Agent, workspace, and session slugs are global primary keys instead of owner-scoped external identifiers.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 13",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-013-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-013-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-014",
+      "title": "Idempotency scope and fingerprint are unsafe",
+      "description": "Idempotency uniqueness omits user and fingerprints noncanonical JSON, causing user collisions and equivalent-object conflicts.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 14",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-014-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-014-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-015",
+      "title": "Snapshot identity is unauthenticated",
+      "description": "Snapshot identity metadata is plaintext and not bound as AEAD additional data, allowing relabeling across workspace paths.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 15",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-015-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-015-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-016",
+      "title": "Snapshot rotation can destroy previous-good",
+      "description": "Rotation can replace the known-good previous generation with an unverified corrupt current generation.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 16",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-016-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-016-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-017",
+      "title": "Snapshot pipeline blocks the Manager",
+      "description": "Compression and encryption use whole-buffer synchronous gzip, reads, writes, and Buffer concatenation on the Manager event loop.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 17",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-017-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-017-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-018",
+      "title": "Maintenance containers and archives are unsafe",
+      "description": "Maintenance containers lack consistent hardening, archive validation is incomplete, and export bounds conflict with workspace quota.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 18",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-018-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-018-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-019",
+      "title": "Docker lifecycle is not durable",
+      "description": "Docker uses run --rm without durable object IDs, deterministic names, labels, inspect-before-remove, or startup reconciliation.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 19",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-019-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-019-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-020",
+      "title": "Cancellation cannot guarantee container reap",
+      "description": "Cancellation aborts only the Docker CLI process and has no independent kill and reap guarantee.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 20",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-020-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-020-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-021",
+      "title": "Events and projections are nontransactional",
+      "description": "Usage and tool events, projections, terminal state, and attempt completion span separate transactions and can contradict after a crash.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 21",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-021-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-021-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-022",
+      "title": "SSE and IPC backpressure are unsafe",
+      "description": "Gateway ignores SSE write backpressure, IPC buffers whole large responses, and disconnects do not cancel long polls.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 22",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-022-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-022-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-023",
+      "title": "Readiness permits unusable or fake production",
+      "description": "Readiness can be healthy without Docker, disk, keys, provider, or image and production defaults may silently select fake implementations.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 23",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-023-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-023-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-024",
+      "title": "Migrations are not ordered migrations",
+      "description": "Startup creates the latest schema and marks multiple versions applied instead of executing auditable ordered migrations from old fixtures.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 24",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-024-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-024-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-025",
+      "title": "Delegated runtimes use the wrong workspace",
+      "description": "Delegated Codex and Claude use a process-global host working directory rather than the run's managed leased workspace.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 25",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-025-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-025-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-026",
+      "title": "Claude leaks prompts through argv",
+      "description": "Claude conversation content is passed in process arguments and is visible in process listings.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 26",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-026-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-026-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-027",
+      "title": "Process RPC cancellation and bounds are incomplete",
+      "description": "Timeout does not cancel remote side effects, partial stdout is unbounded, abort listeners leak, child HOME is ambient, and pre-aborted calls can spawn.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 27",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-027-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-027-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-028",
+      "title": "Approval decisions are not immutably bound",
+      "description": "Approvals lack a digest binding exact arguments, owner, workspace, route and policy generation, and expiry at resolution and execution.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 28",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-028-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-028-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-029",
+      "title": "Tool arguments bypass advertised schemas",
+      "description": "Tool arguments are not generically validated against the exact advertised schema before dispatch.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 29",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-029-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-029-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-030",
+      "title": "Unknown model price bypasses cost ceilings",
+      "description": "Unknown prices and omitted adapter cost allow maxCostUsd constraints to pass without enforceable cost accounting.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 30",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-030-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-030-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-031",
+      "title": "Fallback can repeat visible work",
+      "description": "Fallback visibility ignores usage events and can double count or repeat unsafe work after partial visibility.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 31",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-031-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-031-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-032",
+      "title": "OpenAI Responses is missing",
+      "description": "OpenAI uses chat completions rather than a first-class Responses adapter and exposes shallow capability, error, and usage semantics.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 32",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-032-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-032-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-033",
+      "title": "Anthropic can send credentials over plaintext",
+      "description": "Endpoint policy may allow a nonloopback plaintext HTTP Anthropic origin and transmit a credential.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 33",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-033-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-033-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-034",
+      "title": "Registered binds accept sensitive roots",
+      "description": "Registered bind validation does not reject filesystem root, user home, or sensitive system directories and lacks portable path rules.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 34",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-034-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-034-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-035",
+      "title": "Artifact publication trusts model content",
+      "description": "artifact_publish accepts model-supplied bytes rather than an authorized workspace path and stores plain nontransactional files and metadata.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 35",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-035-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-035-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-036",
+      "title": "Webhook signatures verify reserialized JSON",
+      "description": "Signature verification uses parsed and reserialized JSON instead of the exact raw request bytes.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 36",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-036-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-036-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-037",
+      "title": "Boundary schemas are inconsistent",
+      "description": "Manager and public validation are incomplete and internal requests do not reuse authoritative versioned schemas.",
+      "severity": "high",
+      "category": "correctness-isolation",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 37",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-037-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-037-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-038",
+      "title": "Optional systems are disconnected libraries",
+      "description": "Plugins, skills, MCP, context, snapshot compaction, and cache catalog are not composed through the production Manager and run loop.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 38",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-038-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-038-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-039",
+      "title": "Model routing ignores stored capabilities",
+      "description": "Routing is a single startup route requiring only text; agent capabilities and durable route and usage decisions are ignored.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 39",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-039-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-039-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-040",
+      "title": "Coding harness lacks essential tools",
+      "description": "The coding harness has only read and write file tools and lacks bounded shell, search, patch, git, test, build, package, process, and artifact tools.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 40",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-040-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-040-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-041",
+      "title": "Tool image contradicts the coding profile",
+      "description": "The Alpine BusyBox image lacks the required Debian or glibc base, certificates, init, shell, git, Node package tooling, and optional Python profiles.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 41",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-041-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-041-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-042",
+      "title": "Browser egress is inside the compromise boundary",
+      "description": "Browser network enforcement shares a networked container with Chromium and can be bypassed by a browser or container compromise.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 42",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-042-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-042-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-043",
+      "title": "Browser durability and artifact flows are disconnected",
+      "description": "Browser action, audit, session, and profile state is not durable and uploads or downloads use memory or base64 instead of authorized artifact promotion.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 43",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-043-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-043-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-044",
+      "title": "Skills are eager and mutable in practice",
+      "description": "Skill bodies load eagerly and precedence, provenance, versions, bounds, gating, and immutable run snapshots are incomplete.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 44",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-044-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-044-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-045",
+      "title": "MCP workers have ambient host authority",
+      "description": "MCP children are host processes outside normal tool policy with incomplete schema, payload, cancellation, and failure isolation.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 45",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-045-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-045-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-046",
+      "title": "Cache catalog has no real cache lifecycle",
+      "description": "Cache metadata and directories exist without staged population, verification, read-only attach, leases, scope, eviction, or garbage collection.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 46",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-046-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-046-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-047",
+      "title": "Snapshot lifecycle is manual",
+      "description": "Runs do not automatically prepare, restore, dirty-track, checkpoint, verify, transition cold, or delete volumes.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 47",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-047-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-047-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-048",
+      "title": "Immutable RunSnapshot is absent",
+      "description": "Runs do not freeze agent, tools, skills, plugins, provider route, runtime profile, network policy, budgets, and credential profile IDs.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 48",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-048-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-048-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-049",
+      "title": "Disabled packs do not prove zero overhead",
+      "description": "Optional packs are statically imported or installed and disabled mode does not prove zero workers, timers, sockets, schemas, containers, or dependencies.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 49",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-049-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-049-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-050",
+      "title": "pxpipe evidence is disconnected and tautological",
+      "description": "Context optimization is disconnected, has pin conflict, stores exact content only in memory, and lacks paired model-quality evidence.",
+      "severity": "high",
+      "category": "integration",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 50",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-050-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-050-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-051",
+      "title": "Build emits no applications",
+      "description": "Root build runs tsc with no emit and produces no compiled Gateway, Manager, launcher, CLI, or distributable application.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 51",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-051-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-051-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-052",
+      "title": "TypeScript SDK is not installable",
+      "description": "The SDK is private raw TypeScript with workspace-only contracts and its packed output does not run in a clean Node project.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 52",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-052-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-052-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-053",
+      "title": "Python SDK evidence is mocked only",
+      "description": "Python validation is limited to mocked urllib unit tests instead of installed wheel and sdist parity against a real Gateway.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 53",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-053-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-053-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-054",
+      "title": "Gateway-to-Manager E2E bypasses IPC",
+      "description": "The existing E2E substitutes in-process ManagerTransport and bypasses processes, SDK, Docker, packaging, and restart.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 54",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-054-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-054-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-055",
+      "title": "Required real tests silently skip",
+      "description": "Docker, Chromium, and provider tests skip unless optional environment variables are manually supplied.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 55",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-055-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-055-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-056",
+      "title": "Candidate image digest is never executed",
+      "description": "The image workflow publishes manifests without running the exact candidate digest that is promoted.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 56",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-056-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-056-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-057",
+      "title": "Release validation is presence-based",
+      "description": "Release checks validate strings and parseability rather than OpenAPI semantics, drift, installability, and alpha behavior.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 57",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-057-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-057-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-058",
+      "title": "Cross-platform product evidence is absent",
+      "description": "There is no real rootless Linux, Docker Desktop macOS and Windows, daemon restart, sleep and resume, offline, or scale-zero evidence.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 58",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-058-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-058-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-059",
+      "title": "Doctor misses required failures",
+      "description": "Doctor exit status ignores bad registered mounts, DB lock or corruption, keys, Docker context, image, migrations, and complete IPC health.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 59",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-059-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-059-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-060",
+      "title": "CLI and service flow executes source",
+      "description": "Services use tsx source, Windows task creation does not prove start, and fake runtime or provider defaults can appear ready.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 60",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-060-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-060-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-061",
+      "title": "OpenAPI is incomplete and not authoritative",
+      "description": "OpenAPI is not complete, generated from authoritative schemas, or used to generate and check SDK models.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 61",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-061-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-061-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-062",
+      "title": "Metrics, audit, trace, and config validation are incomplete",
+      "description": "Observability is incomplete while logs may leak details and numeric or environment config accepts NaN and unsafe values.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 62",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-062-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-062-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-063",
+      "title": "Architecture and status documentation overclaim",
+      "description": "Narrative architecture and implementation status claim disconnected or unverified product behavior.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 63",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-063-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-063-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    },
+    {
+      "id": "BD-064",
+      "title": "Public naming remains unresolved",
+      "description": "Public npm, PyPI, GitHub, container, domain, and trademark naming has no owner-approved collision decision.",
+      "severity": "high",
+      "category": "packaging-operations-evidence",
+      "source": {
+        "document": "goal-mission",
+        "section": "Known baseline defects / 64",
+        "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
+      },
+      "status": "open",
+      "reproduction": {
+        "testId": "BD-064-REPRO",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "regression": {
+        "testId": "BD-064-REGRESSION",
+        "path": null,
+        "result": "not-run",
+        "evidenceArtifact": null
+      },
+      "fixCommits": [],
+      "blockers": [
+        "baseline-reproduction-required"
+      ]
+    }
+  ]
+}

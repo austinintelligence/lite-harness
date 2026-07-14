@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lite-harness.invalid/schemas/defect-ledger.schema.json",
+  "title": "Lite-Harness baseline defect ledger",
+  "type": "object",
+  "required": ["schemaVersion", "baselineCommit", "closureRule", "defects"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "baselineCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "closureRule": { "type": "string", "minLength": 1 },
+    "defects": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "severity", "category", "source", "status", "reproduction", "regression", "fixCommits", "blockers"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^BD-[0-9]{3}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["critical", "high", "medium", "low"] },
+          "category": { "type": "string", "minLength": 1 },
+          "source": { "type": "object" },
+          "status": { "enum": ["open", "reproduced", "fix-in-progress", "closed"] },
+          "reproduction": { "$ref": "#/$defs/testTrace" },
+          "regression": { "$ref": "#/$defs/testTrace" },
+          "fixCommits": { "type": "array", "items": { "type": "string", "pattern": "^[a-f0-9]{40}$" } },
+          "blockers": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "testTrace": {
+      "type": "object",
+      "required": ["testId", "path", "result", "evidenceArtifact"],
+      "properties": {
+        "testId": { "type": "string" }, "path": { "type": ["string", "null"] },
+        "result": { "enum": ["not-run", "reproduced", "pass", "fail"] },
+        "evidenceArtifact": { "type": ["object", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

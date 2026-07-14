@@ -39,8 +39,9 @@ Lite-owned kernel and lazy capability packs.
 - Subagent graphs, offline FTS memory, and conservative exact-recoverable
   context rendering integrated as brokered Manager capabilities
 - OS-backed credentials, a unified launcher, service definitions, rotating
-  redacted logs, OpenClaw migration tooling, SBOM/image/security workflows, and
-  TypeScript plus Python prerelease SDKs
+  redacted logs, OpenClaw migration tooling, deterministic SBOM generation,
+  repository hygiene checks, release-gated image workflows, and TypeScript plus
+  Python prerelease SDKs
 - Windows, macOS, and Linux CI definitions; real Docker lifecycle tests are
   environment-gated and have been exercised on Docker Desktop/WSL2
 

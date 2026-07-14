@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lite-harness.invalid/schemas/alpha-ledger.schema.json",
+  "title": "Lite-Harness alpha requirement ledger",
+  "type": "object",
+  "required": ["schemaVersion", "baseline", "requirements"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedFromFrozenContract": { "const": true },
+    "baseline": {
+      "type": "object",
+      "required": ["commit", "branch", "architectureContractSha256"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "branch": { "type": "string", "minLength": 1 },
+        "architectureContractSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "required", "title", "text", "owner", "source", "implementationPaths", "testIds", "ciJob", "evidenceArtifacts", "status", "blockers"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^(?:D[0-3][0-9]|P(?:0[0-9]|1[0-2])|A(?:0[1-9]|1[0-9]|2[0-2])|R(?:0[7-9]|[12][0-9]|3[0-2]|34)-[0-9]{4})$" },
+          "kind": { "enum": ["frozen-decision", "phase-exit", "alpha-gate", "contract-requirement"] },
+          "required": { "const": true },
+          "title": { "type": "string", "minLength": 1 },
+          "text": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "minLength": 1 },
+          "source": {
+            "type": "object",
+            "required": ["document", "section", "lineStart", "lineEnd"],
+            "properties": {
+              "document": { "type": "string", "minLength": 1 },
+              "section": { "type": "string", "minLength": 1 },
+              "lineStart": { "type": "integer", "minimum": 1 },
+              "lineEnd": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          },
+          "implementationPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "testIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "ciJob": { "type": ["string", "null"] },
+          "evidenceArtifacts": { "type": "array", "items": { "$ref": "release-evidence.schema.json#/$defs/evidenceReference" } },
+          "status": { "enum": ["blocked", "in-progress", "verified"] },
+          "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -9,7 +9,10 @@ const required = [
   "docs/API.md", "docs/BROWSER.md", "docs/INTEGRATIONS.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md",
   "docs/OPERATIONS.md", "docs/TESTING.md", "docs/CONTEXT_OPTIMIZATION.md", "docs/SUBAGENTS_AND_MEMORY.md",
   "docs/MIGRATION.md", "docs/IMPLEMENTATION_STATUS.md", "docs/openapi.json", "docs/sbom.cdx.json",
+  "docs/requirements/alpha-ledger.yaml", "docs/requirements/defect-ledger.yaml",
   "docs/performance-baseline.json", "docs/pxpipe-evaluation.json",
+  "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json",
+  "evidence/baseline/f9d522289b500174e4e387b6078f907ea4ac56fa/baseline.json",
   ".github/workflows/ci.yml", ".github/workflows/images.yml", ".gitattributes", ".gitignore",
   "docker/tool-runtime/Dockerfile", "docker/tool-runtime/.dockerignore",
   "docker/browser-runtime/Dockerfile", "docker/browser-runtime/.dockerignore", "sdks/python/pyproject.toml",
@@ -44,9 +47,18 @@ try {
   if (error.status !== 1) failures.push(".env.example ignore exception verification failed");
 }
 const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
-for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
-  if (!ciWorkflow.includes(command)) failures.push(`CI is missing required release command: ${command}`);
+for (const command of [
+  "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
+  "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure",
+]) {
+  if (!ciWorkflow.includes(command)) failures.push(`CI is missing required branch command: ${command}`);
 }
+const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
+for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
+  if (!imageWorkflow.includes(command)) failures.push(`release workflow is missing required gate: ${command}`);
+}
+if (!/publish:\s*[\s\S]*?needs:\s*release-gate/.test(imageWorkflow)) failures.push("container publishing must depend on the strict release gate");
+if (/lite-harness-\$\{\{ matrix\.name \}\}:latest/.test(imageWorkflow)) failures.push("prerelease tags must not promote mutable latest images");
 for (const workflowName of ["ci.yml", "images.yml"]) {
   const workflow = readFileSync(resolve(root, ".github/workflows", workflowName), "utf8");
   for (const match of workflow.matchAll(/uses:\s*[^@\s]+@([^\s#]+)/g)) {

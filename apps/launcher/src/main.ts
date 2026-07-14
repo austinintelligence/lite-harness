@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { RotatingLogSink } from "@lite-harness/operations";
 
@@ -21,8 +21,8 @@ const environment = {
 };
 const logs = new RotatingLogSink(join(dataDir, "logs", "lite-harness.jsonl"));
 const children = [
-  start("manager", join(root, "apps", "manager", "src", "main.ts")),
-  start("gateway", join(root, "apps", "gateway", "src", "main.ts")),
+  start("manager", applicationEntry("manager")),
+  start("gateway", applicationEntry("gateway")),
 ];
 let stopping = false;
 
@@ -39,7 +39,7 @@ process.once("SIGINT", stopAll);
 process.once("SIGTERM", stopAll);
 
 function start(name: string, entry: string): { name: string; process: ChildProcess } {
-  const child = spawn(process.execPath, ["--import", "tsx", entry], {
+  const child = spawn(process.execPath, extname(entry) === ".ts" ? ["--import", "tsx", entry] : [entry], {
     cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
   child.stdout?.on("data", (chunk: Buffer) => logs.write(name, "stdout", chunk));
@@ -52,6 +52,12 @@ function start(name: string, entry: string): { name: string; process: ChildProce
     process.exitCode = 1; stopAll();
   });
   return { name, process: child };
+}
+
+function applicationEntry(name: "manager" | "gateway"): string {
+  return extname(import.meta.filename) === ".ts"
+    ? join(root, "apps", name, "src", "main.ts")
+    : join(root, "dist", "apps", name, "main.js");
 }
 
 function stopAll(): void {

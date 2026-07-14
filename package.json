@@ -18,7 +18,10 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
-    "build": "pnpm typecheck",
+    "build": "node scripts/build.mjs",
+    "build:python": "python -m build --outdir dist/python sdks/python",
+    "build:all": "pnpm build && pnpm build:python",
+    "check:artifacts": "node scripts/check-built-artifacts.mjs",
     "typecheck": "tsc --noEmit",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:repository": "node scripts/check-repository.mjs",
@@ -62,11 +65,15 @@
     "@types/node": "24.10.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
+    "esbuild": "0.27.7",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "4.1.9"
   },
   "optionalDependencies": {
     "pxpipe-proxy": "0.8.0"
+  },
+  "dependencies": {
+    "fastify": "5.8.5"
   }
 }

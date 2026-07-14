@@ -54,8 +54,8 @@ export function renderUserService(options: ServiceInstallOptions): RenderedServi
   const platform = options.platform ?? process.platform;
   const home = options.home ?? homedir();
   const node = options.nodePath ?? process.execPath;
-  const launcher = join(options.root, "apps", "launcher", "src", "main.ts");
-  const args = ["--import", "tsx", launcher, "--data-dir", options.dataDir];
+  const launcher = join(options.root, "dist", "apps", "launcher", "main.js");
+  const args = [launcher, "--data-dir", options.dataDir];
   if (platform === "linux") {
     const path = join(home, ".config", "systemd", "user", "lite-harness.service");
     return {

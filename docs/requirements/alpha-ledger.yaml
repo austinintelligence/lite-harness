@@ -1032,14 +1032,23 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/sdk-typescript/src/index.ts",
+        "scripts/build.mjs",
+        "scripts/check-built-artifacts.mjs"
+      ],
+      "testIds": [
+        "A02",
+        "M1-EXIT"
+      ],
+      "ciJob": "packaged-python-parity",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m1/packaged-artifacts.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "A03",

@@ -7,6 +7,7 @@ const gitNames = (args) => execFileSync("git", args, {
   maxBuffer: 16 * 1024 * 1024,
 }).split("\0").filter(Boolean);
 const files = [...new Set([
+  ...gitNames(["ls-files", "-z"]),
   ...gitNames(["diff", "--name-only", "--diff-filter=ACMR", "-z"]),
   ...gitNames(["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]),
   ...gitNames(["ls-files", "--others", "--exclude-standard", "-z"]),

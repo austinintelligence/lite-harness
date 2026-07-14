@@ -8,10 +8,11 @@ const required = [
   "PROVENANCE.json", "THIRD_PARTY_NOTICES.md", "docs/ARCHITECTURE.md",
   "docs/API.md", "docs/BROWSER.md", "docs/INTEGRATIONS.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md",
   "docs/OPERATIONS.md", "docs/TESTING.md", "docs/CONTEXT_OPTIMIZATION.md", "docs/SUBAGENTS_AND_MEMORY.md",
-  "docs/MIGRATION.md", "docs/IMPLEMENTATION_STATUS.md", "docs/SECURITY_REVIEW.md", "docs/openapi.json", "docs/sbom.cdx.json",
+  "docs/MIGRATION.md", "docs/IMPLEMENTATION_STATUS.md", "docs/openapi.json", "docs/sbom.cdx.json",
   "docs/performance-baseline.json", "docs/pxpipe-evaluation.json",
-  ".github/workflows/ci.yml", ".github/workflows/security.yml", ".github/workflows/images.yml",
-  "docker/tool-runtime/Dockerfile", "docker/browser-runtime/Dockerfile", "sdks/python/pyproject.toml",
+  ".github/workflows/ci.yml", ".github/workflows/images.yml", ".gitattributes", ".gitignore",
+  "docker/tool-runtime/Dockerfile", "docker/tool-runtime/.dockerignore",
+  "docker/browser-runtime/Dockerfile", "docker/browser-runtime/.dockerignore", "sdks/python/pyproject.toml",
 ];
 const failures = required.filter((file) => !existsSync(resolve(root, file))).map((file) => `missing ${file}`);
 
@@ -24,6 +25,34 @@ const dockerfile = readFileSync(resolve(root, "docker/tool-runtime/Dockerfile"),
 if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) failures.push("tool runtime base image is not digest-pinned");
 const browserDockerfile = readFileSync(resolve(root, "docker/browser-runtime/Dockerfile"), "utf8");
 if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(browserDockerfile)) failures.push("browser runtime base image is not digest-pinned");
+const expectedIgnored = [
+  ".env.local", "node_modules/example.js", "coverage/index.html", ".lite-harness/state.db",
+  "sdks/python/.venv/python", "playwright-report/index.html", "runtime.sqlite-wal", "temp/output.tmp",
+];
+try {
+  const ignored = new Set(execFileSync("git", ["check-ignore", "--no-index", "-z", "--stdin"], {
+    cwd: root, input: `${expectedIgnored.join("\0")}\0`, encoding: "utf8",
+  }).split("\0").filter(Boolean).map((file) => file.replaceAll("\\", "/")));
+  for (const file of expectedIgnored) if (!ignored.has(file)) failures.push(`.gitignore does not cover ${file}`);
+} catch {
+  failures.push(".gitignore verification failed");
+}
+try {
+  execFileSync("git", ["check-ignore", "--no-index", "--quiet", ".env.example"], { cwd: root });
+  failures.push(".gitignore must keep .env.example trackable");
+} catch (error) {
+  if (error.status !== 1) failures.push(".env.example ignore exception verification failed");
+}
+const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
+for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
+  if (!ciWorkflow.includes(command)) failures.push(`CI is missing required release command: ${command}`);
+}
+for (const workflowName of ["ci.yml", "images.yml"]) {
+  const workflow = readFileSync(resolve(root, ".github/workflows", workflowName), "utf8");
+  for (const match of workflow.matchAll(/uses:\s*[^@\s]+@([^\s#]+)/g)) {
+    if (!/^[a-f0-9]{40}$/.test(match[1])) failures.push(`${workflowName} contains an unpinned action reference: ${match[0]}`);
+  }
+}
 if (existsSync(resolve(root, "docs/performance-baseline.json"))) {
   const performance = JSON.parse(readFileSync(resolve(root, "docs/performance-baseline.json"), "utf8"));
   if (performance.provider !== "fake" || performance.terminalStatus !== "SUCCEEDED") failures.push("kernel performance baseline is missing a successful model-free run");

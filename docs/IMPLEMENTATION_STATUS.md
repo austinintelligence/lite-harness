@@ -51,7 +51,7 @@ Date: 2026-07-14
   systemd and macOS launchd definitions, and a unified launcher
 - TypeScript and Python prerelease SDKs
 - Public API/SDK docs, OpenAPI, threat model, recovery/migration/operations
-  guides, CI matrix, image/security workflows, SBOM generation,
+  guides, cross-platform CI and image workflows, SBOM generation,
   secret/provenance/release checks, and community files
 
 ## Verification evidence
@@ -90,7 +90,7 @@ deployment-specific workers, not always-on core services. Human noVNC and
 host-session browser attachment remain intentionally deferred high-trust UX.
 
 Repository automation covers Linux, macOS, Windows, amd64/arm64 image builds,
-dependency scanning, and SBOM generation. Evidence that cannot be manufactured
+dependency auditing, and SBOM generation. Evidence that cannot be manufactured
 inside one Windows checkout remains an external release gate: completed remote
 CI jobs, real macOS/Linux Docker and rootless-Docker runs, provider/delegated
 accounts not supplied by the operator, registry image publication, and a

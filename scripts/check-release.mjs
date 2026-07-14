@@ -9,6 +9,8 @@ const required = [
   "docs/API.md", "docs/BROWSER.md", "docs/INTEGRATIONS.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md",
   "docs/OPERATIONS.md", "docs/TESTING.md", "docs/CONTEXT_OPTIMIZATION.md", "docs/SUBAGENTS_AND_MEMORY.md",
   "docs/MIGRATION.md", "docs/IMPLEMENTATION_STATUS.md", "docs/openapi.json", "docs/sbom.cdx.json",
+  "docs/adr/README.md", "docs/adr/RESEARCH.md", "docs/adr/0001-node-typescript-stack.md",
+  "docs/adr/0032-behavior-defined-compatibility.md", "docs/adr/0052-alpha-scope-and-preview-boundaries.md",
   "docs/requirements/alpha-ledger.yaml", "docs/requirements/defect-ledger.yaml",
   "docs/performance-baseline.json", "docs/pxpipe-evaluation.json",
   "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json",

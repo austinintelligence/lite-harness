@@ -7,8 +7,8 @@ The architecture and behavior research references:
 
 - OpenClaw, MIT license, pinned at
   `834810b3d6e367cbdf69b4c822d220f1a150b14c`.
-- pxpipe (`pxpipe-proxy`) 0.7.1, MIT license, pinned for optional evaluation at
-  commit `0dce007d4c072268eb63e0b0c07e758914f1b731`. It is dynamically loaded only
+- pxpipe (`pxpipe-proxy`) 0.8.0, MIT license, pinned for optional evaluation at
+  commit `7dd54d395d119f5f822da5c1944ba5afbb02fa88`. It is dynamically loaded only
   when the context pack is evaluated or enabled. It is a pinned optional
   dependency and is never a default transformation.
 - Microsoft Playwright, Apache-2.0 license. The managed-browser image uses the

@@ -28,8 +28,8 @@ importers:
         version: 4.1.9(@types/node@24.10.1)(vite@8.1.4(@types/node@24.10.1)(esbuild@0.27.7)(tsx@4.21.0))
     optionalDependencies:
       pxpipe-proxy:
-        specifier: 0.7.1
-        version: 0.7.1
+        specifier: 0.8.0
+        version: 0.8.0
 
   apps/cli:
     dependencies:
@@ -867,8 +867,8 @@ packages:
   process-warning@5.0.0:
     resolution: {integrity: sha512-a39t9ApHNx2L4+HBnQKqxxHNs1r7KF+Intd8Q/g1bUh6q0WIp9voPXJ/x0j+ZL45KF1pJd9+q2jLIRMfvEshkA==}
 
-  pxpipe-proxy@0.7.1:
-    resolution: {integrity: sha512-7weuVAyJdSqo1geYzKA22orGZy3tR27dwx3PqQpj66COJcmENSNU3hBm8jgJ7vk8mIcweYNCjjQPY+AvXnUMJw==}
+  pxpipe-proxy@0.8.0:
+    resolution: {integrity: sha512-zmh319/seaTOGG46TYq+kGk/RcXSuBcfHENNsIriuqqKiJWd6709DNQfqzf6J+lL+Nc1QtOg5F/TNIOe7YeTBQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1568,7 +1568,7 @@ snapshots:
 
   process-warning@5.0.0: {}
 
-  pxpipe-proxy@0.7.1:
+  pxpipe-proxy@0.8.0:
     dependencies:
       gpt-tokenizer: 3.4.0
     optional: true

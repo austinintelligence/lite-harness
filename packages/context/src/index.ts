@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export type ContextBlockKind = "instructions" | "conversation" | "tool-state" | "source" | "logs" | "memory";
 
 export interface ContextBlock {
@@ -20,18 +25,45 @@ export interface ContextRenderer {
   render(block: ContextBlock, modelId: string): Promise<string | readonly string[]>;
 }
 
-export const PXPIPE_EVALUATED_VERSION = "0.7.1";
-export const PXPIPE_EVALUATED_COMMIT = "0dce007d4c072268eb63e0b0c07e758914f1b731";
+export const PXPIPE_EVALUATED_VERSION = "0.8.0";
+export const PXPIPE_EVALUATED_COMMIT = "7dd54d395d119f5f822da5c1944ba5afbb02fa88";
+
+export function installedPxpipeVersion(): string | undefined {
+  for (const start of [process.cwd(), dirname(fileURLToPath(import.meta.url))]) {
+    let current = start;
+    while (true) {
+      try {
+        const manifest = JSON.parse(readFileSync(join(current, "node_modules", "pxpipe-proxy", "package.json"), "utf8")) as { name?: unknown; version?: unknown };
+        if (manifest.name === "pxpipe-proxy") return typeof manifest.version === "string" ? manifest.version : undefined;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  return undefined;
+}
+
+export function assertEvaluatedPxpipeVersion(): void {
+  const installed = installedPxpipeVersion();
+  if (!installed) throw new Error(`Optional pxpipe-proxy@${PXPIPE_EVALUATED_VERSION} is not installed`);
+  if (installed !== PXPIPE_EVALUATED_VERSION) {
+    throw new Error(`Installed pxpipe-proxy@${installed} does not match evaluated version ${PXPIPE_EVALUATED_VERSION}`);
+  }
+}
 
 export class OptionalPxpipeRenderer implements ContextRenderer {
   constructor(private readonly limits: { maxTextBytes?: number; maxPages?: number; maxImageBytes?: number } = {}) {}
 
   async render(block: ContextBlock): Promise<readonly string[]> {
     if (Buffer.byteLength(block.exactText) > (this.limits.maxTextBytes ?? 2 * 1024 * 1024)) throw new Error("pxpipe context block is too large");
+    assertEvaluatedPxpipeVersion();
     const moduleName: string = "pxpipe-proxy";
     let loaded: unknown;
     try { loaded = await import(moduleName); }
-    catch { throw new Error(`Optional pxpipe-proxy@${PXPIPE_EVALUATED_VERSION} is not installed`); }
+    catch { throw new Error(`Optional pxpipe-proxy@${PXPIPE_EVALUATED_VERSION} could not be loaded`); }
     const render = (loaded as { renderTextToImages?: (text: string, options?: { reflow?: boolean }) => Promise<{ pages?: Array<{ png?: Uint8Array }> }> }).renderTextToImages;
     if (typeof render !== "function") throw new Error("pxpipe renderer export is unavailable");
     const result = await render(block.exactText, { reflow: true });
@@ -187,4 +219,3 @@ function asText(block: ContextBlock): RenderedContextBlock {
     exactRecoveryAvailable: true,
   };
 }
-import { createHash } from "node:crypto";

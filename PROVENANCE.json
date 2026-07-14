@@ -19,8 +19,8 @@
     {
       "name": "pxpipe",
       "repository": "https://github.com/teamchong/pxpipe",
-      "commit": "0dce007d4c072268eb63e0b0c07e758914f1b731",
-      "version": "0.7.1",
+      "commit": "7dd54d395d119f5f822da5c1944ba5afbb02fa88",
+      "version": "0.8.0",
       "license": "MIT",
       "usage": "pinned optional dependency, dynamically loaded only by the context renderer, and disabled by default"
     }

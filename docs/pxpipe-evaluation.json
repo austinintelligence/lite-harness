@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-14T19:30:55.336Z",
+  "generatedAt": "2026-07-14T22:40:32.481Z",
   "pxpipe": {
-    "version": "0.7.1",
-    "commit": "0dce007d4c072268eb63e0b0c07e758914f1b731"
+    "version": "0.8.0",
+    "commit": "7dd54d395d119f5f822da5c1944ba5afbb02fa88"
   },
   "policy": "measurement-only-disabled-by-default",
   "qualityConclusion": "No model-quality claim is made without credentialed paired evaluation; exact-value content remains text.",
@@ -12,12 +12,12 @@
       "source": "test/gateway-manager.e2e.test.ts",
       "modelId": "measurement-only",
       "blockId": "gateway-trace",
-      "characters": 13954,
+      "characters": 14308,
       "pages": 1,
-      "imageBytes": 45331,
-      "renderMilliseconds": 634.3236999999999,
+      "imageBytes": 46784,
+      "renderMilliseconds": 432.8918,
       "exactRecoveryVerified": true,
-      "estimatedTextTokens": 3489,
+      "estimatedTextTokens": 3577,
       "verdict": "measurement-only"
     },
     {
@@ -27,7 +27,7 @@
       "characters": 1784,
       "pages": 1,
       "imageBytes": 7298,
-      "renderMilliseconds": 10.710400000000163,
+      "renderMilliseconds": 9.362300000000005,
       "exactRecoveryVerified": true,
       "estimatedTextTokens": 446,
       "verdict": "measurement-only"
@@ -36,12 +36,12 @@
       "source": "test/provider-adapters.test.ts",
       "modelId": "measurement-only",
       "blockId": "provider-trace",
-      "characters": 7628,
+      "characters": 8290,
       "pages": 1,
-      "imageBytes": 28199,
-      "renderMilliseconds": 23.59940000000006,
+      "imageBytes": 30856,
+      "renderMilliseconds": 24.557600000000093,
       "exactRecoveryVerified": true,
-      "estimatedTextTokens": 1907,
+      "estimatedTextTokens": 2073,
       "verdict": "measurement-only"
     }
   ]

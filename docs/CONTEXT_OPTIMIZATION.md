@@ -2,9 +2,13 @@
 
 Lite-Harness keeps a canonical exact `Context IR`. Security policy, current
 state, source edits, tool schemas, and unknown-model content stay as text.
-Optional pxpipe rendering is pinned to `pxpipe-proxy@0.7.1`, uses its public
+Optional pxpipe rendering is pinned to `pxpipe-proxy@0.8.0`, uses its public
 `renderTextToImages` entry point, and retains exact blocks for
 `context_fetch_exact` recovery.
+
+The renderer verifies the installed package version before importing it. A
+missing or mismatched version fails closed to the exact-text path instead of
+running an unevaluated renderer while reporting stale provenance.
 
 The gate has global, app, and model switches plus a tenant-scoped render cache.
 Renderer error, an unknown model profile, or any disabled switch falls back to

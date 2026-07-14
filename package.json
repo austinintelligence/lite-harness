@@ -34,10 +34,14 @@
     "evidence:collect": "node scripts/collect-release-evidence.mjs",
     "generate:status": "node scripts/generate-status.mjs",
     "check:status": "node scripts/generate-status.mjs --check",
+    "generate:adrs:frozen": "node scripts/generate-frozen-adrs.mjs",
+    "check:adrs:frozen": "node scripts/generate-frozen-adrs.mjs --check",
+    "generate:adrs:research": "node scripts/generate-research-adrs.mjs",
+    "check:adrs:research": "node scripts/generate-research-adrs.mjs --check",
     "check:schemas": "node scripts/check-schemas.mjs",
     "verify": "pnpm typecheck && pnpm check:boundaries && pnpm check:repository && pnpm test && pnpm check:truth-structure",
     "check": "pnpm verify",
-    "check:truth-structure": "pnpm check:schemas && pnpm check:requirements:structure && pnpm check:defects:structure && pnpm check:status",
+    "check:truth-structure": "pnpm check:schemas && pnpm check:requirements:structure && pnpm check:defects:structure && pnpm check:adrs:frozen && pnpm check:adrs:research && pnpm check:status",
     "release:check": "pnpm verify && pnpm check:secrets && pnpm check:provenance && pnpm check:release && pnpm check:requirements && pnpm check:defects",
     "generate:sbom": "node scripts/generate-sbom.mjs",
     "evaluate:pxpipe": "tsx scripts/evaluate-context.ts",
@@ -61,6 +65,6 @@
     "vitest": "4.1.9"
   },
   "optionalDependencies": {
-    "pxpipe-proxy": "0.7.1"
+    "pxpipe-proxy": "0.8.0"
   }
 }

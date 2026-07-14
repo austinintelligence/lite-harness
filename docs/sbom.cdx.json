@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:ae044267-3e74-4f93-af30-649a5f91089a",
+  "serialNumber": "urn:uuid:810d3019-3c62-40c5-aa5b-9720e2f05d51",
   "version": 1,
   "metadata": {
     "component": {
@@ -1310,9 +1310,9 @@
     {
       "type": "library",
       "name": "pxpipe-proxy",
-      "version": "0.7.1",
-      "bom-ref": "pxpipe-proxy@0.7.1",
-      "purl": "pkg:npm/pxpipe-proxy@0.7.1"
+      "version": "0.8.0",
+      "bom-ref": "pxpipe-proxy@0.8.0",
+      "purl": "pkg:npm/pxpipe-proxy@0.8.0"
     },
     {
       "type": "library",

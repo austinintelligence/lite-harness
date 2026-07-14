@@ -1,0 +1,34 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Lite-Harness API", "version": "0.1.0-alpha.0" },
+  "servers": [{ "url": "http://127.0.0.1:3210" }],
+  "components": {
+    "securitySchemes": { "appToken": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "CreateRun": {
+        "type": "object",
+        "required": ["agent", "workspace", "input"],
+        "properties": {
+          "agent": { "type": "string" }, "workspace": { "type": "string" },
+          "session": { "type": "string" }, "input": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "Error": { "type": "object", "properties": { "error": { "type": "object" } } }
+    }
+  },
+  "security": [{ "appToken": [] }],
+  "paths": {
+    "/healthz": { "get": { "security": [], "responses": { "200": { "description": "healthy" } } } },
+    "/v1/runs": { "post": { "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateRun" } } } }, "responses": { "202": { "description": "accepted or replayed" } } } },
+    "/v1/runs/{runId}": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "run" }, "404": { "description": "not found" } } } },
+    "/v1/runs/{runId}/events": { "get": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "after", "in": "query", "schema": { "type": "integer", "minimum": 0 } }], "responses": { "200": { "description": "SSE event stream", "content": { "text/event-stream": {} } } } } },
+    "/v1/runs/{runId}/cancel": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "cancelled or terminal run" } } } },
+    "/v1/runs/{runId}/steer": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "instruction queued" } } } },
+    "/v1/sessions/{sessionId}": { "get": { "parameters": [{ "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "session" } } } },
+    "/v1/sessions/{sessionId}/messages": { "get": { "parameters": [{ "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "messages" } } } },
+    "/v1/approvals/{approvalId}": { "post": { "parameters": [{ "name": "approvalId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "approval resolved" } } } },
+    "/v1/runs/{runId}/artifacts": { "post": { "parameters": [{ "name": "runId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "201": { "description": "artifact published" } } } },
+    "/v1/artifacts/{artifactId}": { "get": { "parameters": [{ "name": "artifactId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "artifact metadata and base64 data" } } } }
+  }
+}

@@ -1,0 +1,1 @@
+{"name":"@lite-harness/runtime-docker","version":"0.0.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@lite-harness/contracts":"workspace:*","@lite-harness/runtime":"workspace:*"}}

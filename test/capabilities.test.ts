@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConservativeContextCompiler, ContextStore } from "@lite-harness/context";
 import { McpSupervisor } from "@lite-harness/mcp";
@@ -94,7 +94,8 @@ describe("optional capability kernel", () => {
     });
     expect(installed.enabled).toBe(true);
     expect(existsSync(join(installed.source, "worker.mjs"))).toBe(true);
-    expect(installed.source.startsWith(installRoot)).toBe(true);
+    const installedRelative = relative(realpathSync(installRoot), installed.source);
+    expect(installedRelative.startsWith("..") || isAbsolute(installedRelative)).toBe(false);
     expect(pluginPackageDigest(inspectPluginManifest(join(installed.source, "lite-plugin.json")))).toBe(installed.digest);
     writeFileSync(join(installed.source, "worker.mjs"), "export default { tampered: true }\n");
     expect(pluginPackageDigest(inspectPluginManifest(join(installed.source, "lite-plugin.json")))).not.toBe(installed.digest);

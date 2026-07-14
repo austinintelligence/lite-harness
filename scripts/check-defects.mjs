@@ -5,6 +5,7 @@ import { baselineDefects } from "./defects-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const structureOnly = process.argv.includes("--structure");
+const closedOnly = process.argv.includes("--closed-only");
 const ledger = JSON.parse(readFileSync(resolve(root, "docs", "requirements", "defect-ledger.yaml"), "utf8"));
 const failures = [];
 if (ledger.schemaVersion !== 1) failures.push("defect ledger schemaVersion must be 1");
@@ -43,13 +44,15 @@ for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
     if (defect.blockers?.length) failures.push(`${defect.id} closed with blockers`);
   }
 }
-if (!structureOnly) {
+if (!structureOnly && !closedOnly) {
   for (const defect of ledger.defects ?? []) if (["critical", "high"].includes(defect.severity) && defect.status !== "closed") failures.push(`${defect.id} ${defect.severity} defect remains ${defect.status}`);
 }
 
 if (failures.length) {
-  process.stderr.write(`${structureOnly ? "Defect structure" : "Release defect"} checks failed (${failures.length}):\n${failures.map((failure) => `- ${failure}`).join("\n")}\n`);
+  const label = structureOnly ? "Defect structure" : closedOnly ? "Closed defect evidence" : "Release defect";
+  process.stderr.write(`${label} checks failed (${failures.length}):\n${failures.map((failure) => `- ${failure}`).join("\n")}\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write(`${structureOnly ? "Defect structure" : "Release defect"} checks passed for ${ledger.defects.length} rows.\n`);
+  const label = structureOnly ? "Defect structure" : closedOnly ? "Closed defect evidence" : "Release defect";
+  process.stdout.write(`${label} checks passed for ${ledger.defects.length} rows.\n`);
 }

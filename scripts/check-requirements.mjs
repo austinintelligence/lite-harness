@@ -7,6 +7,7 @@ import { BASELINE_COMMIT, PLAN_PATH, PLAN_SHA256, extractRequirements } from "./
 const root = resolve(import.meta.dirname, "..");
 const ledgerPath = resolve(root, "docs", "requirements", "alpha-ledger.yaml");
 const structureOnly = process.argv.includes("--structure");
+const verifiedOnly = process.argv.includes("--verified-only");
 const failures = [];
 const planHash = createHash("sha256").update(readFileSync(PLAN_PATH)).digest("hex");
 if (planHash !== PLAN_SHA256) failures.push(`architecture contract drifted: ${planHash}`);
@@ -44,6 +45,7 @@ if (!structureOnly) {
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   for (const row of actual.values()) {
     if (!row.required) continue;
+    if (verifiedOnly && row.status !== "verified") continue;
     if (row.status !== "verified") failures.push(`${row.id} is ${row.status}, not verified`);
     if (row.blockers.length) failures.push(`${row.id} has unresolved blockers: ${row.blockers.join(", ")}`);
     if (!row.implementationPaths.length) failures.push(`${row.id} lacks production implementation paths`);
@@ -71,8 +73,10 @@ if (!structureOnly) {
 }
 
 if (failures.length) {
-  process.stderr.write(`${structureOnly ? "Requirement structure" : "Release requirement"} checks failed (${failures.length}):\n${failures.map((item) => `- ${item}`).join("\n")}\n`);
+  const label = structureOnly ? "Requirement structure" : verifiedOnly ? "Verified requirement evidence" : "Release requirement";
+  process.stderr.write(`${label} checks failed (${failures.length}):\n${failures.map((item) => `- ${item}`).join("\n")}\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write(`${structureOnly ? "Requirement structure" : "Release requirement"} checks passed for ${actual.size} rows.\n`);
+  const label = structureOnly ? "Requirement structure" : verifiedOnly ? "Verified requirement evidence" : "Release requirement";
+  process.stdout.write(`${label} checks passed for ${actual.size} rows.\n`);
 }

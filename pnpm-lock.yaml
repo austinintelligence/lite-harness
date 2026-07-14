@@ -64,12 +64,18 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@lite-harness/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@lite-harness/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@lite-harness/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/storage-sqlite
       '@sinclair/typebox':
         specifier: 0.34.41
         version: 0.34.41
@@ -163,6 +169,12 @@ importers:
       '@lite-harness/runtime':
         specifier: workspace:*
         version: link:../runtime
+
+  packages/auth:
+    dependencies:
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/automation: {}
 
@@ -276,6 +288,9 @@ importers:
 
   packages/storage-sqlite:
     dependencies:
+      '@lite-harness/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../contracts

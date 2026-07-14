@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { arch, platform, release } from "node:os";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,11 +9,16 @@ import { dirname, join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const evidenceArgument = process.argv.indexOf("--evidence");
 const evidenceOutput = evidenceArgument >= 0 ? process.argv[evidenceArgument + 1] : undefined;
+const authEvidenceArgument = process.argv.indexOf("--auth-evidence");
+const authEvidenceOutput = authEvidenceArgument >= 0 ? process.argv[authEvidenceArgument + 1] : undefined;
 if (evidenceArgument >= 0 && (!evidenceOutput || evidenceOutput.startsWith("--"))) {
   throw new Error("--evidence requires an output path");
 }
-if (evidenceOutput && !process.argv.includes("--python-wheel")) {
-  throw new Error("M1 packaged evidence requires --python-wheel parity");
+if (authEvidenceArgument >= 0 && (!authEvidenceOutput || authEvidenceOutput.startsWith("--"))) {
+  throw new Error("--auth-evidence requires an output path");
+}
+if ((evidenceOutput || authEvidenceOutput) && !process.argv.includes("--python-wheel")) {
+  throw new Error("Packaged evidence requires --python-wheel parity");
 }
 const version = JSON.parse(await import("node:fs/promises").then(({ readFile }) => readFile(resolve(root, "package.json"), "utf8"))).version;
 const required = {
@@ -54,10 +59,20 @@ try {
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
   };
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const secondaryToken = "artifact-app-token-secondary";
+  const seeder = start(resolve(installedApplication, "gateway", "main.js"), {
+    ...environment,
+    LITE_HARNESS_APP_TOKEN: secondaryToken,
+    LITE_HARNESS_APP_ID: "app_secondary",
+    LITE_HARNESS_TENANT_ID: "tenant_secondary",
+    LITE_HARNESS_USER_ID: "user_secondary",
+  }, fixture);
+  await waitForReady(`${baseUrl}/healthz`, [seeder]);
+  await stop(seeder);
   children.push(start(resolve(installedApplication, "manager", "main.js"), environment, fixture));
   await delay(250);
   children.push(start(resolve(installedApplication, "gateway", "main.js"), environment, fixture));
-  const baseUrl = `http://127.0.0.1:${port}`;
   await waitForReady(`${baseUrl}/readyz`);
 
   const contender = start(resolve(installedApplication, "manager", "main.js"), environment, fixture);
@@ -68,8 +83,9 @@ try {
   await waitForReady(`${baseUrl}/readyz`);
 
   const smoke = resolve(fixture, "smoke.mjs");
-  writeFileSync(smoke, `import { LiteHarnessClient } from "@lite-harness/sdk";
-const client = new LiteHarnessClient({ baseUrl: process.argv[2], token: "artifact-app-token", tenantId: "tenant", userId: "user" });
+  writeFileSync(smoke, `import { LiteHarnessClient, LiteHarnessError } from "@lite-harness/sdk";
+const client = new LiteHarnessClient({ baseUrl: process.argv[2], token: "artifact-app-token" });
+const otherClient = new LiteHarnessClient({ baseUrl: process.argv[2], token: "${secondaryToken}" });
 const created = await client.createRun({ agent: "coder", workspace: "packaged-workspace", input: "create the fixture" }, "packaged-ipc-smoke");
 let run;
 for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -78,7 +94,61 @@ for (let attempt = 0; attempt < 100; attempt += 1) {
   await new Promise((resolve) => setTimeout(resolve, 25));
 }
 if (run?.status !== "SUCCEEDED") throw new Error("Packaged run did not succeed: " + JSON.stringify(run));
-process.stdout.write(JSON.stringify({ runId: run.id, status: run.status }));
+await expectHttpError(() => otherClient.getRun(created.runId), 404, "not_found");
+const spoofed = await fetch(process.argv[2] + "/v1/runs/" + encodeURIComponent(created.runId), {
+  headers: { authorization: "Bearer artifact-app-token", "x-lite-tenant-id": "tenant_secondary", "x-lite-user-id": "user_secondary" },
+});
+if (!spoofed.ok) throw new Error("Caller-selected identity headers changed the authenticated owner");
+await expectHttpError(
+  () => client.mintRunToken({ scopes: ["tokens:mint"], agentId: "coder", workspaceId: "packaged-workspace" }),
+  403,
+  "token_scope_expansion",
+);
+const minted = await client.mintRunToken({
+  scopes: ["runs:create", "runs:read"],
+  agentId: "coder",
+  workspaceId: "packaged-workspace",
+  budgetCeiling: { maxTurns: 2 },
+});
+if (minted.replayPolicy !== "resource_bound_multi_use") throw new Error("Run-token replay policy was not explicit");
+const bound = new LiteHarnessClient({ baseUrl: process.argv[2], token: minted.token });
+if ((await bound.getRun(created.runId)).id !== created.runId) throw new Error("Bound token could not read its matching resource");
+await expectHttpError(() => bound.listAgents(), 403, "insufficient_scope");
+await expectHttpError(
+  () => bound.createRun({ agent: "coder", workspace: "other-workspace", input: "must fail", budget: { maxTurns: 2 } }),
+  403,
+  "token_binding_violation",
+);
+await expectHttpError(
+  () => bound.createRun({ agent: "coder", workspace: "packaged-workspace", input: "must exceed default ceiling" }),
+  403,
+  "token_binding_violation",
+);
+const boundedCreated = await bound.createRun(
+  { agent: "coder", workspace: "packaged-workspace", input: "bounded fixture", budget: { maxTurns: 2 } },
+  "packaged-bound-token-smoke",
+);
+let boundedRun;
+for (let attempt = 0; attempt < 100; attempt += 1) {
+  boundedRun = await bound.getRun(boundedCreated.runId);
+  if (["SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"].includes(boundedRun.status)) break;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+}
+if (boundedRun?.status !== "SUCCEEDED") throw new Error("Bound packaged run did not succeed: " + JSON.stringify(boundedRun));
+const revoked = await client.revokeToken(minted.tokenId);
+if (!revoked.revoked || revoked.tokenId !== minted.tokenId) throw new Error("Run token revocation response was invalid");
+await expectHttpError(() => bound.getRun(created.runId), 401, "unauthorized");
+process.stdout.write(JSON.stringify({ runId: run.id, status: run.status, boundedRunId: boundedRun.id }));
+
+async function expectHttpError(action, status, code) {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof LiteHarnessError && error.status === status && error.code === code) return;
+    throw error;
+  }
+  throw new Error("Expected HTTP " + status + " with code " + code);
+}
 `);
   const result = execFileSync(process.execPath, [smoke, baseUrl], { cwd: fixture, encoding: "utf8" });
   const parsed = JSON.parse(result);
@@ -93,7 +163,7 @@ process.stdout.write(JSON.stringify({ runId: run.id, status: run.status }));
     const pythonSmoke = resolve(fixture, "smoke.py");
     writeFileSync(pythonSmoke, `import json, sys, time
 from lite_harness import LiteHarnessClient
-client = LiteHarnessClient(sys.argv[1], "artifact-app-token", tenant_id="tenant", user_id="user")
+client = LiteHarnessClient(sys.argv[1], "artifact-app-token")
 created = client.create_run(agent="coder", workspace="python-packaged-workspace", input="create the Python fixture", idempotency_key="python-packaged-ipc-smoke")
 run = None
 for _ in range(100):
@@ -108,7 +178,9 @@ print(json.dumps({"runId": run["id"], "status": run["status"]}))
     const pythonResult = JSON.parse(execFileSync(python, ["-I", pythonSmoke, baseUrl], { cwd: fixture, encoding: "utf8" }));
     if (pythonResult.status !== "SUCCEEDED") throw new Error(`Unexpected Python packaged smoke result: ${JSON.stringify(pythonResult)}`);
   }
-  if (evidenceOutput) writeEvidence(evidenceOutput);
+  assertNoPlaintextSecrets(dataDir, [environment.LITE_HARNESS_APP_TOKEN, secondaryToken]);
+  if (evidenceOutput) writeEvidence(evidenceOutput, "m1-packaged-artifacts");
+  if (authEvidenceOutput) writeEvidence(authEvidenceOutput, "m2-packaged-auth");
   process.stdout.write(`Built artifact checks passed through real packaged IPC (${parsed.runId}).\n`);
 } catch (error) {
   throw new Error(`${error instanceof Error ? error.message : String(error)}\nProcess logs:\n${logs.slice(-16_000)}`);
@@ -140,7 +212,7 @@ async function availablePort() {
   return port;
 }
 
-async function waitForReady(url) {
+async function waitForReady(url, monitoredChildren = children) {
   let last;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
@@ -148,7 +220,7 @@ async function waitForReady(url) {
       if (response.ok && (await response.json()).ok === true) return;
       last = new Error(`readiness returned ${response.status}`);
     } catch (error) { last = error; }
-    if (children.some((child) => child.exitCode !== null)) throw new Error("Packaged process exited before readiness");
+    if (monitoredChildren.some((child) => child.exitCode !== null)) throw new Error("Packaged process exited before readiness");
     await delay(50);
   }
   throw last ?? new Error("Packaged harness did not become ready");
@@ -179,7 +251,27 @@ function npmCommand() {
     : { command: "npm", prefix: [] };
 }
 
-function writeEvidence(output) {
+function assertNoPlaintextSecrets(directory, secrets) {
+  for (const path of walkFiles(directory)) {
+    const content = readFileSync(path);
+    for (const secret of secrets) {
+      if (content.includes(Buffer.from(secret))) throw new Error(`Plaintext app credential was persisted in ${path}`);
+    }
+  }
+}
+
+function walkFiles(directory) {
+  if (!existsSync(directory)) return [];
+  const paths = [];
+  for (const name of readdirSync(directory)) {
+    const path = resolve(directory, name);
+    if (statSync(path).isDirectory()) paths.push(...walkFiles(path));
+    else paths.push(path);
+  }
+  return paths;
+}
+
+function writeEvidence(output, suite) {
   const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const artifacts = [required.application, required.contracts, required.sdk, readdirOne(resolve(root, "dist", "python"), (name) => name.endsWith(".whl"))]
     .map((path) => {
@@ -191,13 +283,13 @@ function writeEvidence(output) {
     });
   const document = {
     schemaVersion: 1,
-    evidenceId: `m1-packaged-artifacts-${commit.slice(0, 12)}-${platform()}-${arch()}`,
+    evidenceId: `${suite}-${commit.slice(0, 12)}-${platform()}-${arch()}`,
     commit,
     capturedAt: new Date().toISOString(),
     platform: { os: platform(), release: release(), architecture: arch(), node: process.version },
-    suite: "m1-packaged-artifacts",
+    suite,
     result: "pass",
-    tests: 8,
+    tests: 17,
     failures: 0,
     skips: 0,
     boundaries: {
@@ -207,10 +299,17 @@ function writeEvidence(output) {
       separateManagerAndGatewayProcesses: true,
       realLocalIpc: true,
       secondManagerRejected: true,
+      serverResolvedIdentity: true,
+      crossOwnerIsolation: true,
+      runTokenScopesAndBindings: true,
+      runTokenRevocation: true,
+      plaintextTokenPersistenceDenied: true,
       runtime: "deterministic-fake",
       provider: "deterministic-fake",
     },
-    testIds: ["M1-EXIT", "A02", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION", "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION"],
+    testIds: suite === "m2-packaged-auth"
+      ? ["BD-001-REGRESSION", "D09", "D10"]
+      : ["M1-EXIT", "A02", "BD-001-REGRESSION", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION", "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION"],
     artifacts,
   };
   const absoluteOutput = resolve(root, output);

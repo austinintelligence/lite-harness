@@ -6,6 +6,9 @@ import {
   CreateWorkspaceRequestSchema,
   ErrorEnvelopeSchema,
   LITE_API_VERSION,
+  MintRunTokenRequestSchema,
+  MintRunTokenResponseSchema,
+  RevokeTokenResponseSchema,
   RunBudgetOverridesSchema,
 } from "@lite-harness/contracts";
 
@@ -22,6 +25,41 @@ document.components.schemas.RunBudgetOverrides = clone(RunBudgetOverridesSchema)
 document.components.schemas.CreateAgent = clone(CreateAgentProfileRequestSchema);
 document.components.schemas.CreateWorkspace = clone(CreateWorkspaceRequestSchema);
 document.components.schemas.ErrorEnvelope = clone(ErrorEnvelopeSchema);
+document.components.schemas.MintRunToken = clone(MintRunTokenRequestSchema);
+document.components.schemas.MintRunTokenResponse = clone(MintRunTokenResponseSchema);
+document.components.schemas.RevokeTokenResponse = clone(RevokeTokenResponseSchema);
+document.paths["/v1/tokens"] = {
+  post: {
+    summary: "Mint a short-lived resource-bound run token",
+    security: [{ appToken: [] }],
+    requestBody: {
+      required: true,
+      content: { "application/json": { schema: { $ref: "#/components/schemas/MintRunToken" } } },
+    },
+    responses: {
+      "201": {
+        description: "Run token minted",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/MintRunTokenResponse" } } },
+      },
+      "400": { description: "Invalid request" },
+      "403": { description: "Scope or resource binding expansion" },
+    },
+  },
+};
+document.paths["/v1/tokens/{tokenId}"] = {
+  delete: {
+    summary: "Revoke a run token owned by the authenticated app",
+    security: [{ appToken: [] }],
+    parameters: [{ name: "tokenId", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 128 } }],
+    responses: {
+      "200": {
+        description: "Run token revoked",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/RevokeTokenResponse" } } },
+      },
+      "404": { description: "Token not found" },
+    },
+  },
+};
 
 for (const pathItem of Object.values(document.paths) as Array<Record<string, any>>) {
   for (const operation of Object.values(pathItem) as Array<Record<string, any>>) {
@@ -39,7 +77,7 @@ const gateway = readFileSync(resolve(root, "apps", "gateway", "src", "server.ts"
 const publicRoutes = new Set(
   [...gateway.matchAll(/["`](\/(?:healthz|readyz|hooks|v1)[^"`]*)["`]/g)]
     .map((match) => match[1] as string)
-    .filter((route) => !route.includes("${") && route !== "/hooks/")
+    .filter((route) => !route.includes("${") && route !== "/hooks/" && route !== "/v1/")
     .map((route) => route.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}")),
 );
 const missing = [...publicRoutes].filter((route) => !(route in document.paths));

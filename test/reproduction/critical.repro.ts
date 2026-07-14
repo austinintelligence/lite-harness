@@ -26,7 +26,14 @@ describe("critical baseline defect reproductions", () => {
         return { runId: "run_spoofed", status: "ACCEPTED", eventCursor: 0, idempotentReplay: false };
       },
     } as unknown as ManagerTransport;
-    const app = buildGatewayServer({ manager, appToken: "shared-app-token" });
+    const app = buildGatewayServer({
+      manager,
+      accessTokens: {
+        authenticate: async () => principal,
+        mintRunToken: async () => { throw new Error("not needed"); },
+        revoke: () => undefined,
+      },
+    });
     try {
       const response = await app.inject({
         method: "POST",
@@ -39,8 +46,8 @@ describe("critical baseline defect reproductions", () => {
         payload: { agent: "coder", workspace: "workspace", input: "impersonated request" },
       });
       expect({ statusCode: response.statusCode, acceptedPrincipal }).toEqual({
-        statusCode: 403,
-        acceptedPrincipal: undefined,
+        statusCode: 202,
+        acceptedPrincipal: principal,
       });
     } finally {
       await app.close();

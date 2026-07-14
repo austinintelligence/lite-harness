@@ -34,16 +34,12 @@ class LiteHarnessClient:
         base_url: str,
         token: str,
         *,
-        tenant_id: str | None = None,
-        user_id: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         if not base_url or not token:
             raise ValueError("base_url and token are required")
         self._base_url = base_url.rstrip("/") + "/"
         self._token = token
-        self._tenant_id = tenant_id
-        self._user_id = user_id
         self._timeout = timeout
 
     def create_run(
@@ -62,6 +58,27 @@ class LiteHarnessClient:
         if budget is not None:
             body["budget"] = budget
         return self._json("POST", "v1/runs", body, {"Idempotency-Key": idempotency_key or str(uuid.uuid4())})
+
+    def mint_run_token(
+        self,
+        *,
+        scopes: list[str],
+        ttl_seconds: int = 900,
+        agent_id: str | None = None,
+        workspace_id: str | None = None,
+        budget_ceiling: dict[str, int | float] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"scopes": scopes, "ttlSeconds": ttl_seconds}
+        if agent_id is not None:
+            body["agentId"] = agent_id
+        if workspace_id is not None:
+            body["workspaceId"] = workspace_id
+        if budget_ceiling is not None:
+            body["budgetCeiling"] = budget_ceiling
+        return self._json("POST", "v1/tokens", body)
+
+    def revoke_token(self, token_id: str) -> dict[str, Any]:
+        return self._json("DELETE", f"v1/tokens/{quote(token_id, safe='')}")
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self._json("GET", f"v1/runs/{quote(run_id, safe='')}")
@@ -126,11 +143,7 @@ class LiteHarnessClient:
             raise self._http_error(error) from error
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            **({"X-Lite-Tenant-Id": self._tenant_id} if self._tenant_id else {}),
-            **({"X-Lite-User-Id": self._user_id} if self._user_id else {}),
-        }
+        return {"Authorization": f"Bearer {self._token}"}
 
     def _url(self, path: str) -> str:
         return urljoin(self._base_url, path)

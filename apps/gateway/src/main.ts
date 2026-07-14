@@ -1,15 +1,30 @@
+import { join } from "node:path";
+import { AccessTokenService, DEFAULT_APP_SCOPES } from "@lite-harness/auth";
 import { loadGatewayConfiguration } from "@lite-harness/config";
+import { SqliteAccessTokenStore } from "@lite-harness/storage-sqlite";
 import { buildGatewayServer } from "./server.js";
 import { ManagerClient } from "./manager-client.js";
 
 const configuration = loadGatewayConfiguration();
-const { socketPath, internalToken, appToken, port, host } = configuration;
+const {
+  dataDir, socketPath, internalToken, appToken, bootstrapIdentity,
+  port, host, authFailureLimit, authFailureWindowMs,
+} = configuration;
+const accessTokenStore = new SqliteAccessTokenStore(join(dataDir, "auth.db"));
+const accessTokens = new AccessTokenService(accessTokenStore);
+await accessTokens.ensureBootstrapAppToken(appToken, {
+  ...bootstrapIdentity,
+  scopes: [...DEFAULT_APP_SCOPES],
+});
 
 const app = buildGatewayServer({
   manager: new ManagerClient(socketPath, internalToken),
-  appToken,
+  accessTokens,
+  authFailureLimit,
+  authFailureWindowMs,
   logger: true,
 });
+app.addHook("onClose", async () => accessTokenStore.close());
 
 await app.listen({ host, port });
 installShutdownHandlers(app);

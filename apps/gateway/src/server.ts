@@ -1,5 +1,5 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
-import Fastify, { type FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { Value } from "@sinclair/typebox/value";
 import {
   type CreateRunResponse,
@@ -25,7 +25,13 @@ import {
   type SessionRecord,
   type ManagerHealth,
   errorEnvelope,
+  MintRunTokenRequestSchema,
+  type MintRunTokenRequest,
+  DEFAULT_RUN_BUDGET,
 } from "@lite-harness/contracts";
+import type { AccessTokenService } from "@lite-harness/auth";
+
+const authenticatedPrincipals = new WeakMap<object, InternalPrincipal>();
 
 export interface ManagerTransport {
   health(): Promise<ManagerHealth>;
@@ -53,13 +59,21 @@ export interface ManagerTransport {
 
 export interface GatewayServerOptions {
   manager: ManagerTransport;
-  appToken: string;
+  accessTokens: Pick<AccessTokenService, "authenticate" | "mintRunToken" | "revoke">;
+  authFailureLimit?: number;
+  authFailureWindowMs?: number;
   logger?: boolean;
 }
 
 export function buildGatewayServer(options: GatewayServerOptions): FastifyInstance {
-  if (!options.appToken.trim()) throw new Error("Gateway app token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
+  const authFailureLimit = options.authFailureLimit ?? 20;
+  const authFailureWindowMs = options.authFailureWindowMs ?? 60_000;
+  if (!Number.isSafeInteger(authFailureLimit) || authFailureLimit < 1 ||
+      !Number.isSafeInteger(authFailureWindowMs) || authFailureWindowMs < 1_000) {
+    throw new Error("Gateway authentication rate limit must be positive and bounded");
+  }
+  const authFailures = new Map<string, { count: number; startedAt: number }>();
 
   app.addHook("preSerialization", async (_request, reply, payload) => {
     if (reply.statusCode < 400 || !payload || typeof payload !== "object" || !("error" in payload)) return payload;
@@ -96,8 +110,45 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     if (request.url === "/healthz" || request.url === "/readyz" || request.url.startsWith("/hooks/")) {
       return;
     }
-    if (!constantTimeBearerMatch(request.headers.authorization, options.appToken)) {
-      await reply.code(401).send({ error: { code: "unauthorized", message: "Invalid app token" } });
+    const token = bearerToken(request.headers.authorization);
+    const failureKey = request.ip;
+    if (isAuthRateLimited(authFailures, failureKey, authFailureLimit, authFailureWindowMs)) {
+      await reply.code(429).send(errorEnvelope("rate_limited", "Too many failed authentication attempts", {
+        retryable: true,
+        retryAfterMs: authFailureWindowMs,
+      }));
+      return;
+    }
+    if (!token) {
+      const limited = recordAuthFailure(authFailures, failureKey, authFailureLimit, authFailureWindowMs);
+      await reply.code(limited ? 429 : 401).send(errorEnvelope(
+        limited ? "rate_limited" : "unauthorized",
+        limited ? "Too many failed authentication attempts" : "Invalid app token",
+        limited ? { retryable: true, retryAfterMs: authFailureWindowMs } : undefined,
+      ));
+      return;
+    }
+    try {
+      const principal = await options.accessTokens.authenticate(token);
+      if (!principal) throw new Error("Invalid app credential");
+      authenticatedPrincipals.set(request, principal);
+      authFailures.delete(failureKey);
+    } catch {
+      const limited = recordAuthFailure(authFailures, failureKey, authFailureLimit, authFailureWindowMs);
+      await reply.code(limited ? 429 : 401).send(errorEnvelope(
+        limited ? "rate_limited" : "unauthorized",
+        limited ? "Too many failed authentication attempts" : "Invalid app token",
+        limited ? { retryable: true, retryAfterMs: authFailureWindowMs } : undefined,
+      ));
+    }
+  });
+
+  app.addHook("preHandler", async (request, reply) => {
+    const scope = requiredScope(request.method, request.routeOptions.url);
+    if (!scope) return;
+    const principal = principalFromRequest(request);
+    if (!principal.scopes.includes(scope)) {
+      await reply.code(403).send(errorEnvelope("insufficient_scope", `Route requires scope ${scope}`));
     }
   });
 
@@ -143,18 +194,51 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
         error: { code: "invalid_idempotency_key", message: "Idempotency key is too long" },
       });
     }
+    const principal = principalFromRequest(request);
+    const effectiveBudget = { ...DEFAULT_RUN_BUDGET, ...(request.body.budget ?? {}) };
+    if ((principal.agentId && principal.agentId !== request.body.agent) ||
+        (principal.workspaceId && principal.workspaceId !== request.body.workspace) ||
+        (principal.budgetCeiling && !budgetWithin(effectiveBudget, principal.budgetCeiling))) {
+      return reply.code(403).send(errorEnvelope("token_binding_violation", "Run request exceeds its token binding"));
+    }
     const response = await options.manager.startRun({
       ...request.body,
       idempotencyKey,
-      principal: principalFromHeaders(request.headers),
+      principal,
     });
     return reply.code(202).send(response);
+  });
+
+  app.post<{ Body: MintRunTokenRequest }>("/v1/tokens", async (request, reply) => {
+    if (!Value.Check(MintRunTokenRequestSchema, request.body)) {
+      return reply.code(400).send(errorEnvelope("invalid_request", "Run-token body does not match the schema"));
+    }
+    try {
+      return reply.code(201).send(await options.accessTokens.mintRunToken(principalFromRequest(request), request.body));
+    } catch (error) {
+      return reply.code(403).send(errorEnvelope(
+        "token_scope_expansion",
+        errorMessage(error, "Run token request was denied"),
+      ));
+    }
+  });
+
+  app.delete<{ Params: { tokenId: string } }>("/v1/tokens/:tokenId", async (request, reply) => {
+    try {
+      const revoked = options.accessTokens.revoke(principalFromRequest(request), request.params.tokenId);
+      return revoked ?? reply.code(404).send(errorEnvelope("not_found", "Token not found"));
+    } catch (error) {
+      return reply.code(403).send(errorEnvelope(
+        "token_revoke_denied",
+        errorMessage(error, "Token revocation was denied"),
+      ));
+    }
   });
 
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId", async (request, reply) => {
     try {
       const run = await options.manager.getRun(request.params.runId);
-      return ownsRun(run, principalFromHeaders(request.headers))
+      return ownsRun(run, principalFromRequest(request))
         ? run
         : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     } catch (error) {
@@ -167,7 +251,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   app.post<{ Params: { runId: string } }>("/v1/runs/:runId/cancel", async (request, reply) => {
     try {
       const existing = await options.manager.getRun(request.params.runId);
-      if (!ownsRun(existing, principalFromHeaders(request.headers))) {
+      if (!ownsRun(existing, principalFromRequest(request))) {
         return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
       }
       return await options.manager.cancelRun(request.params.runId);
@@ -181,7 +265,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   app.post<{ Params: { runId: string }; Body: { instruction?: string } }>(
     "/v1/runs/:runId/steer",
     async (request, reply) => {
-      const principal = principalFromHeaders(request.headers);
+      const principal = principalFromRequest(request);
       try {
         const run = await options.manager.getRun(request.params.runId);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
@@ -201,7 +285,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       if (typeof request.body?.approved !== "boolean") {
         return reply.code(400).send({ error: { code: "invalid_request", message: "approved must be boolean" } });
       }
-      const principal = principalFromHeaders(request.headers);
+      const principal = principalFromRequest(request);
       try {
         const approval = await options.manager.getApproval(request.params.approvalId);
         const run = await options.manager.getRun(approval.runId);
@@ -219,7 +303,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       const startAfter = parseCursor(request.query.after);
       try {
         const run = await options.manager.getRun(request.params.runId);
-        if (!ownsRun(run, principalFromHeaders(request.headers))) {
+        if (!ownsRun(run, principalFromRequest(request))) {
           return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
         }
       } catch {
@@ -272,7 +356,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   );
 
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId/attempts", async (request, reply) => {
-    const principal = principalFromHeaders(request.headers);
+    const principal = principalFromRequest(request);
     try {
       const run = await options.manager.getRun(request.params.runId);
       return ownsRun(run, principal)
@@ -284,11 +368,11 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   });
 
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId/children", async (request, reply) => {
-    const principal = principalFromHeaders(request.headers);
+    const principal = principalFromRequest(request);
     try {
       const run = await options.manager.getRun(request.params.runId);
       return ownsRun(run, principal)
-        ? { runs: await options.manager.getChildRuns(run.id) }
+        ? { runs: (await options.manager.getChildRuns(run.id)).filter((child) => ownsRun(child, principal)) }
         : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     } catch {
       return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
@@ -300,7 +384,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     async (request, reply) => {
       try {
         const session = await options.manager.getSession(request.params.sessionId);
-        return ownsRun(session, principalFromHeaders(request.headers))
+        return ownsRun(session, principalFromRequest(request))
           ? session
           : reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
       } catch {
@@ -313,7 +397,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     "/v1/runs/:runId/artifacts",
     { bodyLimit: 24 * 1024 * 1024 },
     async (request, reply) => {
-      const principal = principalFromHeaders(request.headers);
+      const principal = principalFromRequest(request);
       try {
         const run = await options.manager.getRun(request.params.runId);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
@@ -328,8 +412,13 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   app.get<{ Params: { artifactId: string } }>(
     "/v1/artifacts/:artifactId",
     async (request, reply) => {
+      const principal = principalFromRequest(request);
       try {
-        return await options.manager.getArtifact(request.params.artifactId, principalFromHeaders(request.headers));
+        const payload = await options.manager.getArtifact(request.params.artifactId, principal);
+        const run = await options.manager.getRun(payload.record.runId);
+        return ownsRun(run, principal)
+          ? payload
+          : reply.code(404).send({ error: { code: "not_found", message: "Artifact not found" } });
       } catch {
         return reply.code(404).send({ error: { code: "not_found", message: "Artifact not found" } });
       }
@@ -340,15 +429,15 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     if (!Value.Check(CreateAgentProfileRequestSchema, request.body)) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Agent body does not match the schema" } });
     }
-    return reply.code(201).send(await options.manager.createAgent(request.body, principalFromHeaders(request.headers)));
+    return reply.code(201).send(await options.manager.createAgent(request.body, principalFromRequest(request)));
   });
 
   app.get("/v1/agents", async (request) => ({
-    agents: await options.manager.listAgents(principalFromHeaders(request.headers)),
+    agents: await options.manager.listAgents(principalFromRequest(request)),
   }));
 
   app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
-    try { return await options.manager.getAgent(request.params.agentId, principalFromHeaders(request.headers)); }
+    try { return await options.manager.getAgent(request.params.agentId, principalFromRequest(request)); }
     catch { return reply.code(404).send({ error: { code: "not_found", message: "Agent not found" } }); }
   });
 
@@ -356,15 +445,15 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     if (!Value.Check(CreateWorkspaceRequestSchema, request.body ?? {})) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Workspace body does not match the schema" } });
     }
-    return reply.code(201).send(await options.manager.createWorkspace(request.body ?? {}, principalFromHeaders(request.headers)));
+    return reply.code(201).send(await options.manager.createWorkspace(request.body ?? {}, principalFromRequest(request)));
   });
 
   app.get("/v1/workspaces", async (request) => ({
-    workspaces: await options.manager.listWorkspaces(principalFromHeaders(request.headers)),
+    workspaces: await options.manager.listWorkspaces(principalFromRequest(request)),
   }));
 
   app.get<{ Params: { workspaceId: string } }>("/v1/workspaces/:workspaceId", async (request, reply) => {
-    try { return await options.manager.getWorkspace(request.params.workspaceId, principalFromHeaders(request.headers)); }
+    try { return await options.manager.getWorkspace(request.params.workspaceId, principalFromRequest(request)); }
     catch { return reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } }); }
   });
 
@@ -373,7 +462,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     async (request, reply) => {
       try {
         const session = await options.manager.getSession(request.params.sessionId);
-        if (!ownsRun(session, principalFromHeaders(request.headers))) {
+        if (!ownsRun(session, principalFromRequest(request))) {
           return reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
         }
         return { messages: await options.manager.getSessionMessages(request.params.sessionId) };
@@ -394,13 +483,10 @@ function isPublishArtifactRequest(value: unknown): value is PublishArtifactReque
     typeof record.dataBase64 === "string" && record.dataBase64.length <= 24 * 1024 * 1024;
 }
 
-function principalFromHeaders(headers: Record<string, unknown>): InternalPrincipal {
-  return {
-    appId: "app_local",
-    tenantId: stringHeader(headers["x-lite-tenant-id"]) ?? "tenant_local",
-    userId: stringHeader(headers["x-lite-user-id"]) ?? "user_local",
-    scopes: ["runs:create", "runs:read", "runs:cancel", "events:read"],
-  };
+function principalFromRequest(request: FastifyRequest): InternalPrincipal {
+  const principal = authenticatedPrincipals.get(request);
+  if (!principal) throw new Error("Authenticated principal is unavailable");
+  return principal;
 }
 
 function stringHeader(value: unknown): string | undefined {
@@ -415,23 +501,87 @@ function parseCursor(value: string | undefined): number {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-function constantTimeBearerMatch(header: string | undefined, expected: string): boolean {
-  const actual = header?.startsWith("Bearer ") ? header.slice(7) : "";
-  const actualBytes = Buffer.from(actual);
-  const expectedBytes = Buffer.from(expected);
-  if (actualBytes.length !== expectedBytes.length) {
+function bearerToken(header: string | undefined): string | undefined {
+  if (!header?.startsWith("Bearer ")) return undefined;
+  const token = header.slice(7);
+  return token.length >= 16 && token.length <= 4_096 && !/[\r\n\0]/.test(token) ? token : undefined;
+}
+
+function isAuthRateLimited(
+  failures: Map<string, { count: number; startedAt: number }>,
+  key: string,
+  limit: number,
+  windowMs: number,
+): boolean {
+  const current = failures.get(key);
+  if (!current) return false;
+  if (Date.now() - current.startedAt >= windowMs) {
+    failures.delete(key);
     return false;
   }
-  return timingSafeEqual(actualBytes, expectedBytes);
+  return current.count >= limit;
+}
+
+function recordAuthFailure(
+  failures: Map<string, { count: number; startedAt: number }>,
+  key: string,
+  limit: number,
+  windowMs: number,
+): boolean {
+  const now = Date.now();
+  const current = failures.get(key);
+  const next = !current || now - current.startedAt >= windowMs
+    ? { count: 1, startedAt: now }
+    : { count: current.count + 1, startedAt: current.startedAt };
+  failures.set(key, next);
+  return next.count >= limit;
+}
+
+function requiredScope(method: string, route: string | undefined): string | undefined {
+  if (!route?.startsWith("/v1/")) return undefined;
+  const key = `${method.toUpperCase()} ${route}`;
+  const scopes: Record<string, string> = {
+    "POST /v1/tokens": "tokens:mint",
+    "DELETE /v1/tokens/:tokenId": "tokens:revoke",
+    "POST /v1/runs": "runs:create",
+    "GET /v1/runs/:runId": "runs:read",
+    "POST /v1/runs/:runId/cancel": "runs:cancel",
+    "POST /v1/runs/:runId/steer": "runs:steer",
+    "GET /v1/runs/:runId/events": "events:read",
+    "GET /v1/runs/:runId/attempts": "runs:read",
+    "GET /v1/runs/:runId/children": "runs:read",
+    "POST /v1/approvals/:approvalId": "approvals:resolve",
+    "GET /v1/sessions/:sessionId": "sessions:read",
+    "GET /v1/sessions/:sessionId/messages": "sessions:read",
+    "POST /v1/runs/:runId/artifacts": "artifacts:publish",
+    "GET /v1/artifacts/:artifactId": "artifacts:read",
+    "POST /v1/agents": "agents:write",
+    "GET /v1/agents": "agents:read",
+    "GET /v1/agents/:agentId": "agents:read",
+    "POST /v1/workspaces": "workspaces:write",
+    "GET /v1/workspaces": "workspaces:read",
+    "GET /v1/workspaces/:workspaceId": "workspaces:read",
+  };
+  return scopes[key] ?? "route:unconfigured";
+}
+
+function budgetWithin(requested: Record<string, number>, ceiling: Record<string, number>): boolean {
+  return Object.entries(requested).every(([key, value]) => ceiling[key] === undefined || value <= ceiling[key]);
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function ownsRun(
-  run: { appId: string; tenantId: string; userId: string },
+  run: { appId: string; tenantId: string; userId: string; agentId?: string; workspaceId?: string },
   principal: InternalPrincipal,
 ): boolean {
   return (
     run.appId === principal.appId &&
     run.tenantId === principal.tenantId &&
-    run.userId === principal.userId
+    run.userId === principal.userId &&
+    (!principal.agentId || run.agentId === principal.agentId) &&
+    (!principal.workspaceId || run.workspaceId === principal.workspaceId)
   );
 }

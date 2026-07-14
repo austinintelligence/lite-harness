@@ -39,7 +39,8 @@ const instanceLock = new ManagerInstanceLock({
   protocolVersion: LITE_IPC_PROTOCOL_VERSION,
 });
 await instanceLock.acquire();
-const store = new SqliteRunStore(join(dataDir, "lite-harness.db"));
+const databasePath = join(dataDir, "lite-harness.db");
+const store = new SqliteRunStore(databasePath);
 const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
 const brokeredRuntime = new BrokeredToolRuntime(resolveRuntime(store, configuration.runtime));
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);

@@ -17,6 +17,7 @@ temp/
 reports/
 artifacts/
 evidence/m1/
+evidence/m2/
 evidence/runs/
 test-results/
 playwright-report/

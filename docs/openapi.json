@@ -332,6 +332,145 @@
         "required": [
           "error"
         ]
+      },
+      "MintRunToken": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "scopes": {
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "ttlSeconds": {
+            "minimum": 60,
+            "maximum": 3600,
+            "type": "integer"
+          },
+          "agentId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "workspaceId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "budgetCeiling": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "maxTurns": {
+                "minimum": 1,
+                "maximum": 128,
+                "type": "integer"
+              },
+              "maxToolCalls": {
+                "minimum": 0,
+                "maximum": 10000,
+                "type": "integer"
+              },
+              "maxInputTokens": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "maxOutputTokens": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "maxCostUsd": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "totalTimeoutMs": {
+                "minimum": 100,
+                "maximum": 86400000,
+                "type": "integer"
+              },
+              "modelIdleTimeoutMs": {
+                "minimum": 100,
+                "maximum": 3600000,
+                "type": "integer"
+              },
+              "commandTimeoutMs": {
+                "minimum": 100,
+                "maximum": 3600000,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "scopes"
+        ]
+      },
+      "MintRunTokenResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "token": {
+            "minLength": 16,
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "tokenId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scopes": {
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "replayPolicy": {
+            "const": "resource_bound_multi_use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "tokenId",
+          "expiresAt",
+          "scopes",
+          "replayPolicy"
+        ]
+      },
+      "RevokeTokenResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "tokenId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "revoked": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tokenId",
+          "revoked"
+        ]
       }
     }
   },
@@ -767,6 +906,102 @@
           },
           "404": {
             "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens": {
+      "post": {
+        "summary": "Mint a short-lived resource-bound run token",
+        "security": [
+          {
+            "appToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MintRunToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Run token minted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintRunTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope or resource binding expansion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{tokenId}": {
+      "delete": {
+        "summary": "Revoke a run token owned by the authenticated app",
+        "security": [
+          {
+            "appToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run token revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeTokenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
             "content": {
               "application/json": {
                 "schema": {

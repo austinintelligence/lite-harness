@@ -17,8 +17,11 @@ export interface ValidatedGatewayConfiguration {
   socketPath: string;
   internalToken: string;
   appToken: string;
+  bootstrapIdentity: { appId: string; tenantId: string; userId: string };
   host: "127.0.0.1" | "::1";
   port: number;
+  authFailureLimit: number;
+  authFailureWindowMs: number;
 }
 
 export interface ValidatedLauncherConfiguration {
@@ -60,8 +63,15 @@ export function loadGatewayConfiguration(
     socketPath: resolveSocketPath(environment, dataDir, platform),
     internalToken: requiredSecret(environment, "LITE_HARNESS_INTERNAL_TOKEN"),
     appToken: requiredSecret(environment, "LITE_HARNESS_APP_TOKEN"),
+    bootstrapIdentity: {
+      appId: optionalSlug(environment, "LITE_HARNESS_APP_ID", "app_local"),
+      tenantId: optionalSlug(environment, "LITE_HARNESS_TENANT_ID", "tenant_local"),
+      userId: optionalSlug(environment, "LITE_HARNESS_USER_ID", "user_local"),
+    },
     host: rawHost,
     port: boundedInteger(environment.LITE_HARNESS_PORT, "LITE_HARNESS_PORT", 1, 65_535, 3_210),
+    authFailureLimit: boundedInteger(environment.LITE_HARNESS_AUTH_FAILURE_LIMIT, "LITE_HARNESS_AUTH_FAILURE_LIMIT", 1, 10_000, 20),
+    authFailureWindowMs: boundedInteger(environment.LITE_HARNESS_AUTH_FAILURE_WINDOW_MS, "LITE_HARNESS_AUTH_FAILURE_WINDOW_MS", 1_000, 3_600_000, 60_000),
   });
 }
 
@@ -113,6 +123,12 @@ function requiredSecret(environment: NodeJS.ProcessEnv, name: string): string {
 function requiredIdentifier(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
   if (!value || !/^[a-z][a-z0-9-]{0,63}$/.test(value)) throw new Error(`${name} is required and must be a lowercase identifier`);
+  return value;
+}
+
+function optionalSlug(environment: NodeJS.ProcessEnv, name: string, fallback: string): string {
+  const value = environment[name]?.trim() || fallback;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value)) throw new Error(`${name} must be a bounded identifier`);
   return value;
 }
 

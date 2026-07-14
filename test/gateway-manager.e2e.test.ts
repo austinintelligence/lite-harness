@@ -12,6 +12,7 @@ import { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrat
 import { buildGatewayServer } from "../apps/gateway/src/server.js";
 import type { ManagerTransport } from "../apps/gateway/src/server.js";
 import { buildManagerServer } from "../apps/manager/src/server.js";
+import type { InternalPrincipal, MintRunTokenRequest } from "@lite-harness/contracts";
 
 const cleanup: Array<() => Promise<void> | void> = [];
 
@@ -25,7 +26,9 @@ describe("Gateway to Manager vertical slice", () => {
   it("creates an idempotent durable run through local IPC and streams its events", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-harness-test-"));
     const internalToken = "internal-test-token";
-    const appToken = "app-test-token";
+    const appToken = "app-test-token-primary";
+    const otherAppToken = "app-test-token-secondary";
+    const mintedPrincipals = new Map<string, InternalPrincipal>();
     const store = new SqliteRunStore(join(directory, "test.db"));
     const runtime = new InMemoryToolRuntime();
     const artifactStore = new LocalArtifactStore(join(directory, "artifacts"));
@@ -45,6 +48,51 @@ describe("Gateway to Manager vertical slice", () => {
       runService: service, internalToken, artifactStore, integrationStore, integrationRouter,
       webhookSecret: async (accountId) => accountId === "primary" ? Buffer.from("webhook-secret") : undefined,
     });
+    const accessTokens = {
+      authenticate: async (token: string): Promise<InternalPrincipal | undefined> => {
+        const minted = mintedPrincipals.get(token);
+        if (minted) return minted;
+        if (token !== appToken && token !== otherAppToken) return undefined;
+        return {
+          appId: "app_local",
+          tenantId: token === appToken ? "tenant-a" : "tenant-b",
+          userId: "user-a",
+          scopes: [
+            "tokens:mint", "tokens:revoke", "runs:create", "runs:read", "runs:cancel", "runs:steer", "events:read",
+            "approvals:resolve", "sessions:read", "artifacts:publish", "artifacts:read",
+            "agents:write", "agents:read", "workspaces:write", "workspaces:read",
+          ],
+          tokenType: "app" as const,
+        };
+      },
+      mintRunToken: async (principal: InternalPrincipal, request: MintRunTokenRequest) => {
+        const token = `lhr_fixture-token-${mintedPrincipals.size}`;
+        const tokenId = `tok_fixture_${mintedPrincipals.size}`;
+        mintedPrincipals.set(token, {
+          ...principal,
+          tokenId,
+          tokenType: "run",
+          scopes: request.scopes,
+          ...(request.agentId ? { agentId: request.agentId } : {}),
+          ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
+          ...(request.budgetCeiling ? { budgetCeiling: request.budgetCeiling } : {}),
+        });
+        return {
+          token,
+          tokenId,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          scopes: request.scopes,
+          replayPolicy: "resource_bound_multi_use" as const,
+        };
+      },
+      revoke: (principal: InternalPrincipal, tokenId: string) => {
+        const entry = [...mintedPrincipals.entries()].find(([, value]) => value.tokenId === tokenId);
+        if (!entry || entry[1].appId !== principal.appId || entry[1].tenantId !== principal.tenantId ||
+            entry[1].userId !== principal.userId) return undefined;
+        mintedPrincipals.delete(entry[0]);
+        return { tokenId, revoked: true as const };
+      },
+    };
     const managerTransport: ManagerTransport = {
       health: async () => ({
         ok: true,
@@ -147,10 +195,7 @@ describe("Gateway to Manager vertical slice", () => {
         return response.json<{ duplicate: boolean; runId?: string }>();
       },
     };
-    const gateway = buildGatewayServer({
-      manager: managerTransport,
-      appToken,
-    });
+    const gateway = buildGatewayServer({ manager: managerTransport, accessTokens });
 
     cleanup.push(async () => {
       await gateway.close();
@@ -228,7 +273,7 @@ describe("Gateway to Manager vertical slice", () => {
     expect(stream.body).toContain("event: tool.call.completed");
     expect(stream.body).toContain("event: run.succeeded");
 
-    const hiddenFromOtherTenant = await gateway.inject({
+    const spoofedTenantHeader = await gateway.inject({
       method: "GET",
       url: `/v1/runs/${firstBody.runId}`,
       headers: {
@@ -237,7 +282,62 @@ describe("Gateway to Manager vertical slice", () => {
         "x-lite-user-id": "user-a",
       },
     });
+    expect(spoofedTenantHeader.statusCode).toBe(200);
+    const hiddenFromOtherTenant = await gateway.inject({
+      method: "GET",
+      url: `/v1/runs/${firstBody.runId}`,
+      headers: { authorization: `Bearer ${otherAppToken}` },
+    });
     expect(hiddenFromOtherTenant.statusCode).toBe(404);
+
+    const mintLimited = await gateway.inject({
+      method: "POST",
+      url: "/v1/tokens",
+      headers: { authorization: `Bearer ${appToken}` },
+      payload: {
+        scopes: ["runs:create"],
+        agentId: "coder",
+        workspaceId: "workspace-a",
+        budgetCeiling: { maxTurns: 2 },
+      },
+    });
+    expect(mintLimited.statusCode).toBe(201);
+    const limitedToken = mintLimited.json<{ token: string }>().token;
+    expect((await gateway.inject({
+      method: "GET",
+      url: `/v1/runs/${firstBody.runId}`,
+      headers: { authorization: `Bearer ${limitedToken}` },
+    })).statusCode).toBe(403);
+    expect((await gateway.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: `Bearer ${limitedToken}` },
+      payload: { agent: "coder", workspace: "other-workspace", input: "must fail", budget: { maxTurns: 2 } },
+    })).statusCode).toBe(403);
+    expect((await gateway.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: `Bearer ${limitedToken}` },
+      payload: { agent: "coder", workspace: "workspace-a", input: "must exceed default ceiling" },
+    })).statusCode).toBe(403);
+    const boundCreate = await gateway.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: `Bearer ${limitedToken}`, "idempotency-key": "bound-run" },
+      payload: { agent: "coder", workspace: "workspace-a", input: "bounded run", budget: { maxTurns: 2 } },
+    });
+    expect(boundCreate.statusCode).toBe(202);
+    await expect(service.waitForTerminal(boundCreate.json<{ runId: string }>().runId)).resolves.toMatchObject({ status: "SUCCEEDED" });
+    expect((await gateway.inject({
+      method: "DELETE",
+      url: `/v1/tokens/${mintLimited.json<{ tokenId: string }>().tokenId}`,
+      headers: { authorization: `Bearer ${appToken}` },
+    })).statusCode).toBe(200);
+    expect((await gateway.inject({
+      method: "GET",
+      url: `/v1/runs/${firstBody.runId}`,
+      headers: { authorization: `Bearer ${limitedToken}` },
+    })).statusCode).toBe(401);
 
     const incompatibleIpc = await manager.inject({
       method: "GET",
@@ -292,7 +392,7 @@ describe("Gateway to Manager vertical slice", () => {
       method: "GET",
       url: `/v1/artifacts/${artifactId}`,
       headers: {
-        authorization: `Bearer ${appToken}`,
+        authorization: `Bearer ${otherAppToken}`,
         "x-lite-tenant-id": "tenant-b",
         "x-lite-user-id": "user-a",
       },
@@ -342,9 +442,36 @@ describe("Gateway to Manager vertical slice", () => {
         throw new Error("must not be called");
       },
     } as unknown as ManagerTransport;
-    const gateway = buildGatewayServer({ manager: fakeManager, appToken: "secret" });
+    const gateway = buildGatewayServer({ manager: fakeManager, accessTokens: rejectingAccessTokens() });
     cleanup.push(() => gateway.close());
     const response = await gateway.inject({ method: "GET", url: "/v1/runs/missing" });
     expect(response.statusCode).toBe(401);
   });
+
+  it("rate-limits repeated public authentication failures", async () => {
+    const fakeManager = {} as unknown as ManagerTransport;
+    const gateway = buildGatewayServer({
+      manager: fakeManager,
+      accessTokens: rejectingAccessTokens(),
+      authFailureLimit: 2,
+      authFailureWindowMs: 60_000,
+    });
+    cleanup.push(() => gateway.close());
+    expect((await gateway.inject({
+      method: "GET", url: "/v1/runs/missing", headers: { authorization: "Bearer invalid-token-value" },
+    })).statusCode).toBe(401);
+    const limited = await gateway.inject({
+      method: "GET", url: "/v1/runs/missing", headers: { authorization: "Bearer invalid-token-value" },
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toMatchObject({ error: { version: 1, code: "rate_limited", retryable: true } });
+  });
 });
+
+function rejectingAccessTokens() {
+  return {
+    authenticate: async () => undefined,
+    mintRunToken: async () => { throw new Error("must not be called"); },
+    revoke: () => undefined,
+  };
+}

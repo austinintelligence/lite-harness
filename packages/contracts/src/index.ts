@@ -93,7 +93,40 @@ export interface InternalPrincipal {
   tenantId: string;
   userId: string;
   scopes: string[];
+  tokenId?: string;
+  tokenType?: "app" | "run";
+  replayPolicy?: "multi_use" | "resource_bound_multi_use";
+  agentId?: string;
+  workspaceId?: string;
+  budgetCeiling?: Partial<RunBudget>;
 }
+
+export const MintRunTokenRequestSchema = Type.Object({
+  scopes: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 64, uniqueItems: true }),
+  ttlSeconds: Type.Optional(Type.Integer({ minimum: 60, maximum: 3_600 })),
+  agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  workspaceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  budgetCeiling: Type.Optional(RunBudgetOverridesSchema),
+}, { additionalProperties: false });
+
+export type MintRunTokenRequest = Static<typeof MintRunTokenRequestSchema>;
+
+export const MintRunTokenResponseSchema = Type.Object({
+  token: Type.String({ minLength: 16, maxLength: 4_096 }),
+  tokenId: Type.String({ minLength: 1, maxLength: 128 }),
+  expiresAt: Type.String({ format: "date-time" }),
+  scopes: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 64, uniqueItems: true }),
+  replayPolicy: Type.Literal("resource_bound_multi_use"),
+}, { additionalProperties: false });
+
+export type MintRunTokenResponse = Static<typeof MintRunTokenResponseSchema>;
+
+export const RevokeTokenResponseSchema = Type.Object({
+  tokenId: Type.String({ minLength: 1, maxLength: 128 }),
+  revoked: Type.Literal(true),
+}, { additionalProperties: false });
+
+export type RevokeTokenResponse = Static<typeof RevokeTokenResponseSchema>;
 
 export interface ToolDefinition {
   name: string;

@@ -16,13 +16,14 @@ import type {
   SessionRecord,
   PublishArtifactRequest,
   ErrorEnvelope,
+  MintRunTokenRequest,
+  MintRunTokenResponse,
+  RevokeTokenResponse,
 } from "@lite-harness/contracts";
 
 export interface LiteHarnessClientOptions {
   baseUrl: string;
   token: string;
-  tenantId?: string;
-  userId?: string;
   fetch?: typeof globalThis.fetch;
 }
 
@@ -53,6 +54,18 @@ export class LiteHarnessClient {
       headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
       body: JSON.stringify(request),
     });
+  }
+
+  mintRunToken(request: MintRunTokenRequest): Promise<MintRunTokenResponse> {
+    return this.#json<MintRunTokenResponse>("/v1/tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  revokeToken(tokenId: string): Promise<RevokeTokenResponse> {
+    return this.#json<RevokeTokenResponse>(`/v1/tokens/${encodeURIComponent(tokenId)}`, { method: "DELETE" });
   }
 
   getRun(runId: string): Promise<RunRecord> {
@@ -203,11 +216,7 @@ export class LiteHarnessClient {
   }
 
   #headers(): Record<string, string> {
-    return {
-      authorization: `Bearer ${this.options.token}`,
-      ...(this.options.tenantId ? { "x-lite-tenant-id": this.options.tenantId } : {}),
-      ...(this.options.userId ? { "x-lite-user-id": this.options.userId } : {}),
-    };
+    return { authorization: `Bearer ${this.options.token}` };
   }
 
   #url(path: string): string {
@@ -242,4 +251,7 @@ export type {
   SessionMessageRecord,
   SessionRecord,
   PublishArtifactRequest,
+  MintRunTokenRequest,
+  MintRunTokenResponse,
+  RevokeTokenResponse,
 } from "@lite-harness/contracts";

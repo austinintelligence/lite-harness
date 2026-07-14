@@ -17,14 +17,16 @@ class Response(io.BytesIO):
 
 class ClientTests(unittest.TestCase):
     @patch("lite_harness.client.urlopen")
-    def test_create_run_sends_identity_and_idempotency(self, open_url):
+    def test_create_run_sends_credential_and_idempotency_without_identity_headers(self, open_url):
         open_url.return_value = Response(json.dumps({"runId": "run_1", "status": "ACCEPTED"}).encode())
-        client = LiteHarnessClient("http://127.0.0.1:3210", "token", tenant_id="tenant", user_id="user")
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
         result = client.create_run(agent="coder", workspace="demo", input="work", idempotency_key="once")
         request = open_url.call_args.args[0]
         self.assertEqual(result["runId"], "run_1")
         self.assertEqual(request.headers["Idempotency-key"], "once")
-        self.assertEqual(request.headers["X-lite-tenant-id"], "tenant")
+        self.assertEqual(request.headers["Authorization"], "Bearer token")
+        self.assertNotIn("X-lite-tenant-id", request.headers)
+        self.assertNotIn("X-lite-user-id", request.headers)
 
     @patch("lite_harness.client.urlopen")
     def test_replays_sse_data_frames(self, open_url):

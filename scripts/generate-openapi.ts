@@ -4,6 +4,8 @@ import {
   CreateAgentProfileRequestSchema,
   CreateRunRequestSchema,
   CreateWorkspaceRequestSchema,
+  ErrorEnvelopeSchema,
+  LITE_API_VERSION,
   RunBudgetOverridesSchema,
 } from "@lite-harness/contracts";
 
@@ -14,10 +16,24 @@ document["x-lite-generated-from-contracts"] = {
   source: "packages/contracts/src/index.ts",
   version: 1,
 };
+document["x-lite-api-version"] = LITE_API_VERSION;
 document.components.schemas.CreateRun = clone(CreateRunRequestSchema);
 document.components.schemas.RunBudgetOverrides = clone(RunBudgetOverridesSchema);
 document.components.schemas.CreateAgent = clone(CreateAgentProfileRequestSchema);
 document.components.schemas.CreateWorkspace = clone(CreateWorkspaceRequestSchema);
+document.components.schemas.ErrorEnvelope = clone(ErrorEnvelopeSchema);
+
+for (const pathItem of Object.values(document.paths) as Array<Record<string, any>>) {
+  for (const operation of Object.values(pathItem) as Array<Record<string, any>>) {
+    if (!operation || typeof operation !== "object" || !operation.responses) continue;
+    for (const [status, response] of Object.entries(operation.responses) as Array<[string, Record<string, any>]>) {
+      if (!/^[45]/.test(status)) continue;
+      response.content ??= {};
+      response.content["application/json"] ??= {};
+      response.content["application/json"].schema = { $ref: "#/components/schemas/ErrorEnvelope" };
+    }
+  }
+}
 
 const gateway = readFileSync(resolve(root, "apps", "gateway", "src", "server.ts"), "utf8");
 const publicRoutes = new Set(

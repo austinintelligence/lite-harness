@@ -16,7 +16,9 @@ const [requestedCommand, ...args] = process.argv.slice(2);
 if (!requestedCommand) throw new Error("Usage: node scripts/with-hermes-model.mjs <command> [...args]");
 const command = requestedCommand === "node" ? process.execPath : requestedCommand;
 const child = spawn(command, args, {
-  cwd: process.cwd(), env: { ...process.env, ...configured }, stdio: "inherit", shell: false, windowsHide: true,
+  cwd: process.cwd(),
+  env: { ...process.env, LITE_HARNESS_RUNTIME: process.env.LITE_HARNESS_RUNTIME ?? "fake", ...configured },
+  stdio: "inherit", shell: false, windowsHide: true,
 });
 child.once("error", (error) => { throw error; });
 child.once("exit", (code, signal) => {

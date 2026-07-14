@@ -1,5 +1,5 @@
-import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence, type IntervalTrigger } from "@lite-harness/automation";
 import {
@@ -11,7 +11,7 @@ import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegate
 import {
   DeliveryCoordinator, InboundRunRouter, SignedAppCallbackClient, SqliteIntegrationStore, WebhookCallbackConnector, composeInboundPrompt,
 } from "@lite-harness/integrations";
-import { isTerminalRunStatus, type InternalPrincipal } from "@lite-harness/contracts";
+import { LITE_IPC_PROTOCOL_VERSION, isTerminalRunStatus, type InternalPrincipal } from "@lite-harness/contracts";
 import type { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
 import {
@@ -28,16 +28,20 @@ import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, ty
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore } from "@lite-harness/workspace";
+import { ManagerInstanceLock } from "@lite-harness/operations";
 import { buildManagerServer } from "./server.js";
 
-const dataDir = process.env.LITE_HARNESS_DATA_DIR ?? join(process.cwd(), ".lite-harness");
-const socketPath =
-  process.env.LITE_HARNESS_MANAGER_SOCKET ??
-  (process.platform === "win32" ? "\\\\.\\pipe\\lite-harness-manager" : join(dataDir, "manager.sock"));
-const internalToken = requiredEnvironment("LITE_HARNESS_INTERNAL_TOKEN");
+const configuration = loadManagerConfiguration();
+const { dataDir, socketPath, internalToken } = configuration;
+const instanceLock = new ManagerInstanceLock({
+  dataDir,
+  socketPath,
+  protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+});
+await instanceLock.acquire();
 const store = new SqliteRunStore(join(dataDir, "lite-harness.db"));
 const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
-const brokeredRuntime = new BrokeredToolRuntime(resolveRuntime(store));
+const brokeredRuntime = new BrokeredToolRuntime(resolveRuntime(store, configuration.runtime));
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
@@ -45,7 +49,7 @@ const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
 const memoryStore = process.env.LITE_HARNESS_ENABLE_MEMORY === "true"
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
-const service = new RunService(store, new AgentRunner(resolveModelGateway(), runtime), {
+const service = new RunService(store, new AgentRunner(resolveModelGateway(configuration.provider), runtime), {
   requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
     ? () => true
     : () => false,
@@ -72,7 +76,7 @@ if (reconciled > 0) {
   process.stderr.write(`lite-harness manager: reconciled ${reconciled} interrupted run(s)\n`);
 }
 const app = buildManagerServer({
-  runService: service, internalToken, artifactStore,
+  runService: service, internalToken, instanceId: instanceLock.owner.instanceId, artifactStore,
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
     const secret = process.env.LITE_HARNESS_WEBHOOK_SECRET;
@@ -89,12 +93,8 @@ app.addHook("onClose", async () => {
   memoryStore?.close();
   integrationStore?.close();
   store.close();
-  if (process.platform !== "win32") rmSync(socketPath, { force: true });
+  await instanceLock.release();
 });
-
-if (process.platform !== "win32") {
-  rmSync(socketPath, { force: true });
-}
 
 async function configureBrokeredTools(
   runtime: BrokeredToolRuntime,
@@ -264,11 +264,16 @@ function toolBudget(value: Record<string, unknown>): Record<string, number> {
   return output;
 }
 
-await app.listen({ path: socketPath });
+try {
+  await app.listen({ path: socketPath });
+  await instanceLock.secureEndpoint();
+} catch (error) {
+  await instanceLock.release();
+  throw error;
+}
 installShutdownHandlers(app);
 
-function resolveRuntime(runStore: SqliteRunStore): ToolRuntime {
-  const kind = process.env.LITE_HARNESS_RUNTIME ?? "fake";
+function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): ToolRuntime {
   if (kind === "fake") {
     process.stderr.write("lite-harness manager: using development in-memory tool runtime\n");
     return new InMemoryToolRuntime();
@@ -287,8 +292,7 @@ function resolveRuntime(runStore: SqliteRunStore): ToolRuntime {
   });
 }
 
-function resolveModelGateway(): ModelGateway {
-  const provider = process.env.LITE_HARNESS_PROVIDER ?? "fake";
+function resolveModelGateway(provider: string): ModelGateway {
   if (provider === "fake") return new FakeModelGateway();
 
   if (provider === "codex") {

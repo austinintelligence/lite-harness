@@ -6,8 +6,14 @@ import type {
   InternalStartRunRequest,
   InternalCreateAgentProfileRequest,
   InternalCreateWorkspaceRequest,
+  ManagerHealth,
 } from "@lite-harness/contracts";
-import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
+import {
+  DEFAULT_RUN_BUDGET,
+  LITE_IPC_PROTOCOL_VERSION,
+  LITE_IPC_VERSION_HEADER,
+  errorEnvelope,
+} from "@lite-harness/contracts";
 import { randomUUID } from "node:crypto";
 import { RunService } from "@lite-harness/control-plane";
 import type { LocalArtifactStore } from "@lite-harness/workspace";
@@ -17,6 +23,7 @@ import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
 export interface ManagerServerOptions {
   runService: RunService;
   internalToken: string;
+  instanceId?: string;
   artifactStore?: LocalArtifactStore;
   integrationRouter?: InboundRunRouter;
   integrationStore?: SqliteIntegrationStore;
@@ -28,17 +35,55 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   if (!options.internalToken.trim()) throw new Error("Manager IPC token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
 
+  app.addHook("preSerialization", async (_request, reply, payload) => {
+    if (reply.statusCode < 400 || !payload || typeof payload !== "object" || !("error" in payload)) return payload;
+    const error = (payload as { error?: unknown }).error;
+    if (!error || typeof error !== "object") return payload;
+    const record = error as Record<string, unknown>;
+    if (record.version === 1) return payload;
+    return errorEnvelope(
+      typeof record.code === "string" ? record.code : "ipc_request_failed",
+      typeof record.message === "string" ? record.message : "Manager request failed",
+      { retryable: record.retryable === true },
+    );
+  });
+
+  app.setErrorHandler((error, _request, reply) => {
+    const caught = error instanceof Error ? error : new Error("Unknown Manager error");
+    const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
+    const status = typeof statusCode === "number" && statusCode >= 400 && statusCode < 500
+      ? statusCode
+      : 500;
+    return reply.code(status).send(errorEnvelope(
+      status === 500 ? "internal_error" : "invalid_request",
+      status === 500 ? "Internal Manager error" : caught.message,
+    ));
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     if (request.url === "/healthz") {
       return;
     }
+    if (request.headers[LITE_IPC_VERSION_HEADER] !== LITE_IPC_PROTOCOL_VERSION) {
+      await reply.code(426).send(errorEnvelope(
+        "ipc_version_mismatch",
+        `Manager requires IPC protocol ${LITE_IPC_PROTOCOL_VERSION}`,
+        { details: { supported: [LITE_IPC_PROTOCOL_VERSION] } },
+      ));
+      return;
+    }
     if (request.headers["x-lite-internal-token"] !== options.internalToken) {
-      await reply.code(401).send({ error: { code: "unauthorized", message: "Invalid IPC token" } });
+      await reply.code(401).send(errorEnvelope("unauthorized", "Invalid IPC token"));
     }
   });
 
-  app.get("/healthz", async () => ({
-    ok: true, role: "manager", uptimeSeconds: Math.floor(process.uptime()), rssBytes: process.memoryUsage().rss,
+  app.get("/healthz", async (): Promise<ManagerHealth> => ({
+    ok: true,
+    role: "manager",
+    protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+    instanceId: options.instanceId ?? "embedded",
+    uptimeSeconds: Math.floor(process.uptime()),
+    rssBytes: process.memoryUsage().rss,
   }));
 
   app.post<{ Params: { accountId: string }; Body: { envelope?: unknown; signature?: string } }>(

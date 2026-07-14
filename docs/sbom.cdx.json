@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:feef9d51-bcfe-4035-a68c-988fa29bb525",
+  "serialNumber": "urn:uuid:da6c6f2e-22d5-4f99-aa83-35e949540f1d",
   "version": 1,
   "metadata": {
     "component": {
@@ -319,6 +319,20 @@
       "version": "0.0.0",
       "bom-ref": "@lite-harness/cli-app@0.0.0",
       "purl": "pkg:npm/%40lite-harness/cli-app@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/config",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/config@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/config@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/config",
+      "version": "link:../../packages/config",
+      "bom-ref": "@lite-harness/config@link:../../packages/config",
+      "purl": "pkg:npm/%40lite-harness/config@link%3A..%2F..%2Fpackages%2Fconfig"
     },
     {
       "type": "library",

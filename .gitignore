@@ -16,6 +16,8 @@ tmp/
 temp/
 reports/
 artifacts/
+evidence/m1/
+evidence/runs/
 test-results/
 playwright-report/
 blob-report/

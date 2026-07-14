@@ -26,8 +26,18 @@ for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
     if (!defect.regression?.path || !existsSync(resolve(root, defect.regression.path))) failures.push(`${defect.id} closed without a regression test file`);
     if (defect.regression?.result !== "pass") failures.push(`${defect.id} closed without a passing regression`);
     const evidence = defect.regression?.evidenceArtifact;
-    if (!evidence?.path || !existsSync(resolve(root, evidence.path)) || evidence.commit !== head || evidence.skips !== 0) {
+    if (!evidence?.path || !existsSync(resolve(root, evidence.path))) {
       failures.push(`${defect.id} closed without current zero-skip evidence`);
+    } else {
+      try {
+        const document = JSON.parse(readFileSync(resolve(root, evidence.path), "utf8"));
+        if (document.commit !== head || document.result !== "pass" || document.skips !== 0 ||
+            !Array.isArray(document.testIds) || !document.testIds.includes(defect.regression.testId)) {
+          failures.push(`${defect.id} closed without current zero-skip evidence`);
+        }
+      } catch {
+        failures.push(`${defect.id} regression evidence is not valid JSON`);
+      }
     }
     if (defect.blockers?.length) failures.push(`${defect.id} closed with blockers`);
   }

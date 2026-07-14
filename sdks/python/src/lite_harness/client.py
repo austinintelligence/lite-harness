@@ -10,9 +10,22 @@ from urllib.request import Request, urlopen
 
 
 class LiteHarnessError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        *,
+        code: str = "request_failed",
+        retryable: bool = False,
+        retry_after_ms: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
+        self.retryable = retryable
+        self.retry_after_ms = retry_after_ms
+        self.details = details
 
 
 class LiteHarnessClient:
@@ -126,7 +139,16 @@ class LiteHarnessClient:
     def _http_error(error: HTTPError) -> LiteHarnessError:
         try:
             payload = json.loads(error.read())
-            message = payload.get("error", {}).get("message", f"HTTP {error.code}")
+            detail = payload.get("error", {})
+            if detail.get("version") != 1:
+                raise ValueError("unsupported error envelope")
+            return LiteHarnessError(
+                detail.get("message", f"HTTP {error.code}"),
+                error.code,
+                code=detail.get("code", "request_failed"),
+                retryable=detail.get("retryable", False),
+                retry_after_ms=detail.get("retryAfterMs"),
+                details=detail.get("details"),
+            )
         except Exception:
-            message = f"HTTP {error.code}"
-        return LiteHarnessError(message, error.code)
+            return LiteHarnessError(f"HTTP {error.code}", error.code, code="invalid_error_response")

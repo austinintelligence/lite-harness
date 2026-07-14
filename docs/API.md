@@ -27,9 +27,19 @@ these claims from trusted app identity rather than accepting arbitrary headers.
 - `POST /v1/workspaces` / `GET /v1/workspaces` - create and list managed workspaces
 - `GET /v1/workspaces/{workspaceId}` - get an owned workspace
 
-Errors use `{ "error": { "code": "...", "message": "..." } }`. Resource
-ownership failures use 404. Event cursors are per-run monotonically increasing
-integers; reconnect with the last received sequence.
+Errors use the versioned envelope `{ "error": { "version": 1, "code": "...",
+"message": "...", "retryable": false } }`, with optional `retryAfterMs` and
+bounded `details`. Both SDKs preserve those fields in `LiteHarnessError`.
+Resource ownership failures use 404. Event cursors are per-run monotonically
+increasing integers; reconnect with the last received sequence.
+
+Gateway-to-Manager traffic is a separate local contract. Every authenticated
+request carries `X-Lite-IPC-Version: 1`; incompatible clients receive a typed
+426 response. Manager liveness publishes the selected protocol and an opaque
+instance ID. A user-only instance lock plus live-endpoint probe prevents a
+contender from unlinking or replacing the active Unix socket; Unix socket mode
+is restricted to the current user. Windows uses a local named pipe and the same
+lock/protocol handshake.
 
 Run creation accepts an optional `budget` object with turn, tool-call, token,
 cost, total-timeout, model-idle-timeout, and command-timeout limits. Omitted

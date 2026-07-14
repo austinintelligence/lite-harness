@@ -28,6 +28,10 @@ The branch workflow is safe to run for every pull request and `lite-main` push:
 
 - `pnpm verify` runs on Linux, macOS, and Windows.
 - Python SDK unit tests run on all three operating systems.
+- The Ubuntu `packaged-python-parity` job clean-installs the compiled
+  application, TypeScript SDK, contracts, and Python wheel; it exercises both
+  SDKs through separate Manager/Gateway processes, rejects a second Manager,
+  and uploads `m1-packaged-artifacts` zero-skip evidence.
 - The Linux readiness job runs the production dependency audit, regenerates the
   deterministic CycloneDX SBOM, checks secrets/provenance/release structure, and
   uploads the current readiness documents as a short-lived artifact.

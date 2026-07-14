@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, renameSync, rmSync as rmFileSync, statSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { chmod, lstat, mkdir, open, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export interface ServiceInstallOptions {
   root: string;
@@ -24,6 +26,206 @@ export interface RenderedService {
 }
 
 const SERVICE_ID = "dev.lite-harness";
+
+export interface ManagerInstanceOwner {
+  schemaVersion: 1;
+  instanceId: string;
+  pid: number;
+  socketPath: string;
+  protocolVersion: string;
+  startedAt: string;
+}
+
+export interface ManagerInstanceLockOptions {
+  dataDir: string;
+  socketPath: string;
+  protocolVersion: string;
+  platform?: NodeJS.Platform;
+  processId?: number;
+  probeTimeoutMs?: number;
+}
+
+/**
+ * Cross-platform, ownership-checked Manager singleton guard.
+ *
+ * The lock directory is created atomically before any database or endpoint is
+ * opened. A contender never removes an endpoint while the recorded process or
+ * endpoint is live, and cleanup only removes state owned by this instance.
+ */
+export class ManagerInstanceLock {
+  readonly owner: ManagerInstanceOwner;
+  readonly lockPath: string;
+  readonly ownerPath: string;
+  readonly #platform: NodeJS.Platform;
+  readonly #probeTimeoutMs: number;
+  #acquired = false;
+  #endpointOwned = false;
+
+  constructor(private readonly options: ManagerInstanceLockOptions) {
+    const dataDir = resolve(options.dataDir);
+    this.lockPath = resolve(dataDir, "manager.lock");
+    if (dirname(this.lockPath) !== dataDir || basename(this.lockPath) !== "manager.lock") {
+      throw new Error("Manager lock must remain directly under the configured data directory");
+    }
+    this.ownerPath = join(this.lockPath, "owner.json");
+    this.#platform = options.platform ?? process.platform;
+    this.#probeTimeoutMs = options.probeTimeoutMs ?? 750;
+    this.owner = {
+      schemaVersion: 1,
+      instanceId: randomUUID(),
+      pid: options.processId ?? process.pid,
+      socketPath: options.socketPath,
+      protocolVersion: options.protocolVersion,
+      startedAt: new Date().toISOString(),
+    };
+  }
+
+  async acquire(): Promise<void> {
+    await mkdir(dirname(this.lockPath), { recursive: true, mode: 0o700 });
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        await mkdir(this.lockPath, { mode: 0o700 });
+        const handle = await open(this.ownerPath, "wx", 0o600);
+        try {
+          await handle.writeFile(`${JSON.stringify(this.owner)}\n`, "utf8");
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        this.#acquired = true;
+        try {
+          await this.#prepareEndpoint();
+        } catch (error) {
+          await this.release();
+          throw error;
+        }
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+
+      const existing = await this.#readExistingOwner();
+      const endpointLive = await probeManagerEndpoint(this.options.socketPath, undefined, this.#probeTimeoutMs);
+      if (endpointLive || (existing && processIsAlive(existing.pid))) {
+        const identity = existing ? `pid ${existing.pid}, instance ${existing.instanceId}` : "an initializing instance";
+        throw new Error(`A Lite-Harness Manager is already active (${identity})`);
+      }
+
+      const metadata = await lstat(this.lockPath);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new Error("Manager lock path is not a safe local directory");
+      }
+      if (!existing) {
+        if (Date.now() - metadata.mtimeMs < 30_000) {
+          throw new Error("A Lite-Harness Manager lock is being initialized");
+        }
+      }
+      await rm(this.lockPath, { recursive: true, force: true });
+    }
+    throw new Error("Could not acquire the Lite-Harness Manager instance lock");
+  }
+
+  async secureEndpoint(): Promise<void> {
+    if (!this.#acquired) throw new Error("Manager instance lock is not held");
+    this.#endpointOwned = true;
+    if (this.#platform !== "win32") await chmod(this.options.socketPath, 0o600);
+  }
+
+  async release(): Promise<void> {
+    if (!this.#acquired) return;
+    const existing = await this.#readExistingOwner();
+    if (existing?.instanceId !== this.owner.instanceId) {
+      this.#acquired = false;
+      this.#endpointOwned = false;
+      return;
+    }
+    if (this.#platform !== "win32" && this.#endpointOwned) {
+      await unlink(this.options.socketPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    }
+    await rm(this.lockPath, { recursive: true, force: true });
+    this.#acquired = false;
+    this.#endpointOwned = false;
+  }
+
+  async #prepareEndpoint(): Promise<void> {
+    if (this.#platform === "win32") return;
+    let metadata;
+    try {
+      metadata = await lstat(this.options.socketPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    if (!metadata.isSocket()) throw new Error("Configured Manager endpoint exists and is not a Unix socket");
+    if (await probeManagerEndpoint(this.options.socketPath, undefined, this.#probeTimeoutMs)) {
+      throw new Error("A live Manager endpoint exists without an owned lock; refusing unsafe cleanup");
+    }
+    await unlink(this.options.socketPath);
+  }
+
+  async #readExistingOwner(): Promise<ManagerInstanceOwner | undefined> {
+    try {
+      const parsed = JSON.parse(await readFile(this.ownerPath, "utf8")) as Partial<ManagerInstanceOwner>;
+      return parsed.schemaVersion === 1 && typeof parsed.instanceId === "string" &&
+        Number.isSafeInteger(parsed.pid) && (parsed.pid as number) > 0 &&
+        typeof parsed.socketPath === "string" && typeof parsed.protocolVersion === "string" &&
+        typeof parsed.startedAt === "string"
+        ? parsed as ManagerInstanceOwner
+        : undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) return undefined;
+      throw error;
+    }
+  }
+}
+
+export async function probeManagerEndpoint(
+  socketPath: string,
+  protocolVersion?: string,
+  timeoutMs = 750,
+): Promise<boolean> {
+  return await new Promise((resolveProbe) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolveProbe(value);
+    };
+    const request = httpRequest({ socketPath, path: "/healthz", method: "GET" }, (response) => {
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes <= 32 * 1024) chunks.push(chunk);
+        else request.destroy();
+      });
+      response.once("end", () => {
+        try {
+          const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+          finish(response.statusCode === 200 && payload.ok === true && payload.role === "manager" &&
+            (protocolVersion === undefined || payload.protocolVersion === protocolVersion));
+        } catch {
+          finish(false);
+        }
+      });
+    });
+    request.once("error", () => finish(false));
+    request.setTimeout(timeoutMs, () => request.destroy());
+    request.once("close", () => finish(false));
+    request.end();
+  });
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 export class RotatingLogSink {
   constructor(private readonly path: string, private readonly maxBytes = 10 * 1024 * 1024, private readonly generations = 5) {

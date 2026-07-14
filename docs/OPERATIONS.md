@@ -6,6 +6,13 @@ one lifecycle. It requires distinct `LITE_HARNESS_INTERNAL_TOKEN` and
 redacted rotating JSONL logs under the data directory, and stops the peer if
 either child fails.
 
+Core process configuration has schema version 1. `LITE_HARNESS_PROVIDER` and
+`LITE_HARNESS_RUNTIME` are mandatory for Manager startup; fake implementations
+are available only when selected explicitly. Ports, hosts, tokens, socket paths,
+and config versions are validated before Manager opens durable state. Manager
+holds `<data-dir>/manager.lock`, refuses a live owner, reclaims only a proven
+dead owner, and removes only its own endpoint on shutdown.
+
 Use `pnpm lite service install` to store service tokens in the operating-system
 secret store and emit the platform service definition. Linux uses a systemd
 user unit, macOS uses a LaunchAgent, and Windows emits a startup task command.

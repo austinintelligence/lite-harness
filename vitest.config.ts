@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@lite-harness/contracts": source("./packages/contracts/src/index.ts"),
+      "@lite-harness/config": source("./packages/config/src/index.ts"),
       "@lite-harness/domain": source("./packages/domain/src/index.ts"),
       "@lite-harness/storage-sqlite": source("./packages/storage-sqlite/src/index.ts"),
       "@lite-harness/agent-runtime": source("./packages/agent-runtime/src/index.ts"),

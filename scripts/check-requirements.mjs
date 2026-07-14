@@ -56,8 +56,16 @@ if (!structureOnly) {
         failures.push(`${row.id} evidence artifact is missing: ${artifact?.path ?? "undefined"}`);
         continue;
       }
-      if (artifact.commit !== head) failures.push(`${row.id} evidence is stale: ${artifact.commit ?? "no commit"} != ${head}`);
-      if (artifact.result !== "pass" || artifact.skips !== 0) failures.push(`${row.id} evidence is not a zero-skip pass: ${artifact.path}`);
+      try {
+        const document = JSON.parse(readFileSync(resolve(root, artifact.path), "utf8"));
+        if (document.commit !== head) failures.push(`${row.id} evidence is stale: ${document.commit ?? "no commit"} != ${head}`);
+        if (document.result !== "pass" || document.skips !== 0 ||
+            (Array.isArray(document.testIds) && !document.testIds.includes(row.id))) {
+          failures.push(`${row.id} evidence is not a zero-skip pass: ${artifact.path}`);
+        }
+      } catch {
+        failures.push(`${row.id} evidence is not valid JSON: ${artifact.path}`);
+      }
     }
   }
 }

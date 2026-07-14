@@ -64,6 +64,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@lite-harness/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -76,6 +79,9 @@ importers:
 
   apps/launcher:
     dependencies:
+      '@lite-harness/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@lite-harness/credential-store':
         specifier: workspace:*
         version: link:../../packages/credential-store
@@ -94,6 +100,9 @@ importers:
       '@lite-harness/browser':
         specifier: workspace:*
         version: link:../../packages/browser
+      '@lite-harness/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -112,6 +121,9 @@ importers:
       '@lite-harness/memory-sqlite':
         specifier: workspace:*
         version: link:../../packages/memory-sqlite
+      '@lite-harness/operations':
+        specifier: workspace:*
+        version: link:../../packages/operations
       '@lite-harness/provider-anthropic':
         specifier: workspace:*
         version: link:../../packages/provider-anthropic
@@ -159,6 +171,8 @@ importers:
       '@lite-harness/process-rpc':
         specifier: workspace:*
         version: link:../process-rpc
+
+  packages/config: {}
 
   packages/context: {}
 

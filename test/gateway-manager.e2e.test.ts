@@ -46,7 +46,14 @@ describe("Gateway to Manager vertical slice", () => {
       webhookSecret: async (accountId) => accountId === "primary" ? Buffer.from("webhook-secret") : undefined,
     });
     const managerTransport: ManagerTransport = {
-      health: async () => ({ ok: true, role: "manager", uptimeSeconds: 1, rssBytes: process.memoryUsage().rss }),
+      health: async () => ({
+        ok: true,
+        role: "manager",
+        protocolVersion: "1",
+        instanceId: "embedded-test",
+        uptimeSeconds: 1,
+        rssBytes: process.memoryUsage().rss,
+      }),
       startRun: async (request) => service.createRun(request),
       getRun: async (runId) => {
         const run = service.getRun(runId);
@@ -134,7 +141,7 @@ describe("Gateway to Manager vertical slice", () => {
       ingestWebhook: async (accountId, envelope, signature) => {
         const response = await manager.inject({
           method: "POST", url: `/internal/integrations/webhook/${accountId}/inbound`,
-          headers: { "x-lite-internal-token": internalToken }, payload: { envelope, signature },
+          headers: { "x-lite-internal-token": internalToken, "x-lite-ipc-version": "1" }, payload: { envelope, signature },
         });
         if (response.statusCode >= 400) throw new Error(response.body);
         return response.json<{ duplicate: boolean; runId?: string }>();
@@ -232,15 +239,25 @@ describe("Gateway to Manager vertical slice", () => {
     });
     expect(hiddenFromOtherTenant.statusCode).toBe(404);
 
+    const incompatibleIpc = await manager.inject({
+      method: "GET",
+      url: `/internal/runs/${firstBody.runId}`,
+      headers: { "x-lite-ipc-version": "0" },
+    });
+    expect(incompatibleIpc.statusCode).toBe(426);
+    expect(incompatibleIpc.json()).toMatchObject({
+      error: { version: 1, code: "ipc_version_mismatch", retryable: false },
+    });
     const unauthenticatedIpc = await manager.inject({
       method: "GET",
       url: `/internal/runs/${firstBody.runId}`,
+      headers: { "x-lite-ipc-version": "1" },
     });
     expect(unauthenticatedIpc.statusCode).toBe(401);
     const authenticatedIpc = await manager.inject({
       method: "GET",
       url: `/internal/runs/${firstBody.runId}`,
-      headers: { "x-lite-internal-token": internalToken },
+      headers: { "x-lite-internal-token": internalToken, "x-lite-ipc-version": "1" },
     });
     expect(authenticatedIpc.statusCode).toBe(200);
 

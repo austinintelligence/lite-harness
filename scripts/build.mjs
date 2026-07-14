@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { build } from "esbuild";
 
@@ -12,13 +12,19 @@ rmSync(staging, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
 const applications = ["manager", "gateway", "launcher", "cli"];
+const applicationRoot = resolve(staging, "application");
 for (const name of applications) {
-  const outdir = resolve(dist, "apps", name);
-  await bundle(resolve(root, "apps", name, "src", "main.ts"), resolve(outdir, "main.js"), { external: ["fastify"] });
+  const outdir = resolve(applicationRoot, "apps", name);
+  await bundle(resolve(root, "apps", name, "src", "main.ts"), resolve(outdir, "main.js"), {
+    external: ["fastify"],
+    ...(name === "cli" ? { banner: { js: "#!/usr/bin/env node" } } : {}),
+  });
+  if (name === "cli") chmodSync(resolve(outdir, "main.js"), 0o755);
   if (name === "manager" || name === "cli") {
     copyFileSync(resolve(root, "packages", "plugin-core", "src", "openclaw-host.mjs"), resolve(outdir, "openclaw-host.mjs"));
   }
 }
+cpSync(resolve(applicationRoot, "apps"), resolve(dist, "apps"), { recursive: true });
 
 const contractsRoot = resolve(staging, "contracts");
 const sdkRoot = resolve(staging, "sdk");
@@ -39,10 +45,11 @@ writePackage(sdkRoot, {
   description: "Node ESM SDK for the Lite-Harness REST and replayable SSE API",
   dependencies: { "@lite-harness/contracts": version },
 });
+writeApplicationPackage(applicationRoot);
 
 const packageOutput = resolve(dist, "packages");
 mkdirSync(packageOutput, { recursive: true });
-for (const directory of [contractsRoot, sdkRoot]) {
+for (const directory of [applicationRoot, contractsRoot, sdkRoot]) {
   const npm = npmCommand();
   execFileSync(npm.command, [...npm.prefix, "pack", directory, "--pack-destination", packageOutput], {
     cwd: root,
@@ -55,7 +62,7 @@ function npmCommand() {
     ? { command: process.execPath, prefix: [resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")] }
     : { command: "npm", prefix: [] };
 }
-process.stdout.write(`Built ${applications.length} applications and 2 npm packages at ${dist}\n`);
+process.stdout.write(`Built ${applications.length} applications and 3 npm packages at ${dist}\n`);
 
 async function bundle(entry, outfile, options = {}) {
   mkdirSync(dirname(outfile), { recursive: true });
@@ -69,9 +76,33 @@ async function bundle(entry, outfile, options = {}) {
     sourcemap: true,
     legalComments: "external",
     ...(options.external ? { external: options.external } : {}),
+    ...(options.banner ? { banner: options.banner } : {}),
     tsconfig: resolve(root, "tsconfig.json"),
     logLevel: "warning",
   });
+}
+
+function writeApplicationPackage(directory) {
+  const manifest = {
+    name: "@lite-harness/application",
+    version,
+    description: "Compiled Lite-Harness Manager, Gateway, launcher, and CLI",
+    type: "module",
+    license: "MIT",
+    engines: { node: ">=24.0.0 <25" },
+    files: ["apps", "LICENSE", "README.md"],
+    bin: { "lite-harness": "./apps/cli/main.js" },
+    exports: {
+      "./manager": "./apps/manager/main.js",
+      "./gateway": "./apps/gateway/main.js",
+      "./launcher": "./apps/launcher/main.js",
+      "./cli": "./apps/cli/main.js",
+    },
+    dependencies: { fastify: "5.8.5" },
+  };
+  writeFileSync(resolve(directory, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  copyFileSync(resolve(root, "LICENSE"), resolve(directory, "LICENSE"));
+  copyFileSync(resolve(root, "README.md"), resolve(directory, "README.md"));
 }
 
 function emitDeclarations(entry, outDir) {

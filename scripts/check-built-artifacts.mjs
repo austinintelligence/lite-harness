@@ -1,22 +1,31 @@
+import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { arch, platform, release } from "node:os";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const evidenceArgument = process.argv.indexOf("--evidence");
+const evidenceOutput = evidenceArgument >= 0 ? process.argv[evidenceArgument + 1] : undefined;
+if (evidenceArgument >= 0 && (!evidenceOutput || evidenceOutput.startsWith("--"))) {
+  throw new Error("--evidence requires an output path");
+}
+if (evidenceOutput && !process.argv.includes("--python-wheel")) {
+  throw new Error("M1 packaged evidence requires --python-wheel parity");
+}
 const version = JSON.parse(await import("node:fs/promises").then(({ readFile }) => readFile(resolve(root, "package.json"), "utf8"))).version;
-const required = [
-  "dist/apps/manager/main.js",
-  "dist/apps/gateway/main.js",
-  "dist/apps/launcher/main.js",
-  "dist/apps/cli/main.js",
-  `dist/packages/lite-harness-contracts-${version}.tgz`,
-  `dist/packages/lite-harness-sdk-${version}.tgz`,
-];
-for (const path of required) if (!existsSync(resolve(root, path))) throw new Error(`Built artifact is missing: ${path}`);
-
-execFileSync(process.execPath, [resolve(root, "dist/apps/cli/main.js"), "help"], { cwd: root, stdio: "pipe" });
+const required = {
+  manager: "dist/apps/manager/main.js",
+  gateway: "dist/apps/gateway/main.js",
+  launcher: "dist/apps/launcher/main.js",
+  cli: "dist/apps/cli/main.js",
+  application: `dist/packages/lite-harness-application-${version}.tgz`,
+  contracts: `dist/packages/lite-harness-contracts-${version}.tgz`,
+  sdk: `dist/packages/lite-harness-sdk-${version}.tgz`,
+};
+for (const path of Object.values(required)) if (!existsSync(resolve(root, path))) throw new Error(`Built artifact is missing: ${path}`);
 
 const fixture = mkdtempSync(join(tmpdir(), "lite-artifact-check-"));
 const children = [];
@@ -25,7 +34,9 @@ try {
   const npm = npmCommand();
   execFileSync(npm.command, [...npm.prefix, "init", "-y"], { cwd: fixture, stdio: "pipe" });
   execFileSync(npm.command, [...npm.prefix, "install", "--ignore-scripts", "--no-audit", "--no-fund",
-    resolve(root, required[4]), resolve(root, required[5])], { cwd: fixture, stdio: "pipe" });
+    resolve(root, required.application), resolve(root, required.contracts), resolve(root, required.sdk)], { cwd: fixture, stdio: "pipe" });
+  const installedApplication = resolve(fixture, "node_modules", "@lite-harness", "application", "apps");
+  execFileSync(process.execPath, [resolve(installedApplication, "cli", "main.js"), "help"], { cwd: fixture, stdio: "pipe" });
 
   const port = await availablePort();
   const dataDir = resolve(fixture, "data");
@@ -43,10 +54,17 @@ try {
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
   };
-  children.push(start(resolve(root, "dist/apps/manager/main.js"), environment));
+  children.push(start(resolve(installedApplication, "manager", "main.js"), environment, fixture));
   await delay(250);
-  children.push(start(resolve(root, "dist/apps/gateway/main.js"), environment));
+  children.push(start(resolve(installedApplication, "gateway", "main.js"), environment, fixture));
   const baseUrl = `http://127.0.0.1:${port}`;
+  await waitForReady(`${baseUrl}/readyz`);
+
+  const contender = start(resolve(installedApplication, "manager", "main.js"), environment, fixture);
+  children.push(contender);
+  await waitForExit(contender, 5_000);
+  if (contender.exitCode === 0) throw new Error("A second packaged Manager unexpectedly acquired the live instance");
+  if (children[0].exitCode !== null) throw new Error("The original packaged Manager was displaced by a contender");
   await waitForReady(`${baseUrl}/readyz`);
 
   const smoke = resolve(fixture, "smoke.mjs");
@@ -90,6 +108,7 @@ print(json.dumps({"runId": run["id"], "status": run["status"]}))
     const pythonResult = JSON.parse(execFileSync(python, ["-I", pythonSmoke, baseUrl], { cwd: fixture, encoding: "utf8" }));
     if (pythonResult.status !== "SUCCEEDED") throw new Error(`Unexpected Python packaged smoke result: ${JSON.stringify(pythonResult)}`);
   }
+  if (evidenceOutput) writeEvidence(evidenceOutput);
   process.stdout.write(`Built artifact checks passed through real packaged IPC (${parsed.runId}).\n`);
 } catch (error) {
   throw new Error(`${error instanceof Error ? error.message : String(error)}\nProcess logs:\n${logs.slice(-16_000)}`);
@@ -98,8 +117,8 @@ print(json.dumps({"runId": run["id"], "status": run["status"]}))
   rmSync(fixture, { recursive: true, force: true });
 }
 
-function start(entry, env) {
-  const child = spawn(process.execPath, [entry], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+function start(entry, env, cwd = root) {
+  const child = spawn(process.execPath, [entry], { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   child.stdout.on("data", (chunk) => { logs += chunk.toString(); });
   child.stderr.on("data", (chunk) => { logs += chunk.toString(); });
   return child;
@@ -139,6 +158,15 @@ function delay(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+async function waitForExit(child, timeoutMs) {
+  if (child.exitCode !== null) return;
+  const exited = await Promise.race([
+    new Promise((resolvePromise) => child.once("exit", () => resolvePromise(true))),
+    delay(timeoutMs).then(() => false),
+  ]);
+  if (!exited) throw new Error("Second packaged Manager did not reject the live instance promptly");
+}
+
 function readdirOne(directory, predicate) {
   const matches = readdirSync(directory).filter(predicate);
   if (matches.length !== 1) throw new Error(`Expected one matching artifact in ${directory}, found ${matches.join(", ")}`);
@@ -149,4 +177,43 @@ function npmCommand() {
   return process.platform === "win32"
     ? { command: process.execPath, prefix: [resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")] }
     : { command: "npm", prefix: [] };
+}
+
+function writeEvidence(output) {
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const artifacts = [required.application, required.contracts, required.sdk, readdirOne(resolve(root, "dist", "python"), (name) => name.endsWith(".whl"))]
+    .map((path) => {
+      const absolute = resolve(root, path);
+      return {
+        path: absolute.startsWith(root) ? absolute.slice(root.length + 1).replaceAll("\\", "/") : absolute,
+        sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex"),
+      };
+    });
+  const document = {
+    schemaVersion: 1,
+    evidenceId: `m1-packaged-artifacts-${commit.slice(0, 12)}-${platform()}-${arch()}`,
+    commit,
+    capturedAt: new Date().toISOString(),
+    platform: { os: platform(), release: release(), architecture: arch(), node: process.version },
+    suite: "m1-packaged-artifacts",
+    result: "pass",
+    tests: 8,
+    failures: 0,
+    skips: 0,
+    boundaries: {
+      cleanInstalledApplication: true,
+      cleanInstalledTypeScriptSdk: true,
+      cleanInstalledPythonWheel: true,
+      separateManagerAndGatewayProcesses: true,
+      realLocalIpc: true,
+      secondManagerRejected: true,
+      runtime: "deterministic-fake",
+      provider: "deterministic-fake",
+    },
+    testIds: ["M1-EXIT", "A02", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION", "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION"],
+    artifacts,
+  };
+  const absoluteOutput = resolve(root, output);
+  mkdirSync(dirname(absoluteOutput), { recursive: true });
+  writeFileSync(absoluteOutput, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
 }

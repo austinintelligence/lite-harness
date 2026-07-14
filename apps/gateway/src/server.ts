@@ -23,10 +23,12 @@ import {
   type RunRecord,
   type SessionMessageRecord,
   type SessionRecord,
+  type ManagerHealth,
+  errorEnvelope,
 } from "@lite-harness/contracts";
 
 export interface ManagerTransport {
-  health(): Promise<{ ok: boolean; role: string; uptimeSeconds: number; rssBytes: number }>;
+  health(): Promise<ManagerHealth>;
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse>;
   getRun(runId: string): Promise<RunRecord>;
   cancelRun(runId: string): Promise<RunRecord>;
@@ -58,6 +60,31 @@ export interface GatewayServerOptions {
 export function buildGatewayServer(options: GatewayServerOptions): FastifyInstance {
   if (!options.appToken.trim()) throw new Error("Gateway app token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
+
+  app.addHook("preSerialization", async (_request, reply, payload) => {
+    if (reply.statusCode < 400 || !payload || typeof payload !== "object" || !("error" in payload)) return payload;
+    const error = (payload as { error?: unknown }).error;
+    if (!error || typeof error !== "object") return payload;
+    const record = error as Record<string, unknown>;
+    if (record.version === 1) return payload;
+    return errorEnvelope(
+      typeof record.code === "string" ? record.code : "request_failed",
+      typeof record.message === "string" ? record.message : "Request failed",
+      { retryable: record.retryable === true },
+    );
+  });
+
+  app.setErrorHandler((error, _request, reply) => {
+    const caught = error instanceof Error ? error : new Error("Unknown Gateway error");
+    const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
+    const status = typeof statusCode === "number" && statusCode >= 400 && statusCode < 500
+      ? statusCode
+      : 500;
+    return reply.code(status).send(errorEnvelope(
+      status === 500 ? "internal_error" : "invalid_request",
+      status === 500 ? "Internal service error" : caught.message,
+    ));
+  });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-content-type-options", "nosniff");

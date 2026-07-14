@@ -2,12 +2,17 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join, resolve } from "node:path";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { RotatingLogSink } from "@lite-harness/operations";
+import { loadLauncherConfiguration } from "@lite-harness/config";
 
 const root = resolve(import.meta.dirname, "../../..");
 const dataDirArgument = process.argv.indexOf("--data-dir");
-const dataDir = dataDirArgument >= 0 && process.argv[dataDirArgument + 1]
+const requestedDataDir = dataDirArgument >= 0 && process.argv[dataDirArgument + 1]
   ? resolve(process.argv[dataDirArgument + 1] as string)
-  : process.env.LITE_HARNESS_DATA_DIR ?? join(process.cwd(), ".lite-harness");
+  : process.env.LITE_HARNESS_DATA_DIR;
+const { dataDir } = loadLauncherConfiguration({
+  ...process.env,
+  ...(requestedDataDir ? { LITE_HARNESS_DATA_DIR: requestedDataDir } : {}),
+});
 const secrets = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
 const internalToken = process.env.LITE_HARNESS_INTERNAL_TOKEN ?? await secrets.get("service.internal-token");
 const appToken = process.env.LITE_HARNESS_APP_TOKEN ?? await secrets.get("service.app-token");

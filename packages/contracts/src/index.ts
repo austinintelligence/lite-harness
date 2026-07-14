@@ -1,5 +1,54 @@
 import { Type, type Static } from "@sinclair/typebox";
 
+/** Public REST contract generation. Increment only for a breaking wire change. */
+export const LITE_API_VERSION = "v1" as const;
+
+/** Local Gateway-to-Manager wire protocol generation. */
+export const LITE_IPC_PROTOCOL_VERSION = "1" as const;
+export const LITE_IPC_VERSION_HEADER = "x-lite-ipc-version" as const;
+
+export const ErrorDetailSchema = Type.Record(Type.String(), Type.Unknown());
+export const StructuredErrorSchema = Type.Object({
+  version: Type.Literal(1),
+  code: Type.String({ minLength: 1, maxLength: 128 }),
+  message: Type.String({ minLength: 1, maxLength: 4_096 }),
+  retryable: Type.Boolean(),
+  retryAfterMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 86_400_000 })),
+  details: Type.Optional(ErrorDetailSchema),
+}, { additionalProperties: false });
+
+export const ErrorEnvelopeSchema = Type.Object({
+  error: StructuredErrorSchema,
+}, { additionalProperties: false });
+
+export type ErrorEnvelope = Static<typeof ErrorEnvelopeSchema>;
+
+export function errorEnvelope(
+  code: string,
+  message: string,
+  options: { retryable?: boolean; retryAfterMs?: number; details?: Record<string, unknown> } = {},
+): ErrorEnvelope {
+  return {
+    error: {
+      version: 1,
+      code,
+      message,
+      retryable: options.retryable ?? false,
+      ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }),
+      ...(options.details === undefined ? {} : { details: options.details }),
+    },
+  };
+}
+
+export interface ManagerHealth {
+  ok: boolean;
+  role: "manager";
+  protocolVersion: typeof LITE_IPC_PROTOCOL_VERSION;
+  instanceId: string;
+  uptimeSeconds: number;
+  rssBytes: number;
+}
+
 export const RunStatusSchema = Type.Union([
   Type.Literal("ACCEPTED"),
   Type.Literal("QUEUED"),
@@ -241,13 +290,7 @@ export interface ArtifactPayloadResponse {
   dataBase64: string;
 }
 
-export interface StructuredError {
-  code: string;
-  message: string;
-  retryable: boolean;
-  retryAfterMs?: number;
-  details?: Record<string, unknown>;
-}
+export type StructuredError = Static<typeof StructuredErrorSchema>;
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "DENIED" | "EXPIRED";
 

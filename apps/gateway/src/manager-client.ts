@@ -16,7 +16,23 @@ import type {
   RunRecord,
   SessionMessageRecord,
   SessionRecord,
+  ErrorEnvelope,
+  ManagerHealth,
 } from "@lite-harness/contracts";
+import { LITE_IPC_PROTOCOL_VERSION, LITE_IPC_VERSION_HEADER } from "@lite-harness/contracts";
+
+export class ManagerIpcError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly retryable = false,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "ManagerIpcError";
+  }
+}
 
 export class ManagerClient {
   constructor(
@@ -26,8 +42,16 @@ export class ManagerClient {
     private readonly maxResponseBytes = 32 * 1024 * 1024,
   ) {}
 
-  health(): Promise<{ ok: boolean; role: string; uptimeSeconds: number; rssBytes: number }> {
-    return this.#request("GET", "/healthz");
+  async health(): Promise<ManagerHealth> {
+    const health = await this.#request<ManagerHealth>("GET", "/healthz");
+    if (health.protocolVersion !== LITE_IPC_PROTOCOL_VERSION) {
+      throw new ManagerIpcError(
+        426,
+        "ipc_version_mismatch",
+        `Gateway requires Manager IPC protocol ${LITE_IPC_PROTOCOL_VERSION}; received ${String(health.protocolVersion)}`,
+      );
+    }
+    return health;
   }
 
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse> {
@@ -153,6 +177,7 @@ export class ManagerClient {
           method,
           headers: {
             "x-lite-internal-token": this.internalToken,
+            [LITE_IPC_VERSION_HEADER]: LITE_IPC_PROTOCOL_VERSION,
             accept: "application/json",
             ...additionalHeaders,
             ...(payload
@@ -179,11 +204,16 @@ export class ManagerClient {
               return;
             }
             if ((response.statusCode ?? 500) >= 400) {
-              const message =
-                typeof parsed === "object" && parsed && "error" in parsed
-                  ? JSON.stringify((parsed as { error: unknown }).error)
-                  : text;
-              reject(new Error(`Manager request failed (${response.statusCode}): ${message}`));
+              const envelope = parseErrorEnvelope(parsed);
+              reject(envelope
+                ? new ManagerIpcError(
+                  response.statusCode ?? 500,
+                  envelope.error.code,
+                  envelope.error.message,
+                  envelope.error.retryable,
+                  envelope.error.details,
+                )
+                : new ManagerIpcError(response.statusCode ?? 500, "ipc_invalid_error", text || "Manager request failed"));
               return;
             }
             resolve(parsed as T);
@@ -197,6 +227,17 @@ export class ManagerClient {
       request.end(payload);
     });
   }
+}
+
+function parseErrorEnvelope(value: unknown): ErrorEnvelope | undefined {
+  if (!value || typeof value !== "object" || !("error" in value)) return undefined;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as Record<string, unknown>;
+  return record.version === 1 && typeof record.code === "string" &&
+    typeof record.message === "string" && typeof record.retryable === "boolean"
+    ? value as ErrorEnvelope
+    : undefined;
 }
 
 function principalHeaders(principal: InternalPrincipal): Record<string, string> {

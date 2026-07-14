@@ -82,6 +82,15 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
+Build release-shaped artifacts with `pnpm build:all`. The output includes an
+installable compiled application tarball, packed contracts and TypeScript SDK
+tarballs, plus Python wheel and sdist under `dist/`. The command `pnpm
+check:artifacts --python-wheel` installs those packages into clean temporary environments and
+runs both SDKs through separate compiled Gateway and Manager processes over the
+real local IPC endpoint. The smoke deliberately uses explicit deterministic
+fake provider/runtime selections; production startup never silently chooses
+them.
+
 Build the pinned local tool image and record its immutable image ID:
 
 ```powershell

@@ -15,6 +15,7 @@ import type {
   SessionMessageRecord,
   SessionRecord,
   PublishArtifactRequest,
+  ErrorEnvelope,
 } from "@lite-harness/contracts";
 
 export interface LiteHarnessClientOptions {
@@ -23,6 +24,20 @@ export interface LiteHarnessClientOptions {
   tenantId?: string;
   userId?: string;
   fetch?: typeof globalThis.fetch;
+}
+
+export class LiteHarnessError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly code = "request_failed",
+    readonly retryable = false,
+    readonly retryAfterMs?: number,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "LiteHarnessError";
+  }
 }
 
 export class LiteHarnessClient {
@@ -134,7 +149,7 @@ export class LiteHarnessClient {
       { headers: this.#headers() },
     );
     if (!response.ok || !response.body) {
-      throw new Error(`Event stream failed with HTTP ${response.status}`);
+      throw new LiteHarnessError(`Event stream failed with HTTP ${response.status}`, response.status, "event_stream_failed");
     }
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";
@@ -154,7 +169,7 @@ export class LiteHarnessClient {
           if ("runId" in parsed) {
             yield parsed;
           } else {
-            throw new Error(parsed.message);
+            throw new LiteHarnessError(parsed.message, undefined, "event_stream_error");
           }
         }
         boundary = buffer.indexOf("\n\n");
@@ -170,12 +185,19 @@ export class LiteHarnessClient {
       ...init,
       headers: { ...this.#headers(), ...(init.headers ?? {}) },
     });
-    const body = (await response.json()) as T | { error?: { message?: string } };
+    const body = (await response.json()) as unknown;
     if (!response.ok) {
-      const message = "error" in (body as object)
-        ? (body as { error?: { message?: string } }).error?.message
-        : undefined;
-      throw new Error(message ?? `Lite-Harness request failed with HTTP ${response.status}`);
+      const envelope = parseErrorEnvelope(body);
+      throw envelope
+        ? new LiteHarnessError(
+          envelope.error.message,
+          response.status,
+          envelope.error.code,
+          envelope.error.retryable,
+          envelope.error.retryAfterMs,
+          envelope.error.details,
+        )
+        : new LiteHarnessError(`Lite-Harness request failed with HTTP ${response.status}`, response.status, "invalid_error_response");
     }
     return body as T;
   }
@@ -191,6 +213,17 @@ export class LiteHarnessClient {
   #url(path: string): string {
     return new URL(path, this.options.baseUrl).toString();
   }
+}
+
+function parseErrorEnvelope(value: unknown): ErrorEnvelope | undefined {
+  if (!value || typeof value !== "object" || !("error" in value)) return undefined;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as Record<string, unknown>;
+  return record.version === 1 && typeof record.code === "string" &&
+    typeof record.message === "string" && typeof record.retryable === "boolean"
+    ? value as ErrorEnvelope
+    : undefined;
 }
 
 export type {

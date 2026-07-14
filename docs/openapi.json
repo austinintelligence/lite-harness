@@ -283,6 +283,55 @@
             "type": "object"
           }
         }
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": 1,
+                "type": "number"
+              },
+              "code": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 1,
+                "maxLength": 4096,
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "retryAfterMs": {
+                "minimum": 0,
+                "maximum": 86400000,
+                "type": "integer"
+              },
+              "details": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {}
+                }
+              }
+            },
+            "required": [
+              "version",
+              "code",
+              "message",
+              "retryable"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
       }
     }
   },
@@ -310,7 +359,14 @@
             "description": "Gateway and Manager ready"
           },
           "503": {
-            "description": "Manager unavailable"
+            "description": "Manager unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -352,7 +408,14 @@
             "description": "accepted or duplicate delivery"
           },
           "401": {
-            "description": "signature rejected"
+            "description": "signature rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -393,7 +456,14 @@
             "description": "run"
           },
           "404": {
-            "description": "not found"
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -642,7 +712,14 @@
             "description": "agent profile"
           },
           "404": {
-            "description": "not found"
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -689,7 +766,14 @@
             "description": "workspace"
           },
           "404": {
-            "description": "not found"
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -698,5 +782,6 @@
   "x-lite-generated-from-contracts": {
     "source": "packages/contracts/src/index.ts",
     "version": 1
-  }
+  },
+  "x-lite-api-version": "v1"
 }

@@ -21,12 +21,15 @@ Lite-owned kernel and lazy capability packs.
 - Host-side provider plane with capability-aware routing, opaque credential
   profiles, normalized usage/errors, and side-effect-safe fallback
 - Fake, OpenAI-compatible, and Anthropic direct provider routes
+- Official Codex app-server and Claude Code delegated process adapters with
+  bounded supervision, cancellation, normalized events, and fail-closed actions
 - Hardened digest-pinned Docker tool runtime with persistent named volumes
 - Authenticated encrypted snapshots, previous-generation recovery, and owned
   artifact publish/download
 - Thin TypeScript SDK and replayable SSE
 - Manifest-first lazy plugins, deterministic SKILL.md snapshots, isolated MCP
-  supervision, browser network/ownership policy, signed integration envelopes,
+  stdio supervision, process Plugin Host RPC/install locks, browser
+  network/ownership policy, signed integration envelopes,
   scheduler leases, subagent graphs, offline FTS memory, and conservative
   exact-recoverable context rendering
 - Windows, macOS, and Linux CI definitions; real Docker lifecycle tests are
@@ -132,6 +135,12 @@ Use `anthropic` for Anthropic or `openai-compatible` plus
 `LITE_HARNESS_PROVIDER_BASE_URL` for an explicitly configured compatible
 endpoint. Production deployments should replace environment credential input
 with an OS-keychain-backed broker.
+
+For trusted owner-local delegated execution, use `codex` or `claude` as
+`LITE_HARNESS_PROVIDER`; see
+[`docs/DELEGATED_RUNTIMES.md`](docs/DELEGATED_RUNTIMES.md). Subscription
+credentials remain owned by the official runtime and are never treated as
+general API keys.
 
 ## Workspace recovery
 

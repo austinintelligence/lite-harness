@@ -261,13 +261,15 @@ export class RunService {
       await this.agent.run({
         input: run.input,
         workspaceId: run.workspaceId,
+        runId: run.id,
+        principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
         ...(history?.length ? { history } : {}),
         signal: controller.signal,
         maxTurns: run.budget.maxTurns,
         modelIdleTimeoutMs: run.budget.modelIdleTimeoutMs,
         commandTimeoutMs: run.budget.commandTimeoutMs,
         takeSteering: () => this.#takeSteering(runId),
-        beforeToolCall: (call) => this.#approveToolIfRequired(run, call, controller.signal),
+        beforeToolCall: (call) => this.#authorizeTool(run, call, controller.signal),
         onEvent: (event) => this.#appendAgentEvent(run, event),
       });
 
@@ -364,6 +366,14 @@ export class RunService {
       }, { once: true });
     });
     if (!approved) throw new Error(`Tool approval denied or expired: ${call.name}`);
+  }
+
+  async #authorizeTool(run: RunRecord, call: ToolCall, signal: AbortSignal): Promise<void> {
+    const profile = this.store.getAgentProfile(run.agentId);
+    if (!profile || !profile.allowedTools.includes(call.name)) {
+      throw new Error(`Tool is not allowed by agent policy: ${call.name}`);
+    }
+    await this.#approveToolIfRequired(run, call, signal);
   }
 
   async #waitForWorkspaceLease(run: RunRecord, signal: AbortSignal): Promise<WorkspaceLease> {

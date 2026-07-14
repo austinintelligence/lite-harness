@@ -17,3 +17,13 @@ grant a tool.
 MCP servers are registered as lazy transports. Payloads and time are bounded;
 a timeout, oversized response, or crash stops only that server. Remote MCP
 origins and credentials must pass normal plugin/network policy.
+
+Process-backed plugins use bounded JSON-RPC 2.0 with `initialize`, `health`,
+`invoke`, `migrate`, and `shutdown`. The atomic install lock records source,
+version, digest, trust class, exact operator grants, enablement, and install
+time. Worker start/invocation failures enter exponential crash backoff.
+
+MCP stdio workers implement the `2025-11-25` lifecycle with negotiated fallback
+to supported earlier revisions, `tools/list`, `tools/call`, include/exclude
+filters, per-call payload/time limits, idle shutdown, and per-server crash
+isolation. Unbrokered server-to-client requests fail closed.

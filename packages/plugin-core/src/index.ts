@@ -1,5 +1,7 @@
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 
 export type PluginTrustClass = "data-only" | "official" | "isolated" | "openclaw-compat";
 
@@ -57,10 +59,140 @@ export interface PluginWorker {
   stop(): Promise<void>;
 }
 
+export interface PluginLockEntry {
+  id: string;
+  version: string;
+  source: string;
+  digest: string;
+  installedAt: string;
+  trust: PluginTrustClass;
+  grantedPermissions: PluginPermissions;
+  enabled: boolean;
+}
+
+export interface PluginLockfile {
+  schemaVersion: 1;
+  plugins: Record<string, PluginLockEntry>;
+}
+
+export class PluginInstallLock {
+  readonly #path: string;
+
+  constructor(path: string) {
+    this.#path = path;
+    mkdirSync(dirname(path), { recursive: true });
+  }
+
+  read(): PluginLockfile {
+    try {
+      const value = JSON.parse(readFileSync(this.#path, "utf8")) as PluginLockfile;
+      if (value.schemaVersion !== 1 || !value.plugins || typeof value.plugins !== "object") throw new Error("Plugin lockfile is invalid");
+      return value;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schemaVersion: 1, plugins: {} };
+      throw error;
+    }
+  }
+
+  install(inspected: InspectedPlugin, grant: Partial<PluginPermissions>): PluginLockEntry {
+    const lock = this.read();
+    const key = `${inspected.manifest.id}@${inspected.manifest.version}`;
+    const entry: PluginLockEntry = {
+      id: inspected.manifest.id,
+      version: inspected.manifest.version,
+      source: inspected.root,
+      digest: pluginDigest(inspected),
+      installedAt: new Date().toISOString(),
+      trust: inspected.manifest.trust,
+      grantedPermissions: grantPluginPermissions(inspected.manifest.permissions, grant),
+      enabled: false,
+    };
+    lock.plugins[key] = entry;
+    this.#write(lock);
+    return entry;
+  }
+
+  setEnabled(id: string, version: string, enabled: boolean): PluginLockEntry {
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    const existing = lock.plugins[key];
+    if (!existing) throw new Error(`Plugin is not installed: ${key}`);
+    lock.plugins[key] = { ...existing, enabled };
+    this.#write(lock);
+    return lock.plugins[key] as PluginLockEntry;
+  }
+
+  uninstall(id: string, version: string): boolean {
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    if (!lock.plugins[key]) return false;
+    delete lock.plugins[key];
+    this.#write(lock);
+    return true;
+  }
+
+  #write(lock: PluginLockfile): void {
+    const temporary = `${this.#path}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(lock, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temporary, this.#path);
+  }
+}
+
+export class ProcessPluginWorker implements PluginWorker {
+  readonly #rpc: JsonLineRpcClient;
+  #started = false;
+
+  constructor(
+    spec: ProcessSpec,
+    private readonly initialization: {
+      manifest: PluginManifest;
+      config: unknown;
+      grants: PluginPermissions;
+    },
+    options: { timeoutMs?: number; maxPayloadBytes?: number } = {},
+  ) {
+    this.#rpc = new JsonLineRpcClient(spec, {
+      requestTimeoutMs: options.timeoutMs ?? 30_000,
+      maxLineBytes: options.maxPayloadBytes ?? 4 * 1024 * 1024,
+      jsonRpcVersion: "2.0",
+      onServerRequest: async (request) => {
+        throw new Error(`Plugin host callback is not brokered: ${request.method}`);
+      },
+    });
+  }
+
+  async start(): Promise<void> {
+    if (this.#started) return;
+    await this.#rpc.request("initialize", this.initialization);
+    await this.#rpc.request("health", {});
+    this.#started = true;
+  }
+
+  async invoke(action: string, input: unknown): Promise<unknown> {
+    await this.start();
+    return await this.#rpc.request("invoke", { action, input });
+  }
+
+  async migrate(from: string, to: string): Promise<unknown> {
+    await this.start();
+    return await this.#rpc.request("migrate", { from, to });
+  }
+
+  async stop(): Promise<void> {
+    if (!this.#started) return;
+    try { await this.#rpc.request("shutdown", { deadlineMs: 2_000 }, { timeoutMs: 2_000 }); }
+    catch { /* process termination remains authoritative */ }
+    this.#started = false;
+    await this.#rpc.stop();
+  }
+}
+
 export class LazyPluginSupervisor {
   #worker: PluginWorker | undefined;
   #idleTimer: ReturnType<typeof setTimeout> | undefined;
   #starts = 0;
+  #failures = 0;
+  #retryAt = 0;
 
   constructor(
     private readonly factory: () => PluginWorker,
@@ -76,17 +208,22 @@ export class LazyPluginSupervisor {
   }
 
   async invoke(action: string, input: unknown): Promise<unknown> {
-    const worker = await this.#ensureWorker();
-    this.#clearIdleTimer();
+    if (Date.now() < this.#retryAt) throw new Error("Plugin worker is in crash backoff");
     try {
+      const worker = await this.#ensureWorker();
+      this.#clearIdleTimer();
       const result = await withTimeout(
         worker.invoke(action, input),
         this.options.invocationTimeoutMs ?? 30_000,
         `Plugin action timed out: ${action}`,
       );
       this.#armIdleTimer();
+      this.#failures = 0;
+      this.#retryAt = 0;
       return result;
     } catch (error) {
+      this.#failures += 1;
+      this.#retryAt = Date.now() + Math.min(2 ** (this.#failures - 1) * 250, 30_000);
       await this.stop();
       throw error;
     }
@@ -119,6 +256,14 @@ export class LazyPluginSupervisor {
     if (this.#idleTimer) clearTimeout(this.#idleTimer);
     this.#idleTimer = undefined;
   }
+}
+
+function pluginDigest(inspected: InspectedPlugin): string {
+  return createHash("sha256")
+    .update(JSON.stringify(inspected.manifest))
+    .update("\0")
+    .update(readFileSync(inspected.entryPath))
+    .digest("hex");
 }
 
 function validateManifest(value: unknown): PluginManifest {

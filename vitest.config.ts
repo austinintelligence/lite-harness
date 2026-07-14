@@ -27,6 +27,8 @@ export default defineConfig({
       "@lite-harness/automation": source("./packages/automation/src/index.ts"),
       "@lite-harness/subagents": source("./packages/subagents/src/index.ts"),
       "@lite-harness/memory-sqlite": source("./packages/memory-sqlite/src/index.ts"),
+      "@lite-harness/process-rpc": source("./packages/process-rpc/src/index.ts"),
+      "@lite-harness/delegated-runtime": source("./packages/delegated-runtime/src/index.ts"),
     },
   },
   test: {

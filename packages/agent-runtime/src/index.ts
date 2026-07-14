@@ -1,4 +1,4 @@
-import type { RunEventType, ToolCall, ToolResult } from "@lite-harness/contracts";
+import type { InternalPrincipal, RunEventType, ToolCall, ToolResult } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import type { ModelEvent, ModelGateway, ModelMessage } from "@lite-harness/provider-core";
 import type { ToolRuntime } from "@lite-harness/runtime";
@@ -18,6 +18,8 @@ export class AgentRunner {
   async run(params: {
     input: string;
     workspaceId: string;
+    runId?: string;
+    principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
     beforeToolCall?: (call: ToolCall) => Promise<void>;
@@ -84,6 +86,8 @@ export class AgentRunner {
           : AbortSignal.timeout(params.commandTimeoutMs ?? 300_000);
         const result = await this.tools.execute({
           workspaceId: params.workspaceId,
+          ...(params.runId ? { runId: params.runId } : {}),
+          ...(params.principal ? { principal: params.principal } : {}),
           call,
           signal: commandSignal,
         });

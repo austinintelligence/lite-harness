@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import type { ToolCall, ToolResult } from "@lite-harness/contracts";
-import type { ToolRuntime } from "@lite-harness/runtime";
+import type { ToolExecutionContext, ToolRuntime } from "@lite-harness/runtime";
 import { validateWorkspacePath } from "@lite-harness/runtime";
 
 export interface DockerRuntimeConfig {
@@ -54,11 +54,7 @@ export class DockerToolRuntime implements ToolRuntime {
     }
   }
 
-  async execute(params: {
-    workspaceId: string;
-    call: ToolCall;
-    signal?: AbortSignal;
-  }): Promise<ToolResult> {
+  async execute(params: ToolExecutionContext): Promise<ToolResult> {
     params.signal?.throwIfAborted();
     const volume = volumeName(params.workspaceId);
     await this.#ensureVolume(volume, params.signal);

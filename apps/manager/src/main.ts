@@ -2,6 +2,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { RunService } from "@lite-harness/control-plane";
+import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegated-runtime";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
 import {
   InMemoryCredentialBroker,
@@ -10,7 +11,7 @@ import {
   type ModelGateway,
 } from "@lite-harness/provider-core";
 import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
-import { InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
+import { ArtifactPublishingRuntime, InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore } from "@lite-harness/workspace";
@@ -21,8 +22,9 @@ const socketPath =
   process.env.LITE_HARNESS_MANAGER_SOCKET ??
   (process.platform === "win32" ? "\\\\.\\pipe\\lite-harness-manager" : join(dataDir, "manager.sock"));
 const internalToken = requiredEnvironment("LITE_HARNESS_INTERNAL_TOKEN");
-const runtime = resolveRuntime();
 const store = new SqliteRunStore(join(dataDir, "lite-harness.db"));
+const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
+const runtime = new ArtifactPublishingRuntime(resolveRuntime(), artifactStore);
 const service = new RunService(store, new AgentRunner(resolveModelGateway(), runtime), {
   requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
     ? () => true
@@ -33,7 +35,6 @@ const reconciled = service.reconcileInterruptedRuns();
 if (reconciled > 0) {
   process.stderr.write(`lite-harness manager: reconciled ${reconciled} interrupted run(s)\n`);
 }
-const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
 const app = buildManagerServer({ runService: service, internalToken, artifactStore, logger: true });
 
 if (process.platform !== "win32") {
@@ -58,6 +59,26 @@ function resolveRuntime(): ToolRuntime {
 function resolveModelGateway(): ModelGateway {
   const provider = process.env.LITE_HARNESS_PROVIDER ?? "fake";
   if (provider === "fake") return new FakeModelGateway();
+
+  if (provider === "codex") {
+    return new CodexAppServerGateway({
+      cwd: process.env.LITE_HARNESS_DELEGATED_CWD ?? process.cwd(),
+      ...(process.env.LITE_HARNESS_CODEX_COMMAND ? { command: process.env.LITE_HARNESS_CODEX_COMMAND } : {}),
+      ...(process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {}),
+      ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
+    });
+  }
+
+  if (provider === "claude") {
+    const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
+    return new ClaudeCodeGateway({
+      cwd: process.env.LITE_HARNESS_DELEGATED_CWD ?? process.cwd(),
+      ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
+      ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
+      allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+      ...(maxBudget ? { maxBudgetUsd: Number.parseFloat(maxBudget) } : {}),
+    });
+  }
 
   const credentialProfileId = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${provider}_default`;
   const apiKey = requiredEnvironment("LITE_HARNESS_PROVIDER_API_KEY");

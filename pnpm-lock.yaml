@@ -50,6 +50,9 @@ importers:
       '@lite-harness/control-plane':
         specifier: workspace:*
         version: link:../../packages/control-plane
+      '@lite-harness/delegated-runtime':
+        specifier: workspace:*
+        version: link:../../packages/delegated-runtime
       '@lite-harness/provider-anthropic':
         specifier: workspace:*
         version: link:../../packages/provider-anthropic
@@ -114,6 +117,15 @@ importers:
         specifier: workspace:*
         version: link:../domain
 
+  packages/delegated-runtime:
+    dependencies:
+      '@lite-harness/process-rpc':
+        specifier: workspace:*
+        version: link:../process-rpc
+      '@lite-harness/provider-core':
+        specifier: workspace:*
+        version: link:../provider-core
+
   packages/domain:
     dependencies:
       '@lite-harness/contracts':
@@ -122,11 +134,21 @@ importers:
 
   packages/integrations: {}
 
-  packages/mcp: {}
+  packages/mcp:
+    dependencies:
+      '@lite-harness/process-rpc':
+        specifier: workspace:*
+        version: link:../process-rpc
 
   packages/memory-sqlite: {}
 
-  packages/plugin-core: {}
+  packages/plugin-core:
+    dependencies:
+      '@lite-harness/process-rpc':
+        specifier: workspace:*
+        version: link:../process-rpc
+
+  packages/process-rpc: {}
 
   packages/provider-anthropic:
     dependencies:

@@ -34,6 +34,8 @@
       ,"@lite-harness/automation": ["packages/automation/src/index.ts"]
       ,"@lite-harness/subagents": ["packages/subagents/src/index.ts"]
       ,"@lite-harness/memory-sqlite": ["packages/memory-sqlite/src/index.ts"]
+      ,"@lite-harness/process-rpc": ["packages/process-rpc/src/index.ts"]
+      ,"@lite-harness/delegated-runtime": ["packages/delegated-runtime/src/index.ts"]
     }
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts", "vitest.config.ts"]

@@ -87,4 +87,29 @@ describe("run budgets and timeouts", () => {
       expect(peak).toBe(1);
     } finally { store.close(); }
   });
+
+  it("denies a model-requested tool outside the agent profile allowlist", async () => {
+    const forbidden: ModelGateway = {
+      async *streamTurn(): AsyncIterable<ModelEvent> {
+        yield { type: "tool.call", call: { id: "forbidden", name: "shell", arguments: { command: "whoami" } } };
+        yield { type: "completed", finishReason: "tool_calls" };
+      },
+    };
+    let executed = false;
+    const runtime = {
+      async execute() {
+        executed = true;
+        return { callId: "forbidden", ok: true, content: "should not run" };
+      },
+    };
+    const store = new SqliteRunStore(":memory:");
+    const service = new RunService(store, new AgentRunner(forbidden, runtime));
+    try {
+      const created = service.createRun({
+        agent: "coder", workspace: "policy", input: "escape", idempotencyKey: "policy", principal,
+      });
+      await expect(service.waitForTerminal(created.runId)).resolves.toMatchObject({ status: "FAILED" });
+      expect(executed).toBe(false);
+    } finally { store.close(); }
+  });
 });

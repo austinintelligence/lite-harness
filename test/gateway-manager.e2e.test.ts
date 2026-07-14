@@ -46,6 +46,7 @@ describe("Gateway to Manager vertical slice", () => {
       webhookSecret: async (accountId) => accountId === "primary" ? Buffer.from("webhook-secret") : undefined,
     });
     const managerTransport: ManagerTransport = {
+      health: async () => ({ ok: true, role: "manager", uptimeSeconds: 1, rssBytes: process.memoryUsage().rss }),
       startRun: async (request) => service.createRun(request),
       getRun: async (runId) => {
         const run = service.getRun(runId);
@@ -70,6 +71,7 @@ describe("Gateway to Manager vertical slice", () => {
       },
       getEvents: (runId, after, waitMs) => service.waitForEvents(runId, after, waitMs),
       getRunAttempts: async (runId) => service.listRunAttempts(runId),
+      getChildRuns: async (runId) => service.listChildRuns(runId),
       getSession: async (sessionId) => {
         const session = service.getSession(sessionId);
         if (!session) throw new Error("Session not found");
@@ -150,6 +152,10 @@ describe("Gateway to Manager vertical slice", () => {
       integrationStore.close();
       rmSync(directory, { recursive: true, force: true });
     });
+
+    const readiness = await gateway.inject({ method: "GET", url: "/readyz" });
+    expect(readiness.statusCode).toBe(200);
+    expect(readiness.json()).toMatchObject({ ok: true, dependencies: { manager: { ok: true, role: "manager" } } });
 
     const create = () =>
       gateway.inject({

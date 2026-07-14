@@ -27,15 +27,19 @@
   generation remains available.
 - Provider fallback stops after a tool call becomes externally visible.
 - Browser destinations reject credentials, non-HTTP protocols, private ranges,
-  link-local metadata targets, and non-allowlisted origins.
+  link-local metadata targets, and non-allowlisted origins. Managed HTTP(S)
+  requests are DNS-resolved and fetched through the sidecar broker.
 - Skills cannot widen policy; plugin grants are intersections, never unions.
+- Provider secrets can be resolved through the OS secret store and never enter
+  run state, Gateway, or ordinary tool containers.
 
 ## Known exclusions
 
 - A Docker/kernel escape can reach the host; use gVisor/Kata/micro-VMs for
   hostile multi-tenant execution.
-- Environment-based provider/snapshot keys are supported for local alpha but
-  production should use OS keychain/secret-manager brokers.
-- Managed Chromium execution and broad connector packs remain staged previews.
+- Environment-based provider/snapshot keys remain available for local use;
+  shared deployments should select the OS/secret-manager broker.
+- Remote CDP, browser private-network overrides, compatibility plugins, and
+  connector workers are operator-enabled trust expansions with separate policy.
 - Denial-of-service beyond configured local quotas is not a distributed
   fairness guarantee.

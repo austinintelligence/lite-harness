@@ -1,13 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConservativeContextCompiler, ContextStore } from "@lite-harness/context";
 import { McpSupervisor } from "@lite-harness/mcp";
+import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
 import {
   LazyPluginSupervisor,
+  PluginInstallLock,
+  PluginPackageInstaller,
   grantPluginPermissions,
   inspectPluginManifest,
+  pluginPackageDigest,
 } from "@lite-harness/plugin-core";
 import { discoverSkills } from "@lite-harness/skills";
 
@@ -62,6 +66,40 @@ describe("optional capability kernel", () => {
     await supervisor.stop();
   });
 
+  it("stages plugin packages and rolls back both disk and lock state when verification fails", async () => {
+    const source = mkdtempSync(join(tmpdir(), "lite-plugin-source-"));
+    const installRoot = mkdtempSync(join(tmpdir(), "lite-plugin-install-"));
+    const stateRoot = mkdtempSync(join(tmpdir(), "lite-plugin-state-"));
+    directories.push(source, installRoot, stateRoot);
+    writeFileSync(join(source, "worker.mjs"), "export default {}\n");
+    writeFileSync(join(source, "lite-plugin.json"), JSON.stringify({
+      schemaVersion: 1,
+      id: "example.staged",
+      version: "1.0.0",
+      entry: "worker.mjs",
+      trust: "isolated",
+      permissions: { tools: ["search"], secrets: [], events: [], files: [], networkOrigins: [] },
+    }));
+    const lock = new PluginInstallLock(join(stateRoot, "plugins.lock.json"));
+    const installer = new PluginPackageInstaller(installRoot, lock);
+    await expect(installer.installAndVerify(source, { tools: ["search"] }, async () => {
+      throw new Error("health check failed");
+    })).rejects.toThrow("health check failed");
+    expect(lock.read().plugins).toEqual({});
+    expect(existsSync(join(installRoot, "example.staged", "1.0.0"))).toBe(false);
+
+    const installed = await installer.installAndVerify(source, { tools: ["search"] }, async (plugin, entry) => {
+      expect(plugin.manifest.id).toBe("example.staged");
+      expect(entry.grantedPermissions.tools).toEqual(["search"]);
+    });
+    expect(installed.enabled).toBe(true);
+    expect(existsSync(join(installed.source, "worker.mjs"))).toBe(true);
+    expect(installed.source.startsWith(installRoot)).toBe(true);
+    expect(pluginPackageDigest(inspectPluginManifest(join(installed.source, "lite-plugin.json")))).toBe(installed.digest);
+    writeFileSync(join(installed.source, "worker.mjs"), "export default { tampered: true }\n");
+    expect(pluginPackageDigest(inspectPluginManifest(join(installed.source, "lite-plugin.json")))).not.toBe(installed.digest);
+  });
+
   it("loads SKILL.md snapshots with deterministic precedence and no symlink traversal", () => {
     const app = mkdtempSync(join(tmpdir(), "lite-skills-app-"));
     const builtin = mkdtempSync(join(tmpdir(), "lite-skills-builtin-"));
@@ -77,6 +115,19 @@ describe("optional capability kernel", () => {
     expect(skills).toHaveLength(1);
     expect(skills[0]).toMatchObject({ name: "review", description: "app review", source: "app" });
     expect(skills[0]?.requestedTools).toEqual(["shell"]);
+  });
+
+  it("inspects OpenClaw state without reading secret values and imports only bounded skill files", () => {
+    const source = mkdtempSync(join(tmpdir(), "lite-openclaw-source-"));
+    const target = mkdtempSync(join(tmpdir(), "lite-openclaw-target-")); directories.push(source, target);
+    mkdirSync(join(source, "skills")); mkdirSync(join(source, "skills", "review"));
+    writeFileSync(join(source, "openclaw.json"), JSON.stringify({ apiKey: "must-not-appear", providers: {} }));
+    writeFileSync(join(source, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: migrated\n---\nBody\n");
+    const report = inspectOpenClawRoot(source);
+    expect(report.configuration).toMatchObject([{ keys: ["apiKey", "providers"] }]);
+    expect(JSON.stringify(report)).not.toContain("must-not-appear");
+    expect(importOpenClawSkills(report, target)).toHaveLength(1);
+    expect(existsSync(join(target, "imports", "openclaw", "skills", "review", "SKILL.md"))).toBe(true);
   });
 
   it("starts MCP servers lazily and isolates a failed server", async () => {

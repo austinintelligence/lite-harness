@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import type {
   CreateRunResponse,
   ApprovalRecord,
@@ -37,6 +38,7 @@ export class RunService {
       workspaceLeaseTtlMs?: number;
       workspaceQueueTimeoutMs?: number;
       approvalTimeoutMs?: number;
+      maxSubagentDepth?: number;
       requiresApproval?: (tool: ToolCall, run: RunRecord) => boolean;
     } = {},
   ) {
@@ -61,6 +63,66 @@ export class RunService {
 
   getRun(runId: string): RunRecord | undefined {
     return this.store.getRun(runId);
+  }
+
+  listChildRuns(parentRunId: string): RunRecord[] {
+    return this.store.listChildRuns(parentRunId);
+  }
+
+  createChildRun(request: {
+    parentRunId: string;
+    agent: string;
+    input: string;
+    idempotencyKey: string;
+    budget?: Partial<RunRecord["budget"]>;
+  }): CreateRunResponse {
+    const parent = this.getRun(request.parentRunId);
+    if (!parent || isTerminalRunStatus(parent.status)) throw new Error("Parent run is unavailable or terminal");
+    if (parent.depth >= (this.options.maxSubagentDepth ?? 3)) throw new Error("Subagent nesting limit reached");
+    const existing = this.store.listChildRuns(parent.id);
+    const idempotencyKey = `subagent:${parent.id}:${request.idempotencyKey}`;
+    const replay = existing.find((child) => child.idempotencyKey === idempotencyKey);
+    if (replay) {
+      if (replay.agentId !== request.agent || replay.input !== request.input ||
+          Object.entries(request.budget ?? {}).some(([key, value]) => replay.budget[key as keyof RunRecord["budget"]] !== value)) {
+        throw new Error("Subagent idempotency key was reused with a different request");
+      }
+      return { runId: replay.id, status: replay.status, eventCursor: replay.lastSequence, idempotentReplay: true };
+    }
+    const available = remainingChildBudget(parent, existing);
+    const budget = boundedChildBudget(request.budget ?? {}, parent, available);
+    const suffix = createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 24);
+    const workspace = `wsp_sub_${suffix}`;
+    const session = `ses_sub_${suffix}`;
+    const result = this.createRun({
+      agent: request.agent,
+      workspace,
+      session,
+      input: request.input,
+      budget,
+      idempotencyKey,
+      parentRunId: parent.id,
+      depth: parent.depth + 1,
+      deliveryAllowed: false,
+      principal: {
+        appId: parent.appId, tenantId: parent.tenantId, userId: parent.userId,
+        scopes: ["runs:create", "subagents:execute"],
+      },
+    });
+    if (!result.idempotentReplay) {
+      this.store.appendEvent({
+        runId: parent.id, type: "subagent.started",
+        payload: { childRunId: result.runId, agent: request.agent, workspaceId: workspace, depth: parent.depth + 1 },
+      });
+      this.#notify(parent.id);
+    }
+    return result;
+  }
+
+  async waitForChildRun(parentRunId: string, childRunId: string, timeoutMs = 300_000): Promise<RunRecord> {
+    const child = this.getRun(childRunId);
+    if (!child || child.parentRunId !== parentRunId) throw new Error("Child run does not belong to the parent");
+    return await this.waitForTerminal(childRunId, timeoutMs);
   }
 
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord {
@@ -207,6 +269,7 @@ export class RunService {
     if (!run || isTerminalRunStatus(run.status)) {
       return run;
     }
+    for (const child of this.store.listChildRuns(runId)) this.cancelRun(child.id);
     this.#active.get(runId)?.abort(new Error("Run cancelled"));
     this.#transition(runId, "CANCELLED", "run.cancelled", { reason: "requested" });
     return this.getRun(runId);
@@ -257,9 +320,13 @@ export class RunService {
       const history = run.sessionId
         ? this.store.listSessionMessages(run.sessionId).map(toModelMessage)
         : undefined;
+      const profile = this.store.getAgentProfile(run.agentId);
+      if (!profile) throw new Error(`Agent profile is unavailable: ${run.agentId}`);
 
       await this.agent.run({
         input: run.input,
+        instructions: profile.instructions,
+        allowedTools: profile.allowedTools,
         workspaceId: run.workspaceId,
         runId: run.id,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
@@ -373,6 +440,9 @@ export class RunService {
     if (!profile || !profile.allowedTools.includes(call.name)) {
       throw new Error(`Tool is not allowed by agent policy: ${call.name}`);
     }
+    if (!run.deliveryAllowed && ["message_send", "integration_reply", "connector_send"].includes(call.name)) {
+      throw new Error("Delivery tools are disabled for subagent runs");
+    }
     await this.#approveToolIfRequired(run, call, signal);
   }
 
@@ -464,6 +534,19 @@ export class RunService {
       ...(typeof payload.message === "string" ? { errorMessage: payload.message } : {}),
     });
     this.#notify(runId);
+    if (isTerminalRunStatus(status) && run.parentRunId) {
+      const summary = [...this.store.listEvents(run.id)].reverse().find((event) => event.type === "agent.message.completed")?.payload.content;
+      this.store.appendEvent({
+        runId: run.parentRunId,
+        type: "subagent.completed",
+        payload: {
+          childRunId: run.id, status,
+          ...(typeof summary === "string" ? { summary } : {}),
+          ...(typeof payload.code === "string" ? { errorCode: payload.code } : {}),
+        },
+      });
+      this.#notify(run.parentRunId);
+    }
   }
 
   #notify(runId: string): void {
@@ -487,6 +570,59 @@ class BudgetExceededError extends Error {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function remainingChildBudget(parent: RunRecord, children: readonly RunRecord[]): RunRecord["budget"] {
+  const allocated = children.reduce((sum, child) => ({
+    maxTurns: sum.maxTurns + child.budget.maxTurns,
+    maxToolCalls: sum.maxToolCalls + child.budget.maxToolCalls,
+    maxInputTokens: sum.maxInputTokens + child.budget.maxInputTokens,
+    maxOutputTokens: sum.maxOutputTokens + child.budget.maxOutputTokens,
+    maxCostUsd: sum.maxCostUsd + child.budget.maxCostUsd,
+    totalTimeoutMs: Math.max(sum.totalTimeoutMs, child.budget.totalTimeoutMs),
+    modelIdleTimeoutMs: Math.max(sum.modelIdleTimeoutMs, child.budget.modelIdleTimeoutMs),
+    commandTimeoutMs: Math.max(sum.commandTimeoutMs, child.budget.commandTimeoutMs),
+  }), {
+    maxTurns: 0, maxToolCalls: 0, maxInputTokens: 0, maxOutputTokens: 0, maxCostUsd: 0,
+    totalTimeoutMs: 0, modelIdleTimeoutMs: 0, commandTimeoutMs: 0,
+  });
+  return {
+    maxTurns: Math.max(0, parent.budget.maxTurns - allocated.maxTurns),
+    maxToolCalls: Math.max(0, parent.budget.maxToolCalls - allocated.maxToolCalls),
+    maxInputTokens: Math.max(0, parent.budget.maxInputTokens - parent.usage.inputTokens - allocated.maxInputTokens),
+    maxOutputTokens: Math.max(0, parent.budget.maxOutputTokens - parent.usage.outputTokens - allocated.maxOutputTokens),
+    maxCostUsd: Math.max(0, parent.budget.maxCostUsd - parent.usage.costUsd - allocated.maxCostUsd),
+    totalTimeoutMs: parent.budget.totalTimeoutMs,
+    modelIdleTimeoutMs: parent.budget.modelIdleTimeoutMs,
+    commandTimeoutMs: parent.budget.commandTimeoutMs,
+  };
+}
+
+function boundedChildBudget(
+  requested: Partial<RunRecord["budget"]>,
+  parent: RunRecord,
+  available: RunRecord["budget"],
+): RunRecord["budget"] {
+  const budget: RunRecord["budget"] = {
+    maxTurns: requested.maxTurns ?? Math.min(4, available.maxTurns),
+    maxToolCalls: requested.maxToolCalls ?? Math.min(8, available.maxToolCalls),
+    maxInputTokens: requested.maxInputTokens ?? Math.min(64_000, available.maxInputTokens),
+    maxOutputTokens: requested.maxOutputTokens ?? Math.min(16_000, available.maxOutputTokens),
+    maxCostUsd: requested.maxCostUsd ?? Math.min(5, available.maxCostUsd),
+    totalTimeoutMs: requested.totalTimeoutMs ?? Math.min(300_000, parent.budget.totalTimeoutMs),
+    modelIdleTimeoutMs: requested.modelIdleTimeoutMs ?? parent.budget.modelIdleTimeoutMs,
+    commandTimeoutMs: requested.commandTimeoutMs ?? parent.budget.commandTimeoutMs,
+  };
+  for (const key of ["maxTurns", "maxInputTokens", "maxOutputTokens"] as const) {
+    if (budget[key] <= 0 || budget[key] > available[key]) throw new Error(`Child ${key} exceeds the remaining parent budget`);
+  }
+  for (const key of ["maxToolCalls", "maxCostUsd"] as const) {
+    if (budget[key] < 0 || budget[key] > available[key]) throw new Error(`Child ${key} exceeds the remaining parent budget`);
+  }
+  for (const key of ["totalTimeoutMs", "modelIdleTimeoutMs", "commandTimeoutMs"] as const) {
+    if (budget[key] <= 0 || budget[key] > parent.budget[key]) throw new Error(`Child ${key} exceeds the parent budget`);
+  }
+  return budget;
 }
 
 function toModelMessage(message: SessionMessageRecord): ModelMessage {

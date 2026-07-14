@@ -26,6 +26,7 @@ import {
 } from "@lite-harness/contracts";
 
 export interface ManagerTransport {
+  health(): Promise<{ ok: boolean; role: string; uptimeSeconds: number; rssBytes: number }>;
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse>;
   getRun(runId: string): Promise<RunRecord>;
   cancelRun(runId: string): Promise<RunRecord>;
@@ -34,6 +35,7 @@ export interface ManagerTransport {
   resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord>;
   getEvents(runId: string, after: number, waitMs: number): Promise<RunEvent[]>;
   getRunAttempts(runId: string): Promise<RunAttemptRecord[]>;
+  getChildRuns(runId: string): Promise<RunRecord[]>;
   getSession(sessionId: string): Promise<SessionRecord>;
   getSessionMessages(sessionId: string): Promise<SessionMessageRecord[]>;
   publishArtifact(runId: string, request: PublishArtifactRequest, principal: InternalPrincipal): Promise<ArtifactRecord>;
@@ -54,10 +56,17 @@ export interface GatewayServerOptions {
 }
 
 export function buildGatewayServer(options: GatewayServerOptions): FastifyInstance {
+  if (!options.appToken.trim()) throw new Error("Gateway app token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
 
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("referrer-policy", "no-referrer");
+    return payload;
+  });
+
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/healthz" || request.url.startsWith("/hooks/")) {
+    if (request.url === "/healthz" || request.url === "/readyz" || request.url.startsWith("/hooks/")) {
       return;
     }
     if (!constantTimeBearerMatch(request.headers.authorization, options.appToken)) {
@@ -65,7 +74,23 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     }
   });
 
-  app.get("/healthz", async () => ({ ok: true, role: "gateway" }));
+  app.get("/healthz", async () => ({
+    ok: true, role: "gateway", uptimeSeconds: Math.floor(process.uptime()), rssBytes: process.memoryUsage().rss,
+  }));
+
+  app.get("/readyz", async (_request, reply) => {
+    try {
+      const manager = await options.manager.health();
+      if (!manager.ok) throw new Error("Manager reported unhealthy");
+      return { ok: true, role: "gateway", dependencies: { manager } };
+    } catch {
+      return reply.code(503).send({
+        ok: false,
+        role: "gateway",
+        dependencies: { manager: { ok: false } },
+      });
+    }
+  });
 
   app.post<{ Params: { accountId: string }; Body: unknown }>("/hooks/webhook/:accountId", async (request, reply) => {
     const signature = stringHeader(request.headers["x-lite-signature"]);
@@ -231,6 +256,18 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     }
   });
 
+  app.get<{ Params: { runId: string } }>("/v1/runs/:runId/children", async (request, reply) => {
+    const principal = principalFromHeaders(request.headers);
+    try {
+      const run = await options.manager.getRun(request.params.runId);
+      return ownsRun(run, principal)
+        ? { runs: await options.manager.getChildRuns(run.id) }
+        : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+    } catch {
+      return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+    }
+  });
+
   app.get<{ Params: { sessionId: string } }>(
     "/v1/sessions/:sessionId",
     async (request, reply) => {
@@ -247,6 +284,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
   app.post<{ Params: { runId: string }; Body: PublishArtifactRequest }>(
     "/v1/runs/:runId/artifacts",
+    { bodyLimit: 24 * 1024 * 1024 },
     async (request, reply) => {
       const principal = principalFromHeaders(request.headers);
       try {

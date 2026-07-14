@@ -9,6 +9,7 @@ import {
   LazyPluginSupervisor,
   PluginInstallLock,
   ProcessPluginWorker,
+  createOpenClawCompatibilityWorker,
   inspectPluginManifest,
 } from "@lite-harness/plugin-core";
 import { JsonLineRpcClient } from "@lite-harness/process-rpc";
@@ -90,5 +91,27 @@ describe("process-backed extensions", () => {
     await expect(worker.invoke("echo", { value: 2 })).resolves.toEqual({ action: "echo", input: { value: 2 } });
     expect(worker.active).toBe(true);
     await worker.stop();
+  });
+
+  it("loads the bounded OpenClaw compatibility ABI only inside its child host", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-compat-plugin-"));
+    cleanup.push(root);
+    writeFileSync(join(root, "worker.mjs"), `export default {
+      invoke(action, input) { return { action, input, pid: process.pid }; },
+      migrate(from, to) { return { from, to }; }
+    };\n`);
+    writeFileSync(join(root, "lite-plugin.json"), JSON.stringify({
+      schemaVersion: 1, id: "example.compat", version: "1.0.0", entry: "worker.mjs", trust: "openclaw-compat",
+      permissions: { tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [] },
+    }));
+    const plugin = inspectPluginManifest(join(root, "lite-plugin.json"));
+    const worker = createOpenClawCompatibilityWorker(plugin, {
+      tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [],
+    });
+    try {
+      await worker.start();
+      await expect(worker.invoke("echo", { value: 1 })).resolves.toMatchObject({ action: "echo", input: { value: 1 } });
+      await expect(worker.migrate("1.0.0", "2.0.0")).resolves.toEqual({ from: "1.0.0", to: "2.0.0" });
+    } finally { await worker.stop(); }
   });
 });

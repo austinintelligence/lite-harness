@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   LocalArtifactStore,
+  LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
   StaticSnapshotKeyProvider,
 } from "@lite-harness/workspace";
@@ -70,5 +71,16 @@ describe("workspace durability", () => {
       mediaType: "text/plain",
       data: Buffer.from("no"),
     })).toThrow(/Unsafe workspace path/);
+  });
+
+  it("keys private caches by tenant and workspace while requiring immutable runtime inputs", () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-cache-")); directories.push(directory);
+    const catalog = new LocalCacheCatalog(directory);
+    const base = { class: "workspace-private" as const, logicalKey: "pnpm/store", imageDigest: `sha256:${"a".repeat(64)}`,
+      toolchain: "node-24-pnpm-11", lockDigest: "b".repeat(64), workspaceId: "workspace" };
+    const first = catalog.resolve({ ...base, tenantId: "tenant-one" });
+    const second = catalog.resolve({ ...base, tenantId: "tenant-two" });
+    expect(first.key).not.toBe(second.key);
+    expect(() => catalog.resolve({ ...base, tenantId: "tenant", imageDigest: "latest" })).toThrow(/immutable/);
   });
 });

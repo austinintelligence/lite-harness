@@ -54,6 +54,12 @@ export class LiteHarnessClient {
     )).attempts;
   }
 
+  async getChildRuns(runId: string): Promise<RunRecord[]> {
+    return (await this.#json<{ runs: RunRecord[] }>(
+      `/v1/runs/${encodeURIComponent(runId)}/children`,
+    )).runs;
+  }
+
   steerRun(runId: string, instruction: string): Promise<RunRecord> {
     return this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
       method: "POST",

@@ -36,6 +36,9 @@
       ,"@lite-harness/memory-sqlite": ["packages/memory-sqlite/src/index.ts"]
       ,"@lite-harness/process-rpc": ["packages/process-rpc/src/index.ts"]
       ,"@lite-harness/delegated-runtime": ["packages/delegated-runtime/src/index.ts"]
+      ,"@lite-harness/credential-store": ["packages/credential-store/src/index.ts"]
+      ,"@lite-harness/operations": ["packages/operations/src/index.ts"]
+      ,"@lite-harness/migration-openclaw": ["packages/migration-openclaw/src/index.ts"]
     }
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts", "vitest.config.ts"]

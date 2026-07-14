@@ -33,6 +33,7 @@ export interface RunStore {
     request: InternalStartRunRequest,
   ): { run: RunRecord; created: boolean };
   getRun(id: string): RunRecord | undefined;
+  listChildRuns(parentRunId: string): RunRecord[];
   appendEvent(params: AppendRunEvent): RunEvent;
   listEvents(runId: string, after?: number, limit?: number): RunEvent[];
   listNonTerminalRuns(): RunRecord[];

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 
@@ -101,7 +101,7 @@ export class PluginInstallLock {
       id: inspected.manifest.id,
       version: inspected.manifest.version,
       source: inspected.root,
-      digest: pluginDigest(inspected),
+      digest: pluginPackageDigest(inspected),
       installedAt: new Date().toISOString(),
       trust: inspected.manifest.trust,
       grantedPermissions: grantPluginPermissions(inspected.manifest.permissions, grant),
@@ -135,6 +135,69 @@ export class PluginInstallLock {
     const temporary = `${this.#path}.${process.pid}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(lock, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, this.#path);
+  }
+}
+
+export class PluginPackageInstaller {
+  constructor(
+    private readonly root: string,
+    private readonly lock: PluginInstallLock,
+    private readonly limits: { maxFiles?: number; maxBytes?: number } = {},
+  ) { mkdirSync(root, { recursive: true }); }
+
+  stage(sourceRoot: string, manifestName = "lite-plugin.json"): InspectedPlugin {
+    const source = realpathSync(sourceRoot);
+    const sourceManifest = inspectPluginManifest(resolve(source, manifestName));
+    const staging = resolve(this.root, `.stage-${process.pid}-${Date.now()}`);
+    if (isWithin(source, staging)) throw new Error("Plugin source may not contain the install staging directory");
+    try {
+      copyPackageTree(source, staging, this.limits.maxFiles ?? 2_048, this.limits.maxBytes ?? 64 * 1024 * 1024);
+      const staged = inspectPluginManifest(resolve(staging, manifestName));
+      if (staged.manifest.id !== sourceManifest.manifest.id || staged.manifest.version !== sourceManifest.manifest.version) {
+        throw new Error("Staged plugin identity changed during copy");
+      }
+      const target = resolve(this.root, staged.manifest.id, staged.manifest.version);
+      if (isWithin(target, staging) || isWithin(staging, target)) throw new Error("Plugin staging path is invalid");
+      mkdirSync(dirname(target), { recursive: true });
+      try { statSync(target); throw new Error(`Plugin package already exists: ${staged.manifest.id}@${staged.manifest.version}`); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      renameSync(staging, target);
+      return inspectPluginManifest(resolve(target, manifestName));
+    } catch (error) {
+      rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  async installAndVerify(
+    sourceRoot: string,
+    grant: Partial<PluginPermissions>,
+    verify: (plugin: InspectedPlugin, entry: PluginLockEntry) => Promise<void>,
+    previousVersion?: string,
+  ): Promise<PluginLockEntry> {
+    const staged = this.stage(sourceRoot);
+    const entry = this.lock.install(staged, grant);
+    try {
+      await verify(staged, entry);
+      const enabled = this.lock.setEnabled(entry.id, entry.version, true);
+      for (const installed of Object.values(this.lock.read().plugins)) {
+        if (installed.id === entry.id && installed.version !== entry.version && installed.enabled) {
+          this.lock.setEnabled(installed.id, installed.version, false);
+        }
+      }
+      if (previousVersion && previousVersion !== entry.version) this.lock.setEnabled(entry.id, previousVersion, false);
+      return enabled;
+    } catch (error) {
+      this.lock.uninstall(entry.id, entry.version);
+      rmSync(staged.root, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  uninstall(id: string, version: string): boolean {
+    const removed = this.lock.uninstall(id, version);
+    if (removed) rmSync(resolve(this.root, id, version), { recursive: true, force: true });
+    return removed;
   }
 }
 
@@ -185,6 +248,27 @@ export class ProcessPluginWorker implements PluginWorker {
     this.#started = false;
     await this.#rpc.stop();
   }
+}
+
+/**
+ * Loads the deliberately narrow compatibility ABI in a disposable child
+ * process. The child receives no Lite-Harness service token or provider secret.
+ */
+export function createOpenClawCompatibilityWorker(
+  plugin: InspectedPlugin,
+  grants: PluginPermissions,
+  config: unknown = {},
+  options: { timeoutMs?: number; maxPayloadBytes?: number } = {},
+): ProcessPluginWorker {
+  if (plugin.manifest.trust !== "openclaw-compat" && plugin.manifest.trust !== "isolated" && plugin.manifest.trust !== "official") {
+    throw new Error(`Plugin trust class cannot execute code: ${plugin.manifest.trust}`);
+  }
+  return new ProcessPluginWorker({
+    command: process.execPath,
+    args: [resolve(import.meta.dirname, "openclaw-host.mjs")],
+    cwd: plugin.root,
+    env: { LITE_PLUGIN_ENTRY: plugin.manifest.entry },
+  }, { manifest: plugin.manifest, config, grants }, options);
 }
 
 export class LazyPluginSupervisor {
@@ -248,7 +332,7 @@ export class LazyPluginSupervisor {
   #armIdleTimer(): void {
     const ttl = this.options.idleTtlMs ?? 60_000;
     if (ttl <= 0) return;
-    this.#idleTimer = setTimeout(() => void this.stop(), ttl);
+    this.#idleTimer = setTimeout(() => { void this.stop().catch(() => undefined); }, ttl);
     this.#idleTimer.unref?.();
   }
 
@@ -258,12 +342,41 @@ export class LazyPluginSupervisor {
   }
 }
 
-function pluginDigest(inspected: InspectedPlugin): string {
-  return createHash("sha256")
-    .update(JSON.stringify(inspected.manifest))
-    .update("\0")
-    .update(readFileSync(inspected.entryPath))
-    .digest("hex");
+export function pluginPackageDigest(inspected: InspectedPlugin): string {
+  const hash = createHash("sha256");
+  let files = 0; let bytes = 0;
+  const visit = (directory: string) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = resolve(directory, name); const metadata = lstatSync(path);
+      if (metadata.isSymbolicLink()) throw new Error("Plugin packages may not contain symbolic links");
+      if (metadata.isDirectory()) { visit(path); continue; }
+      if (!metadata.isFile()) throw new Error("Plugin packages may contain only regular files and directories");
+      files += 1; bytes += metadata.size;
+      if (files > 2_048 || bytes > 64 * 1024 * 1024) throw new Error("Plugin package exceeds digest limits");
+      hash.update(relative(inspected.root, path).replaceAll("\\", "/")).update("\0").update(readFileSync(path)).update("\0");
+    }
+  };
+  visit(inspected.root);
+  return hash.digest("hex");
+}
+
+function copyPackageTree(source: string, destination: string, maxFiles: number, maxBytes: number): void {
+  let files = 0; let bytes = 0;
+  const visit = (from: string, to: string) => {
+    const metadata = lstatSync(from);
+    if (metadata.isSymbolicLink()) throw new Error("Plugin packages may not contain symbolic links");
+    if (metadata.isDirectory()) {
+      mkdirSync(to, { recursive: true });
+      for (const entry of readdirSync(from)) visit(resolve(from, entry), resolve(to, entry));
+      return;
+    }
+    if (!metadata.isFile()) throw new Error("Plugin packages may contain only regular files and directories");
+    files += 1; bytes += metadata.size;
+    if (files > maxFiles || bytes > maxBytes) throw new Error("Plugin package exceeds install limits");
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+  };
+  visit(source, destination);
 }
 
 function validateManifest(value: unknown): PluginManifest {

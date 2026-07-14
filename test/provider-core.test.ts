@@ -4,6 +4,7 @@ import {
   ModelRegistry,
   ProviderError,
   RoutedModelGateway,
+  SingleFlightCredentialBroker,
   redactProviderData,
   type ModelCapability,
   type ModelDescriptor,
@@ -109,5 +110,20 @@ describe("provider plane", () => {
     expect(
       redactProviderData({ authorization: "Bearer abcdefghijklmnop", nested: [keyShapedFixture] }),
     ).toEqual({ authorization: "[REDACTED]", nested: ["[REDACTED]"] });
+  });
+
+  it("refreshes an expiring credential exactly once for concurrent callers", async () => {
+    let refreshes = 0;
+    const broker = new SingleFlightCredentialBroker({
+      async load() { return { authorizationHeader: "Bearer stale", expiresAt: new Date(Date.now() + 1_000).toISOString() }; },
+      async refresh() {
+        refreshes += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { authorizationHeader: "Bearer fresh", expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() };
+      },
+    });
+    const credentials = await Promise.all([broker.resolve("profile"), broker.resolve("profile"), broker.resolve("profile")]);
+    expect(credentials.map((item) => item.authorizationHeader)).toEqual(["Bearer fresh", "Bearer fresh", "Bearer fresh"]);
+    expect(refreshes).toBe(1);
   });
 });

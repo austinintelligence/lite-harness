@@ -4,12 +4,15 @@ import {
   createHash,
   randomBytes,
 } from "node:crypto";
+import { availableParallelism, loadavg } from "node:os";
+import { gzipSync, gunzipSync } from "node:zlib";
 import {
   mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
+  statfsSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ArtifactRecord, InternalPrincipal } from "@lite-harness/contracts";
@@ -44,13 +47,16 @@ export class LocalWorkspaceSnapshotStore {
   constructor(
     private readonly root: string,
     private readonly keys: SnapshotKeyProvider,
+    private readonly maxArchiveBytes = 512 * 1024 * 1024,
   ) {}
 
   async create(workspaceId: string, archive: Buffer): Promise<SnapshotRecord> {
+    if (archive.length > this.maxArchiveBytes) throw new Error("Workspace snapshot exceeds the archive limit");
     const key = await this.keys.getKey(workspaceId);
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
-    const ciphertext = Buffer.concat([cipher.update(archive), cipher.final()]);
+    const compressed = gzipSync(archive, { level: 6 });
+    const ciphertext = Buffer.concat([cipher.update(compressed), cipher.final()]);
     const header = {
       schemaVersion: 1,
       workspaceId,
@@ -59,7 +65,7 @@ export class LocalWorkspaceSnapshotStore {
       sha256: createHash("sha256").update(archive).digest("hex"),
       nonce: nonce.toString("base64"),
       tag: cipher.getAuthTag().toString("base64"),
-      algorithm: "aes-256-gcm",
+      algorithm: "aes-256-gcm+gzip",
     };
     const paths = this.#paths(workspaceId);
     mkdirSync(dirname(paths.current), { recursive: true });
@@ -115,13 +121,18 @@ export class LocalWorkspaceSnapshotStore {
       tag: string;
       algorithm: string;
     };
-    if (header.schemaVersion !== 1 || header.workspaceId !== workspaceId || header.algorithm !== "aes-256-gcm") {
+    if (header.schemaVersion !== 1 || header.workspaceId !== workspaceId || !["aes-256-gcm", "aes-256-gcm+gzip"].includes(header.algorithm) ||
+        !Number.isSafeInteger(header.plaintextBytes) || header.plaintextBytes < 0 || header.plaintextBytes > this.maxArchiveBytes ||
+        !/^[a-f0-9]{64}$/.test(header.sha256)) {
       throw new Error("Snapshot identity or version is invalid");
     }
     const key = await this.keys.getKey(workspaceId);
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(header.nonce, "base64"));
     decipher.setAuthTag(Buffer.from(header.tag, "base64"));
-    const archive = Buffer.concat([decipher.update(encoded.subarray(secondNewline + 1)), decipher.final()]);
+    const decrypted = Buffer.concat([decipher.update(encoded.subarray(secondNewline + 1)), decipher.final()]);
+    const archive = header.algorithm === "aes-256-gcm+gzip"
+      ? gunzipSync(decrypted, { maxOutputLength: this.maxArchiveBytes })
+      : decrypted;
     const digest = createHash("sha256").update(archive).digest("hex");
     if (digest !== header.sha256 || archive.length !== header.plaintextBytes) {
       throw new Error("Snapshot content verification failed");
@@ -140,13 +151,55 @@ export class LocalWorkspaceSnapshotStore {
   }
 }
 
+export class SnapshotCompactorQueue {
+  readonly #pending = new Map<string, Array<{ resolve(value: SnapshotRecord): void; reject(error: unknown): void }>>();
+  #running = 0;
+
+  constructor(
+    private readonly root: string,
+    private readonly snapshot: (workspaceId: string) => Promise<SnapshotRecord>,
+    private readonly options: { maxConcurrent?: number; maxLoadPerCpu?: number; minFreeBytes?: number } = {},
+  ) {}
+
+  enqueue(workspaceId: string): Promise<SnapshotRecord> {
+    return new Promise((resolve, reject) => {
+      const waiters = this.#pending.get(workspaceId) ?? [];
+      waiters.push({ resolve, reject });
+      this.#pending.set(workspaceId, waiters);
+      this.#drain();
+    });
+  }
+
+  get pendingCount(): number { return this.#pending.size; }
+
+  #drain(): void {
+    const max = this.options.maxConcurrent ?? 1;
+    while (this.#running < max && this.#pending.size > 0) {
+      const entry = this.#pending.entries().next().value as [string, Array<{ resolve(value: SnapshotRecord): void; reject(error: unknown): void }>];
+      this.#pending.delete(entry[0]); this.#running += 1;
+      void this.#run(entry[0]).then(
+        (record) => entry[1].forEach((waiter) => waiter.resolve(record)),
+        (error) => entry[1].forEach((waiter) => waiter.reject(error)),
+      ).finally(() => { this.#running -= 1; this.#drain(); });
+    }
+  }
+
+  async #run(workspaceId: string): Promise<SnapshotRecord> {
+    const disk = statfsSync(this.root);
+    if (disk.bavail * disk.bsize < (this.options.minFreeBytes ?? 1024 * 1024 * 1024)) throw new Error("Snapshot deferred because disk space is low");
+    const cpuCount = Math.max(1, availableParallelism());
+    if (loadavg()[0] / cpuCount > (this.options.maxLoadPerCpu ?? 4)) throw new Error("Snapshot deferred because host load is high");
+    return await this.snapshot(workspaceId);
+  }
+}
+
 export interface ArtifactPayload {
   record: ArtifactRecord;
   data: Buffer;
 }
 
 export class LocalArtifactStore {
-  constructor(private readonly root: string) {}
+  constructor(private readonly root: string, private readonly maxBytes = 16 * 1024 * 1024) {}
 
   publish(params: {
     runId: string;
@@ -157,6 +210,7 @@ export class LocalArtifactStore {
     data: Buffer;
   }): ArtifactRecord {
     validateWorkspacePath(params.path);
+    if (params.data.length > this.maxBytes) throw new Error(`Artifact exceeds ${this.maxBytes} bytes`);
     const id = createId("art");
     const createdAt = new Date().toISOString();
     const record: ArtifactRecord = {
@@ -204,4 +258,50 @@ export class LocalArtifactStore {
     const directory = join(this.root, id.slice(4, 6), id);
     return { data: join(directory, "data"), metadata: join(directory, "metadata.json") };
   }
+}
+
+export type CacheClass = "global-immutable" | "tenant-private" | "workspace-private";
+
+export interface CacheDescriptor {
+  class: CacheClass;
+  logicalKey: string;
+  imageDigest: string;
+  toolchain: string;
+  lockDigest: string;
+  tenantId?: string;
+  workspaceId?: string;
+}
+
+export class LocalCacheCatalog {
+  constructor(private readonly root: string) {}
+
+  resolve(descriptor: CacheDescriptor): { key: string; path: string; class: CacheClass } {
+    validateCacheDescriptor(descriptor);
+    const canonical = JSON.stringify({
+      class: descriptor.class, logicalKey: descriptor.logicalKey, imageDigest: descriptor.imageDigest,
+      toolchain: descriptor.toolchain, lockDigest: descriptor.lockDigest,
+      tenantId: descriptor.class === "global-immutable" ? null : descriptor.tenantId,
+      workspaceId: descriptor.class === "workspace-private" ? descriptor.workspaceId : null,
+    });
+    const key = createHash("sha256").update(canonical).digest("hex");
+    const path = join(this.root, descriptor.class, key.slice(0, 2), key);
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+    const metadataPath = join(path, ".lite-cache.json");
+    try {
+      const existing = JSON.parse(readFileSync(metadataPath, "utf8")) as CacheDescriptor;
+      if (JSON.stringify(existing) !== JSON.stringify(descriptor)) throw new Error("Cache key metadata mismatch");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      writeFileSync(metadataPath, `${JSON.stringify(descriptor)}\n`, { mode: 0o600 });
+    }
+    return { key, path, class: descriptor.class };
+  }
+}
+
+function validateCacheDescriptor(descriptor: CacheDescriptor): void {
+  if (!/^[A-Za-z0-9._/-]{1,256}$/.test(descriptor.logicalKey) || descriptor.logicalKey.includes("..")) throw new Error("Cache logical key is invalid");
+  if (!/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(descriptor.imageDigest)) throw new Error("Cache image digest must be immutable");
+  if (!descriptor.toolchain.trim() || !/^[a-f0-9]{64}$/.test(descriptor.lockDigest)) throw new Error("Cache toolchain or lock digest is invalid");
+  if (descriptor.class !== "global-immutable" && !descriptor.tenantId) throw new Error("Private cache requires a tenant");
+  if (descriptor.class === "workspace-private" && !descriptor.workspaceId) throw new Error("Workspace cache requires a workspace");
 }

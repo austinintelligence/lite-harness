@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ToolCall } from "@lite-harness/contracts";
+import type { ToolCall, ToolDefinition } from "@lite-harness/contracts";
 
 export interface ModelMessage {
-  role: "user" | "assistant" | "tool";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
@@ -17,6 +17,7 @@ export type ModelEvent =
 export interface ModelGateway {
   streamTurn(params: {
     messages: readonly ModelMessage[];
+    tools?: readonly ToolDefinition[];
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent>;
 }
@@ -121,6 +122,44 @@ export interface CredentialBroker {
   resolve(profileId: string, signal?: AbortSignal): Promise<CredentialMaterial>;
 }
 
+export interface RefreshingCredentialSource {
+  load(profileId: string, signal?: AbortSignal): Promise<CredentialMaterial | undefined>;
+  refresh(profileId: string, current: CredentialMaterial | undefined, signal?: AbortSignal): Promise<CredentialMaterial>;
+}
+
+export class SingleFlightCredentialBroker implements CredentialBroker {
+  readonly #cache = new Map<string, CredentialMaterial>();
+  readonly #refreshes = new Map<string, Promise<CredentialMaterial>>();
+
+  constructor(private readonly source: RefreshingCredentialSource, private readonly refreshSkewMs = 60_000) {}
+
+  async resolve(profileId: string, signal?: AbortSignal): Promise<CredentialMaterial> {
+    if (!profileId.trim()) throw new ProviderError("credential_missing", "Credential profile id is required", false);
+    signal?.throwIfAborted();
+    const current = this.#cache.get(profileId) ?? await this.source.load(profileId, signal);
+    if (current && !expiresSoon(current, this.refreshSkewMs)) {
+      this.#cache.set(profileId, { ...current });
+      return { ...current };
+    }
+    let refresh = this.#refreshes.get(profileId);
+    if (!refresh) {
+      refresh = this.source.refresh(profileId, current, signal).then((material) => {
+        if (!material.authorizationHeader.trim() || expiresSoon(material, 0)) {
+          throw new ProviderError("credential_expired", `Credential refresh failed for profile: ${profileId}`, true);
+        }
+        this.#cache.set(profileId, { ...material });
+        return { ...material };
+      }).finally(() => this.#refreshes.delete(profileId));
+      this.#refreshes.set(profileId, refresh);
+    }
+    return { ...await refresh };
+  }
+
+  revoke(profileId: string): void {
+    this.#cache.delete(profileId);
+  }
+}
+
 export class InMemoryCredentialBroker implements CredentialBroker {
   readonly #profiles = new Map<string, CredentialMaterial>();
 
@@ -146,9 +185,71 @@ export interface ProviderAdapter {
   stream(params: {
     model: ModelDescriptor;
     messages: readonly ModelMessage[];
+    tools?: readonly ToolDefinition[];
     credential: CredentialMaterial;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent>;
+}
+
+export async function* readSseData(
+  body: ReadableStream<Uint8Array> | null,
+  signal?: AbortSignal,
+  maxBufferBytes = 2 * 1024 * 1024,
+): AsyncIterable<string> {
+  if (!body) throw new ProviderError("invalid_response", "Provider response body is missing", false);
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed = false;
+  try {
+    while (true) {
+      signal?.throwIfAborted();
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n");
+      if (Buffer.byteLength(buffer, "utf8") > maxBufferBytes) {
+        throw new ProviderError("response_too_large", "Provider SSE frame exceeded the buffer limit", false);
+      }
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+        if (data) yield data;
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) {
+        if (buffer.trim()) {
+          const data = buffer.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+          if (data) yield data;
+        }
+        completed = true;
+        return;
+      }
+    }
+  } finally {
+    if (!completed) await reader.cancel("provider stream closed").catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+export async function readProviderJson(response: Response, maxBytes = 8 * 1024 * 1024): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new ProviderError("invalid_response", "Provider response body is missing", false);
+  const chunks: Uint8Array[] = []; let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      if (bytes > maxBytes) {
+        await reader.cancel("provider response limit exceeded");
+        throw new ProviderError("response_too_large", "Provider response exceeded the size limit", false);
+      }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  try { return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))); }
+  catch { throw new ProviderError("invalid_response", "Provider returned invalid JSON", false); }
 }
 
 export class ProviderError extends Error {
@@ -176,6 +277,7 @@ export class RoutedModelGateway implements ModelGateway {
 
   async *streamTurn(params: {
     messages: readonly ModelMessage[];
+    tools?: readonly ToolDefinition[];
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent> {
     const routes = [this.plan.selected, ...this.plan.fallbacks];
@@ -193,10 +295,11 @@ export class RoutedModelGateway implements ModelGateway {
         for await (const event of adapter.stream({
           model,
           messages: params.messages,
+          ...(params.tools?.length ? { tools: params.tools } : {}),
           credential,
           ...(params.signal ? { signal: params.signal } : {}),
         })) {
-          if (event.type === "tool.call") externallyVisible = true;
+          if (event.type === "tool.call" || event.type === "text.delta") externallyVisible = true;
           yield event;
         }
         return;
@@ -268,6 +371,12 @@ function validateModel(model: ModelDescriptor): void {
   if (!model.id || !model.providerId || !model.credentialProfileId) throw new Error("Model identity fields are required");
   if (!Number.isSafeInteger(model.contextWindow) || model.contextWindow <= 0) throw new Error("Model contextWindow must be positive");
   if (!model.capabilities.includes("text")) throw new Error("Every Lite model must declare text capability");
+}
+
+function expiresSoon(material: CredentialMaterial, skewMs: number): boolean {
+  if (!material.expiresAt) return false;
+  const expiresAt = Date.parse(material.expiresAt);
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now() + skewMs;
 }
 
 function score(model: ModelDescriptor, request: RouteRequest): number {

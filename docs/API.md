@@ -7,11 +7,14 @@ these claims from trusted app identity rather than accepting arbitrary headers.
 
 ## Routes
 
+- `GET /healthz` - Gateway liveness
+- `GET /readyz` - Gateway-to-Manager readiness
 - `POST /hooks/webhook/{accountId}` - signed, durable integration ingress
 - `POST /v1/runs` - create or replay a run (`Idempotency-Key` recommended)
 - `GET /v1/runs/{runId}` - get authorized run state
 - `GET /v1/runs/{runId}/events?after=N` - replay and follow SSE events
 - `GET /v1/runs/{runId}/attempts` - list durable execution attempts
+- `GET /v1/runs/{runId}/children` - list owned direct child runs
 - `POST /v1/runs/{runId}/cancel` - cancel a nonterminal run
 - `POST /v1/runs/{runId}/steer` - queue an instruction for the next model turn
 - `GET /v1/sessions/{sessionId}` - get session metadata
@@ -35,6 +38,8 @@ durable ledger used to enforce those limits. Runs sharing a workspace or
 session execute serially, and every execution is recorded as a run attempt.
 
 The TypeScript SDK exposes the same operations through `LiteHarnessClient`.
+The prerelease Python client under `sdks/python` covers the same run, replay,
+session, artifact, agent, and workspace surface.
 The machine-readable contract is [`openapi.json`](openapi.json).
 
 The webhook route does not use the app bearer token. It requires

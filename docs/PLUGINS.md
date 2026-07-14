@@ -21,9 +21,20 @@ origins and credentials must pass normal plugin/network policy.
 Process-backed plugins use bounded JSON-RPC 2.0 with `initialize`, `health`,
 `invoke`, `migrate`, and `shutdown`. The atomic install lock records source,
 version, digest, trust class, exact operator grants, enablement, and install
-time. Worker start/invocation failures enter exponential crash backoff.
+time. Installs copy into a staging generation, verify the digest and worker
+health, then atomically enable; failure leaves the previous generation active.
+`pnpm lite plugin inspect|install|enable|disable|uninstall|migrate|doctor`
+exposes the lifecycle. The lock digest covers the complete bounded package
+tree, and activating an upgrade disables the previous generation only after
+the new worker passes health verification.
+The compatibility host loads only the documented narrow worker ABI, never an
+OpenClaw Gateway route or internal SDK import.
 
 MCP stdio workers implement the `2025-11-25` lifecycle with negotiated fallback
 to supported earlier revisions, `tools/list`, `tools/call`, include/exclude
 filters, per-call payload/time limits, idle shutdown, and per-server crash
 isolation. Unbrokered server-to-client requests fail closed.
+
+Remote MCP uses the same bounded request/response lifecycle over an explicitly
+allowlisted HTTP origin. Credentials remain in Manager-owned configuration and
+are not exposed to the model, Gateway, or tool container.

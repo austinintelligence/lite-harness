@@ -29,6 +29,9 @@ export default defineConfig({
       "@lite-harness/memory-sqlite": source("./packages/memory-sqlite/src/index.ts"),
       "@lite-harness/process-rpc": source("./packages/process-rpc/src/index.ts"),
       "@lite-harness/delegated-runtime": source("./packages/delegated-runtime/src/index.ts"),
+      "@lite-harness/credential-store": source("./packages/credential-store/src/index.ts"),
+      "@lite-harness/operations": source("./packages/operations/src/index.ts"),
+      "@lite-harness/migration-openclaw": source("./packages/migration-openclaw/src/index.ts"),
     },
   },
   test: {

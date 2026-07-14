@@ -32,7 +32,7 @@ export interface DeliveryReceipt {
   connectorId: string;
   accountId: string;
   deliveryId: string;
-  status: "RECEIVED" | "RUN_STARTED" | "REPLIED" | "FAILED";
+  status: "RECEIVED" | "RUN_STARTED" | "DELIVERING" | "REPLIED" | "FAILED";
   runId?: string;
   replyExternalId?: string;
   errorCode?: string;
@@ -73,10 +73,13 @@ export class SqliteIntegrationStore {
       CREATE TABLE IF NOT EXISTS integration_deliveries (
         connector_id TEXT NOT NULL, account_id TEXT NOT NULL, delivery_id TEXT NOT NULL,
         envelope_json TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, reply_external_id TEXT,
-        error_code TEXT, received_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        error_code TEXT, delivery_owner TEXT, delivery_lease_expires_at INTEGER,
+        received_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         PRIMARY KEY(connector_id, account_id, delivery_id)
       );
     `);
+    this.#ensureColumn("integration_deliveries", "delivery_owner", "TEXT");
+    this.#ensureColumn("integration_deliveries", "delivery_lease_expires_at", "INTEGER");
   }
 
   bind(binding: IntegrationBinding): void {
@@ -119,7 +122,10 @@ export class SqliteIntegrationStore {
   }
 
   markReply(envelope: Pick<InboundEnvelope, "connectorId" | "accountId" | "deliveryId">, replyExternalId: string): DeliveryReceipt {
-    return this.#update(envelope, "REPLIED", { replyExternalId });
+    const receipt = this.#update(envelope, "REPLIED", { replyExternalId });
+    this.#database.prepare(`UPDATE integration_deliveries SET delivery_owner=NULL, delivery_lease_expires_at=NULL
+      WHERE connector_id=? AND account_id=? AND delivery_id=?`).run(envelope.connectorId, envelope.accountId, envelope.deliveryId);
+    return receipt;
   }
 
   markFailed(envelope: Pick<InboundEnvelope, "connectorId" | "accountId" | "deliveryId">, errorCode: string): DeliveryReceipt {
@@ -134,7 +140,35 @@ export class SqliteIntegrationStore {
     return row ? toReceipt(row) : undefined;
   }
 
+  claimReply(envelope: Pick<InboundEnvelope, "connectorId" | "accountId" | "deliveryId">, owner: string, now = Date.now(), leaseMs = 30_000): boolean {
+    const result = this.#database.prepare(`UPDATE integration_deliveries SET status='DELIVERING', delivery_owner=?,
+      delivery_lease_expires_at=?, updated_at=? WHERE connector_id=? AND account_id=? AND delivery_id=?
+      AND (status='RUN_STARTED' OR (status='DELIVERING' AND delivery_lease_expires_at<=?))`)
+      .run(owner, now + leaseMs, new Date(now).toISOString(), envelope.connectorId, envelope.accountId, envelope.deliveryId, now);
+    return result.changes === 1;
+  }
+
+  releaseReply(envelope: Pick<InboundEnvelope, "connectorId" | "accountId" | "deliveryId">, owner: string, errorCode: string): boolean {
+    const result = this.#database.prepare(`UPDATE integration_deliveries SET status='RUN_STARTED', error_code=?,
+      delivery_owner=NULL, delivery_lease_expires_at=NULL, updated_at=? WHERE connector_id=? AND account_id=?
+      AND delivery_id=? AND status='DELIVERING' AND delivery_owner=?`).run(errorCode, new Date().toISOString(),
+      envelope.connectorId, envelope.accountId, envelope.deliveryId, owner);
+    return result.changes === 1;
+  }
+
+  listPendingReplies(limit = 100): Array<{ envelope: InboundEnvelope; receipt: DeliveryReceipt }> {
+    const bounded = Math.max(1, Math.min(limit, 1_000));
+    const rows = this.#database.prepare(`SELECT * FROM integration_deliveries WHERE run_id IS NOT NULL
+      AND status IN ('RUN_STARTED','DELIVERING') ORDER BY received_at LIMIT ?`).all(bounded) as unknown as Array<Record<string, unknown>>;
+    return rows.map((row) => ({ envelope: normalizeInbound(JSON.parse(row.envelope_json as string)), receipt: toReceipt(row) }));
+  }
+
   close(): void { this.#database.close(); }
+
+  #ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.#database.prepare(`PRAGMA table_info(${table})`).all() as unknown as Array<{ name: string }>;
+    if (!columns.some((entry) => entry.name === column)) this.#database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 
   #update(
     envelope: Pick<InboundEnvelope, "connectorId" | "accountId" | "deliveryId">,
@@ -221,11 +255,141 @@ export interface OutboundMessage {
   conversationExternalId: string;
   threadExternalId?: string;
   text: string;
+  idempotencyKey?: string;
 }
 
 export interface ConnectorAdapter {
   readonly connectorId: string;
   send(message: OutboundMessage, signal?: AbortSignal): Promise<{ externalId: string }>;
+}
+
+export class WebhookCallbackConnector implements ConnectorAdapter {
+  readonly connectorId = "webhook";
+  constructor(
+    private readonly resolveTarget: (accountId: string) => Promise<{ url: string; secret: string }>,
+    private readonly fetch: typeof globalThis.fetch = globalThis.fetch,
+  ) {}
+
+  async send(message: OutboundMessage, signal?: AbortSignal): Promise<{ externalId: string }> {
+    validateOutbound(message, 200_000);
+    const target = await this.resolveTarget(message.accountId);
+    const url = new URL(target.url);
+    if ((url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(url.hostname))) ||
+        url.username || url.password || url.search || url.hash) throw new ConnectorError("callback_target_invalid", "Webhook callback target is not allowed", false);
+    const body = JSON.stringify({
+      conversationExternalId: message.conversationExternalId,
+      ...(message.threadExternalId ? { threadExternalId: message.threadExternalId } : {}),
+      text: message.text,
+      ...(message.idempotencyKey ? { idempotencyKey: message.idempotencyKey } : {}),
+    });
+    const signature = `sha256=${createHmac("sha256", target.secret).update(body).digest("hex")}`;
+    const response = await safeFetch(this.fetch, url.toString(), {
+      method: "POST", redirect: "error", signal,
+      headers: { "content-type": "application/json", "x-lite-signature": signature,
+        ...(message.idempotencyKey ? { "idempotency-key": message.idempotencyKey } : {}) }, body,
+    }, "Webhook callback");
+    if (!response.ok) await jsonResponse(response, "Webhook callback");
+    return { externalId: response.headers.get("x-lite-delivery-id") ?? message.idempotencyKey ?? "accepted" };
+  }
+}
+
+export class DeliveryCoordinator {
+  constructor(
+    private readonly store: SqliteIntegrationStore,
+    private readonly owner: string,
+    private readonly adapters: ReadonlyMap<string, ConnectorAdapter>,
+    private readonly getRunReply: (runId: string) => Promise<{ terminal: boolean; text?: string; errorCode?: string }>,
+    private readonly deliveryTimeoutMs = 15_000,
+  ) {}
+
+  async tick(now = Date.now()): Promise<number> {
+    let delivered = 0;
+    for (const item of this.store.listPendingReplies()) {
+      const runId = item.receipt.runId;
+      if (!runId) continue;
+      const outcome = await this.getRunReply(runId);
+      if (!outcome.terminal) continue;
+      const adapter = this.adapters.get(item.envelope.connectorId);
+      if (!adapter || !outcome.text) {
+        this.store.markFailed(item.envelope, outcome.errorCode ?? "delivery_unavailable");
+        continue;
+      }
+      if (!this.store.claimReply(item.envelope, this.owner, now)) continue;
+      try {
+        const result = await adapter.send({
+          accountId: item.envelope.accountId,
+          conversationExternalId: item.envelope.conversationExternalId ?? item.envelope.senderExternalId,
+          ...(item.envelope.threadExternalId ? { threadExternalId: item.envelope.threadExternalId } : {}),
+          text: outcome.text,
+          idempotencyKey: `reply:${item.envelope.connectorId}:${item.envelope.accountId}:${item.envelope.deliveryId}`,
+        }, AbortSignal.timeout(this.deliveryTimeoutMs));
+        this.store.markReply(item.envelope, result.externalId);
+        delivered += 1;
+      } catch (error) {
+        if (error instanceof ConnectorError && error.retryable) this.store.releaseReply(item.envelope, this.owner, error.code);
+        else this.store.markFailed(item.envelope, error instanceof ConnectorError ? error.code : "delivery_failed");
+      }
+    }
+    return delivered;
+  }
+}
+
+export function composeInboundPrompt(envelope: InboundEnvelope): string {
+  if (envelope.attachmentUrls.length === 0) return envelope.text;
+  return `${envelope.text}\n\nAttachments (untrusted external references):\n${envelope.attachmentUrls.map((url) => `- ${url}`).join("\n")}`;
+}
+
+export class SignedAppCallbackClient {
+  readonly #url: URL;
+  constructor(
+    url: string,
+    private readonly secret: () => Promise<string>,
+    private readonly fetch: typeof globalThis.fetch = globalThis.fetch,
+    private readonly maxResponseBytes = 1024 * 1024,
+  ) {
+    this.#url = new URL(url);
+    if ((this.#url.protocol !== "https:" && !(this.#url.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(this.#url.hostname))) ||
+        this.#url.username || this.#url.password || this.#url.search || this.#url.hash) throw new Error("App callback URL is not allowed");
+  }
+
+  async invoke(request: { appId: string; action: string; input: unknown; idempotencyKey: string }, signal?: AbortSignal): Promise<unknown> {
+    if (!/^[a-z][a-z0-9._-]{0,127}$/.test(request.action)) throw new Error("App callback action is invalid");
+    const body = JSON.stringify(request);
+    if (Buffer.byteLength(body) > 1024 * 1024) throw new Error("App callback request is too large");
+    const timestamp = String(Math.floor(Date.now() / 1_000));
+    const signature = `v1=${createHmac("sha256", await this.secret()).update(`v1:${timestamp}:`).update(body).digest("hex")}`;
+    const response = await safeFetch(this.fetch, this.#url.toString(), {
+      method: "POST", redirect: "error", signal, body,
+      headers: { "content-type": "application/json", "idempotency-key": request.idempotencyKey,
+        "x-lite-timestamp": timestamp, "x-lite-signature": signature },
+    }, "App callback");
+    if (!response.ok) await jsonResponse(response, "App callback");
+    const bytes = await boundedResponseBytes(response, this.maxResponseBytes);
+    if (bytes.length === 0) return null;
+    try { return JSON.parse(bytes.toString("utf8")); }
+    catch { throw new ConnectorError("callback_invalid_response", "App callback returned invalid JSON", false); }
+  }
+}
+
+async function boundedResponseBytes(response: Response, maximum: number): Promise<Buffer> {
+  if (!response.body) return Buffer.alloc(0);
+  const chunks: Buffer[] = []; let bytes = 0;
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value); bytes += chunk.length;
+      if (bytes > maximum) {
+        await reader.cancel("response limit exceeded");
+        throw new ConnectorError("callback_response_too_large", "App callback response is too large", false);
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
 }
 
 type SecretResolver = (accountId: string) => Promise<string>;
@@ -299,6 +463,7 @@ export function normalizeInbound(value: unknown): InboundEnvelope {
     throw new Error("Inbound attachmentUrls must be a string array");
   }
   for (const item of attachmentUrls as string[]) {
+    if (item.length > 4_096) throw new Error("Inbound attachment URL is too long");
     const url = new URL(item);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
       throw new Error("Inbound attachment URLs must be credential-free HTTP(S) URLs");
@@ -306,6 +471,11 @@ export function normalizeInbound(value: unknown): InboundEnvelope {
   }
   const receivedAt = typeof record.receivedAt === "string" ? record.receivedAt : new Date().toISOString();
   if (!Number.isFinite(Date.parse(receivedAt))) throw new Error("Inbound receivedAt is invalid");
+  for (const field of ["threadExternalId", "conversationExternalId"] as const) {
+    if (record[field] !== undefined && (typeof record[field] !== "string" || !(record[field] as string).trim() || (record[field] as string).length > 512)) {
+      throw new Error(`Inbound ${field} must contain 1-512 characters`);
+    }
+  }
   return {
     connectorId: record.connectorId as string,
     accountId: record.accountId as string,
@@ -316,7 +486,7 @@ export function normalizeInbound(value: unknown): InboundEnvelope {
     text: record.text as string,
     attachmentUrls,
     receivedAt,
-    ...(typeof record.rawDigest === "string" ? { rawDigest: record.rawDigest } : {}),
+    rawDigest: createHash("sha256").update(JSON.stringify(record)).digest("hex"),
   };
 }
 
@@ -341,7 +511,10 @@ async function jsonResponse(response: Response, connector: string): Promise<unkn
       Number.isFinite(retryAfter) ? retryAfter * 1_000 : undefined,
     );
   }
-  try { return await response.json(); }
+  try {
+    const bytes = await boundedResponseBytes(response, 1024 * 1024);
+    return bytes.length ? JSON.parse(bytes.toString("utf8")) : {};
+  }
   catch { throw new ConnectorError("connector_invalid_response", `${connector} returned invalid JSON`, false); }
 }
 

@@ -12,6 +12,9 @@ export interface IntervalTrigger {
   leaseExpiresAt?: number;
   oneShot?: boolean;
   jitterMs?: number;
+  missedRunPolicy?: "skip" | "catch-up";
+  timeZone?: string;
+  localTime?: string;
 }
 
 export interface TriggerStore {
@@ -72,6 +75,7 @@ export class SqliteTriggerStore implements TriggerStore {
       CREATE TABLE IF NOT EXISTS triggers (
         id TEXT PRIMARY KEY, interval_ms INTEGER NOT NULL, next_fire_at INTEGER NOT NULL,
         payload_json TEXT NOT NULL, one_shot INTEGER NOT NULL DEFAULT 0, jitter_ms INTEGER NOT NULL DEFAULT 0,
+        missed_run_policy TEXT NOT NULL DEFAULT 'skip', time_zone TEXT, local_time TEXT,
         enabled INTEGER NOT NULL DEFAULT 1, lease_owner TEXT, lease_expires_at INTEGER,
         last_fired_at INTEGER, last_error_code TEXT
       );
@@ -81,24 +85,30 @@ export class SqliteTriggerStore implements TriggerStore {
         PRIMARY KEY(trigger_id, scheduled_at)
       );
     `);
+    this.#ensureColumn("triggers", "missed_run_policy", "TEXT NOT NULL DEFAULT 'skip'");
+    this.#ensureColumn("triggers", "time_zone", "TEXT");
+    this.#ensureColumn("triggers", "local_time", "TEXT");
   }
 
   put(trigger: IntervalTrigger): void {
     validateTrigger(trigger);
     this.#database.prepare(`
-      INSERT INTO triggers(id, interval_ms, next_fire_at, payload_json, one_shot, jitter_ms)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO triggers(id, interval_ms, next_fire_at, payload_json, one_shot, jitter_ms, missed_run_policy, time_zone, local_time)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET interval_ms=excluded.interval_ms, next_fire_at=excluded.next_fire_at,
-        payload_json=excluded.payload_json, one_shot=excluded.one_shot, jitter_ms=excluded.jitter_ms, enabled=1
-    `).run(trigger.id, trigger.intervalMs, trigger.nextFireAt, JSON.stringify(trigger.payload), trigger.oneShot ? 1 : 0, trigger.jitterMs ?? 0);
+        payload_json=excluded.payload_json, one_shot=excluded.one_shot, jitter_ms=excluded.jitter_ms,
+        missed_run_policy=excluded.missed_run_policy, time_zone=excluded.time_zone, local_time=excluded.local_time, enabled=1
+    `).run(trigger.id, trigger.intervalMs, trigger.nextFireAt, JSON.stringify(trigger.payload), trigger.oneShot ? 1 : 0,
+      trigger.jitterMs ?? 0, trigger.missedRunPolicy ?? "skip", trigger.timeZone ?? null, trigger.localTime ?? null);
   }
 
   ensure(trigger: IntervalTrigger): void {
     validateTrigger(trigger);
     this.#database.prepare(`
-      INSERT OR IGNORE INTO triggers(id, interval_ms, next_fire_at, payload_json, one_shot, jitter_ms)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(trigger.id, trigger.intervalMs, trigger.nextFireAt, JSON.stringify(trigger.payload), trigger.oneShot ? 1 : 0, trigger.jitterMs ?? 0);
+      INSERT OR IGNORE INTO triggers(id, interval_ms, next_fire_at, payload_json, one_shot, jitter_ms, missed_run_policy, time_zone, local_time)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(trigger.id, trigger.intervalMs, trigger.nextFireAt, JSON.stringify(trigger.payload), trigger.oneShot ? 1 : 0,
+      trigger.jitterMs ?? 0, trigger.missedRunPolicy ?? "skip", trigger.timeZone ?? null, trigger.localTime ?? null);
   }
 
   claimDue(now: number, owner: string, leaseMs: number): IntervalTrigger[] {
@@ -158,6 +168,11 @@ export class SqliteTriggerStore implements TriggerStore {
       ...(row.error_code === null ? {} : { errorCode: row.error_code }),
     }));
   }
+
+  #ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.#database.prepare(`PRAGMA table_info(${table})`).all() as unknown as Array<{ name: string }>;
+    if (!columns.some((entry) => entry.name === column)) this.#database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 export interface TriggerFiring {
@@ -194,6 +209,7 @@ export class SchedulerEngine {
 interface TriggerRow {
   id: string; interval_ms: number; next_fire_at: number; payload_json: string;
   one_shot: number; jitter_ms: number; lease_owner: string | null; lease_expires_at: number | null;
+  missed_run_policy: string; time_zone: string | null; local_time: string | null;
 }
 
 interface TriggerFiringRow {
@@ -206,6 +222,8 @@ function toTrigger(row: TriggerRow): IntervalTrigger {
     id: row.id, intervalMs: row.interval_ms, nextFireAt: row.next_fire_at,
     payload: JSON.parse(row.payload_json) as Record<string, unknown>,
     ...(row.one_shot ? { oneShot: true } : {}), ...(row.jitter_ms ? { jitterMs: row.jitter_ms } : {}),
+    ...(row.missed_run_policy === "catch-up" ? { missedRunPolicy: "catch-up" as const } : {}),
+    ...(row.time_zone ? { timeZone: row.time_zone } : {}), ...(row.local_time ? { localTime: row.local_time } : {}),
     ...(row.lease_owner ? { leaseOwner: row.lease_owner } : {}),
     ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
   };
@@ -216,13 +234,70 @@ function validateTrigger(trigger: IntervalTrigger): void {
   if (trigger.oneShot && trigger.intervalMs < 0) throw new Error("One-shot trigger interval cannot be negative");
   if (!Number.isSafeInteger(trigger.nextFireAt) || trigger.nextFireAt < 0) throw new Error("Trigger nextFireAt is invalid");
   if ((trigger.jitterMs ?? 0) < 0 || (trigger.jitterMs ?? 0) > Math.max(trigger.intervalMs, 86_400_000)) throw new Error("Trigger jitter is invalid");
+  if (trigger.missedRunPolicy !== undefined && !["skip", "catch-up"].includes(trigger.missedRunPolicy)) throw new Error("Trigger missed-run policy is invalid");
+  if ((trigger.timeZone === undefined) !== (trigger.localTime === undefined)) throw new Error("Trigger timeZone and localTime must be configured together");
+  if (trigger.timeZone && trigger.localTime) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(trigger.localTime)) throw new Error("Trigger localTime must be HH:mm");
+    try { new Intl.DateTimeFormat("en-US", { timeZone: trigger.timeZone }).format(0); }
+    catch { throw new Error("Trigger timeZone is invalid"); }
+  }
 }
 
 function nextOccurrence(trigger: IntervalTrigger, firedAt: number): number {
+  if (trigger.timeZone && trigger.localTime) {
+    const after = trigger.missedRunPolicy === "catch-up" ? trigger.nextFireAt : firedAt;
+    return nextDailyOccurrence(trigger.timeZone, trigger.localTime, after);
+  }
+  if (trigger.missedRunPolicy === "catch-up") return trigger.nextFireAt + trigger.intervalMs;
   const missed = Math.max(1, Math.floor((firedAt - trigger.nextFireAt) / trigger.intervalMs) + 1);
   const base = trigger.nextFireAt + missed * trigger.intervalMs;
   const jitter = trigger.jitterMs ?? 0;
   if (!jitter) return base;
   const value = createHash("sha256").update(`${trigger.id}:${base}`).digest().readUInt32BE(0);
   return base + (value % (jitter + 1));
+}
+
+export function nextDailyOccurrence(timeZone: string, localTime: string, after: number): number {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(localTime)) throw new Error("localTime must be HH:mm");
+  const [hour, minute] = localTime.split(":").map(Number) as [number, number];
+  const current = zonedParts(after, timeZone);
+  for (let offset = 0; offset <= 3; offset += 1) {
+    const date = new Date(Date.UTC(current.year, current.month - 1, current.day + offset));
+    let candidate: number;
+    try {
+      candidate = zonedLocalToUtc(timeZone, date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), hour, minute);
+    } catch (error) {
+      if (error instanceof NonexistentLocalTimeError) continue;
+      throw error;
+    }
+    if (candidate > after) return candidate;
+  }
+  throw new Error("Could not calculate the next zoned schedule occurrence");
+}
+
+function zonedLocalToUtc(timeZone: string, year: number, month: number, day: number, hour: number, minute: number): number {
+  const target = Date.UTC(year, month - 1, day, hour, minute);
+  let candidate = target;
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    const actual = zonedParts(candidate, timeZone);
+    const represented = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute);
+    const correction = target - represented;
+    if (correction === 0) return candidate;
+    candidate += correction;
+  }
+  const actual = zonedParts(candidate, timeZone);
+  if (actual.year !== year || actual.month !== month || actual.day !== day || actual.hour !== hour || actual.minute !== minute) {
+    throw new NonexistentLocalTimeError("Scheduled local time does not exist in the selected time zone");
+  }
+  return candidate;
+}
+
+class NonexistentLocalTimeError extends Error {}
+
+function zonedParts(value: number, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number } {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(value).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day), hour: Number(parts.hour), minute: Number(parts.minute) };
 }

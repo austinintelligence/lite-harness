@@ -23,7 +23,12 @@ export class ManagerClient {
     private readonly socketPath: string,
     private readonly internalToken: string,
     private readonly timeoutMs = 15_000,
+    private readonly maxResponseBytes = 32 * 1024 * 1024,
   ) {}
+
+  health(): Promise<{ ok: boolean; role: string; uptimeSeconds: number; rssBytes: number }> {
+    return this.#request("GET", "/healthz");
+  }
 
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse> {
     return this.#request<CreateRunResponse>("POST", "/internal/runs", request);
@@ -61,6 +66,12 @@ export class ManagerClient {
     return (await this.#request<{ attempts: RunAttemptRecord[] }>(
       "GET", `/internal/runs/${encodeURIComponent(runId)}/attempts`,
     )).attempts;
+  }
+
+  async getChildRuns(runId: string): Promise<RunRecord[]> {
+    return (await this.#request<{ runs: RunRecord[] }>(
+      "GET", `/internal/runs/${encodeURIComponent(runId)}/children`,
+    )).runs;
   }
 
   getSession(sessionId: string): Promise<SessionRecord> {
@@ -151,7 +162,13 @@ export class ManagerClient {
         },
         (response) => {
           const chunks: Buffer[] = [];
-          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          let bytes = 0;
+          response.on("data", (chunk: Buffer) => {
+            bytes += chunk.length;
+            if (bytes > this.maxResponseBytes) response.destroy(new Error("Manager IPC response exceeded the size limit"));
+            else chunks.push(chunk);
+          });
+          response.once("error", reject);
           response.on("end", () => {
             const text = Buffer.concat(chunks).toString("utf8");
             let parsed: unknown;

@@ -16,3 +16,5 @@ coverage/
 .vscode/
 *.tgz
 *.tsbuildinfo
+__pycache__/
+*.py[cod]

@@ -1,0 +1,1549 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:9a8dce4e-cbc5-4d45-a764-aadb2ba39409",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "lite-harness",
+      "version": "0.1.0-alpha.0",
+      "bom-ref": "lite-harness@0.1.0-alpha.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "@emnapi/core",
+      "version": "1.11.1",
+      "bom-ref": "@emnapi/core@1.11.1",
+      "purl": "pkg:npm/%40emnapi/core@1.11.1"
+    },
+    {
+      "type": "library",
+      "name": "@emnapi/runtime",
+      "version": "1.11.1",
+      "bom-ref": "@emnapi/runtime@1.11.1",
+      "purl": "pkg:npm/%40emnapi/runtime@1.11.1"
+    },
+    {
+      "type": "library",
+      "name": "@emnapi/wasi-threads",
+      "version": "1.2.2",
+      "bom-ref": "@emnapi/wasi-threads@1.2.2",
+      "purl": "pkg:npm/%40emnapi/wasi-threads@1.2.2"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/aix-ppc64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/aix-ppc64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/aix-ppc64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/android-arm",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/android-arm@0.27.7",
+      "purl": "pkg:npm/%40esbuild/android-arm@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/android-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/android-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/android-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/android-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/android-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/android-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/darwin-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/darwin-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/darwin-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/darwin-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/darwin-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/darwin-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/freebsd-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/freebsd-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/freebsd-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/freebsd-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/freebsd-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/freebsd-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-arm",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-arm@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-arm@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-ia32",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-ia32@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-ia32@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-loong64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-loong64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-loong64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-mips64el",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-mips64el@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-mips64el@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-ppc64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-ppc64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-ppc64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-riscv64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-riscv64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-riscv64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-s390x",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-s390x@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-s390x@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/linux-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/linux-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/linux-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/netbsd-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/netbsd-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/netbsd-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/netbsd-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/netbsd-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/netbsd-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/openbsd-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/openbsd-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/openbsd-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/openbsd-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/openbsd-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/openbsd-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/openharmony-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/openharmony-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/openharmony-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/sunos-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/sunos-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/sunos-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/win32-arm64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/win32-arm64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/win32-arm64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/win32-ia32",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/win32-ia32@0.27.7",
+      "purl": "pkg:npm/%40esbuild/win32-ia32@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@esbuild/win32-x64",
+      "version": "0.27.7",
+      "bom-ref": "@esbuild/win32-x64@0.27.7",
+      "purl": "pkg:npm/%40esbuild/win32-x64@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/ajv-compiler",
+      "version": "4.0.5",
+      "bom-ref": "@fastify/ajv-compiler@4.0.5",
+      "purl": "pkg:npm/%40fastify/ajv-compiler@4.0.5"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/error",
+      "version": "4.2.0",
+      "bom-ref": "@fastify/error@4.2.0",
+      "purl": "pkg:npm/%40fastify/error@4.2.0"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/fast-json-stringify-compiler",
+      "version": "5.1.0",
+      "bom-ref": "@fastify/fast-json-stringify-compiler@5.1.0",
+      "purl": "pkg:npm/%40fastify/fast-json-stringify-compiler@5.1.0"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/forwarded",
+      "version": "3.0.1",
+      "bom-ref": "@fastify/forwarded@3.0.1",
+      "purl": "pkg:npm/%40fastify/forwarded@3.0.1"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/merge-json-schemas",
+      "version": "0.2.1",
+      "bom-ref": "@fastify/merge-json-schemas@0.2.1",
+      "purl": "pkg:npm/%40fastify/merge-json-schemas@0.2.1"
+    },
+    {
+      "type": "library",
+      "name": "@fastify/proxy-addr",
+      "version": "5.1.0",
+      "bom-ref": "@fastify/proxy-addr@5.1.0",
+      "purl": "pkg:npm/%40fastify/proxy-addr@5.1.0"
+    },
+    {
+      "type": "library",
+      "name": "@jridgewell/sourcemap-codec",
+      "version": "1.5.5",
+      "bom-ref": "@jridgewell/sourcemap-codec@1.5.5",
+      "purl": "pkg:npm/%40jridgewell/sourcemap-codec@1.5.5"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/agent-runtime",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/agent-runtime@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/agent-runtime@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/agent-runtime",
+      "version": "link:../../packages/agent-runtime",
+      "bom-ref": "@lite-harness/agent-runtime@link:../../packages/agent-runtime",
+      "purl": "pkg:npm/%40lite-harness/agent-runtime@link%3A..%2F..%2Fpackages%2Fagent-runtime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/agent-runtime",
+      "version": "link:../agent-runtime",
+      "bom-ref": "@lite-harness/agent-runtime@link:../agent-runtime",
+      "purl": "pkg:npm/%40lite-harness/agent-runtime@link%3A..%2Fagent-runtime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/automation",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/automation@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/automation@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/automation",
+      "version": "link:../../packages/automation",
+      "bom-ref": "@lite-harness/automation@link:../../packages/automation",
+      "purl": "pkg:npm/%40lite-harness/automation@link%3A..%2F..%2Fpackages%2Fautomation"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/browser",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/browser@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/browser@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/browser",
+      "version": "link:../../packages/browser",
+      "bom-ref": "@lite-harness/browser@link:../../packages/browser",
+      "purl": "pkg:npm/%40lite-harness/browser@link%3A..%2F..%2Fpackages%2Fbrowser"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/cli-app",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/cli-app@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/cli-app@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/context",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/context@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/context@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/contracts",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/contracts@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/contracts@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/contracts",
+      "version": "link:../../packages/contracts",
+      "bom-ref": "@lite-harness/contracts@link:../../packages/contracts",
+      "purl": "pkg:npm/%40lite-harness/contracts@link%3A..%2F..%2Fpackages%2Fcontracts"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/contracts",
+      "version": "link:../contracts",
+      "bom-ref": "@lite-harness/contracts@link:../contracts",
+      "purl": "pkg:npm/%40lite-harness/contracts@link%3A..%2Fcontracts"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/control-plane",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/control-plane@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/control-plane@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/control-plane",
+      "version": "link:../../packages/control-plane",
+      "bom-ref": "@lite-harness/control-plane@link:../../packages/control-plane",
+      "purl": "pkg:npm/%40lite-harness/control-plane@link%3A..%2F..%2Fpackages%2Fcontrol-plane"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/credential-store",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/credential-store@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/credential-store@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/credential-store",
+      "version": "link:../../packages/credential-store",
+      "bom-ref": "@lite-harness/credential-store@link:../../packages/credential-store",
+      "purl": "pkg:npm/%40lite-harness/credential-store@link%3A..%2F..%2Fpackages%2Fcredential-store"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/delegated-runtime",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/delegated-runtime@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/delegated-runtime@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/delegated-runtime",
+      "version": "link:../../packages/delegated-runtime",
+      "bom-ref": "@lite-harness/delegated-runtime@link:../../packages/delegated-runtime",
+      "purl": "pkg:npm/%40lite-harness/delegated-runtime@link%3A..%2F..%2Fpackages%2Fdelegated-runtime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/domain",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/domain@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/domain@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/domain",
+      "version": "link:../../packages/domain",
+      "bom-ref": "@lite-harness/domain@link:../../packages/domain",
+      "purl": "pkg:npm/%40lite-harness/domain@link%3A..%2F..%2Fpackages%2Fdomain"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/domain",
+      "version": "link:../domain",
+      "bom-ref": "@lite-harness/domain@link:../domain",
+      "purl": "pkg:npm/%40lite-harness/domain@link%3A..%2Fdomain"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/gateway-app",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/gateway-app@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/gateway-app@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/integrations",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/integrations@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/integrations@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/integrations",
+      "version": "link:../../packages/integrations",
+      "bom-ref": "@lite-harness/integrations@link:../../packages/integrations",
+      "purl": "pkg:npm/%40lite-harness/integrations@link%3A..%2F..%2Fpackages%2Fintegrations"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/launcher-app",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/launcher-app@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/launcher-app@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/manager-app",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/manager-app@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/manager-app@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/mcp",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/mcp@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/mcp@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/memory-sqlite",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/memory-sqlite@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/memory-sqlite@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/memory-sqlite",
+      "version": "link:../../packages/memory-sqlite",
+      "bom-ref": "@lite-harness/memory-sqlite@link:../../packages/memory-sqlite",
+      "purl": "pkg:npm/%40lite-harness/memory-sqlite@link%3A..%2F..%2Fpackages%2Fmemory-sqlite"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/migration-openclaw",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/migration-openclaw@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/migration-openclaw@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/migration-openclaw",
+      "version": "link:../../packages/migration-openclaw",
+      "bom-ref": "@lite-harness/migration-openclaw@link:../../packages/migration-openclaw",
+      "purl": "pkg:npm/%40lite-harness/migration-openclaw@link%3A..%2F..%2Fpackages%2Fmigration-openclaw"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/operations",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/operations@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/operations@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/operations",
+      "version": "link:../../packages/operations",
+      "bom-ref": "@lite-harness/operations@link:../../packages/operations",
+      "purl": "pkg:npm/%40lite-harness/operations@link%3A..%2F..%2Fpackages%2Foperations"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/plugin-core",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/plugin-core@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/plugin-core@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/plugin-core",
+      "version": "link:../../packages/plugin-core",
+      "bom-ref": "@lite-harness/plugin-core@link:../../packages/plugin-core",
+      "purl": "pkg:npm/%40lite-harness/plugin-core@link%3A..%2F..%2Fpackages%2Fplugin-core"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/process-rpc",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/process-rpc@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/process-rpc@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/process-rpc",
+      "version": "link:../../packages/process-rpc",
+      "bom-ref": "@lite-harness/process-rpc@link:../../packages/process-rpc",
+      "purl": "pkg:npm/%40lite-harness/process-rpc@link%3A..%2F..%2Fpackages%2Fprocess-rpc"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/process-rpc",
+      "version": "link:../process-rpc",
+      "bom-ref": "@lite-harness/process-rpc@link:../process-rpc",
+      "purl": "pkg:npm/%40lite-harness/process-rpc@link%3A..%2Fprocess-rpc"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-anthropic",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/provider-anthropic@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/provider-anthropic@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-anthropic",
+      "version": "link:../../packages/provider-anthropic",
+      "bom-ref": "@lite-harness/provider-anthropic@link:../../packages/provider-anthropic",
+      "purl": "pkg:npm/%40lite-harness/provider-anthropic@link%3A..%2F..%2Fpackages%2Fprovider-anthropic"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-core",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/provider-core@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/provider-core@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-core",
+      "version": "link:../../packages/provider-core",
+      "bom-ref": "@lite-harness/provider-core@link:../../packages/provider-core",
+      "purl": "pkg:npm/%40lite-harness/provider-core@link%3A..%2F..%2Fpackages%2Fprovider-core"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-core",
+      "version": "link:../provider-core",
+      "bom-ref": "@lite-harness/provider-core@link:../provider-core",
+      "purl": "pkg:npm/%40lite-harness/provider-core@link%3A..%2Fprovider-core"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-openai-compatible",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/provider-openai-compatible@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/provider-openai-compatible@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/provider-openai-compatible",
+      "version": "link:../../packages/provider-openai-compatible",
+      "bom-ref": "@lite-harness/provider-openai-compatible@link:../../packages/provider-openai-compatible",
+      "purl": "pkg:npm/%40lite-harness/provider-openai-compatible@link%3A..%2F..%2Fpackages%2Fprovider-openai-compatible"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/runtime-docker",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/runtime-docker@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/runtime-docker@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/runtime-docker",
+      "version": "link:../../packages/runtime-docker",
+      "bom-ref": "@lite-harness/runtime-docker@link:../../packages/runtime-docker",
+      "purl": "pkg:npm/%40lite-harness/runtime-docker@link%3A..%2F..%2Fpackages%2Fruntime-docker"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/runtime",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/runtime@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/runtime@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/runtime",
+      "version": "link:../../packages/runtime",
+      "bom-ref": "@lite-harness/runtime@link:../../packages/runtime",
+      "purl": "pkg:npm/%40lite-harness/runtime@link%3A..%2F..%2Fpackages%2Fruntime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/runtime",
+      "version": "link:../runtime",
+      "bom-ref": "@lite-harness/runtime@link:../runtime",
+      "purl": "pkg:npm/%40lite-harness/runtime@link%3A..%2Fruntime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/sdk",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/sdk@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/sdk@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/skills",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/skills@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/skills@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/storage-sqlite",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/storage-sqlite@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/storage-sqlite@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/storage-sqlite",
+      "version": "link:../../packages/storage-sqlite",
+      "bom-ref": "@lite-harness/storage-sqlite@link:../../packages/storage-sqlite",
+      "purl": "pkg:npm/%40lite-harness/storage-sqlite@link%3A..%2F..%2Fpackages%2Fstorage-sqlite"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/subagents",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/subagents@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/subagents@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/workspace",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/workspace@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/workspace@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/workspace",
+      "version": "link:../../packages/workspace",
+      "bom-ref": "@lite-harness/workspace@link:../../packages/workspace",
+      "purl": "pkg:npm/%40lite-harness/workspace@link%3A..%2F..%2Fpackages%2Fworkspace"
+    },
+    {
+      "type": "library",
+      "name": "@napi-rs/wasm-runtime",
+      "version": "1.1.6",
+      "bom-ref": "@napi-rs/wasm-runtime@1.1.6",
+      "purl": "pkg:npm/%40napi-rs/wasm-runtime@1.1.6"
+    },
+    {
+      "type": "library",
+      "name": "@oxc-project/types",
+      "version": "0.139.0",
+      "bom-ref": "@oxc-project/types@0.139.0",
+      "purl": "pkg:npm/%40oxc-project/types@0.139.0"
+    },
+    {
+      "type": "library",
+      "name": "@pinojs/redact",
+      "version": "0.4.0",
+      "bom-ref": "@pinojs/redact@0.4.0",
+      "purl": "pkg:npm/%40pinojs/redact@0.4.0"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-android-arm64",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-android-arm64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-android-arm64@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-darwin-arm64",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-darwin-arm64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-darwin-x64",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-darwin-x64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-darwin-x64@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-freebsd-x64",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-freebsd-x64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-freebsd-x64@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-arm-gnueabihf",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-arm-gnueabihf@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-arm-gnueabihf@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-arm64-gnu",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-arm64-gnu@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-arm64-gnu@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-arm64-musl",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-arm64-musl@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-arm64-musl@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-ppc64-gnu",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-ppc64-gnu@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-ppc64-gnu@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-s390x-gnu",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-s390x-gnu@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-s390x-gnu@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-x64-gnu",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-x64-gnu@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-x64-gnu@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-linux-x64-musl",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-linux-x64-musl@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-linux-x64-musl@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-openharmony-arm64",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-openharmony-arm64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-openharmony-arm64@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-wasm32-wasi",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-wasm32-wasi@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-wasm32-wasi@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-win32-arm64-msvc",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-win32-arm64-msvc@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-win32-arm64-msvc@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/binding-win32-x64-msvc",
+      "version": "1.1.5",
+      "bom-ref": "@rolldown/binding-win32-x64-msvc@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-win32-x64-msvc@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "@rolldown/pluginutils",
+      "version": "1.0.1",
+      "bom-ref": "@rolldown/pluginutils@1.0.1",
+      "purl": "pkg:npm/%40rolldown/pluginutils@1.0.1"
+    },
+    {
+      "type": "library",
+      "name": "@sinclair/typebox",
+      "version": "0.34.41",
+      "bom-ref": "@sinclair/typebox@0.34.41",
+      "purl": "pkg:npm/%40sinclair/typebox@0.34.41"
+    },
+    {
+      "type": "library",
+      "name": "@standard-schema/spec",
+      "version": "1.1.0",
+      "bom-ref": "@standard-schema/spec@1.1.0",
+      "purl": "pkg:npm/%40standard-schema/spec@1.1.0"
+    },
+    {
+      "type": "library",
+      "name": "@tybys/wasm-util",
+      "version": "0.10.3",
+      "bom-ref": "@tybys/wasm-util@0.10.3",
+      "purl": "pkg:npm/%40tybys/wasm-util@0.10.3"
+    },
+    {
+      "type": "library",
+      "name": "@types/chai",
+      "version": "5.2.3",
+      "bom-ref": "@types/chai@5.2.3",
+      "purl": "pkg:npm/%40types/chai@5.2.3"
+    },
+    {
+      "type": "library",
+      "name": "@types/deep-eql",
+      "version": "4.0.2",
+      "bom-ref": "@types/deep-eql@4.0.2",
+      "purl": "pkg:npm/%40types/deep-eql@4.0.2"
+    },
+    {
+      "type": "library",
+      "name": "@types/estree",
+      "version": "1.0.9",
+      "bom-ref": "@types/estree@1.0.9",
+      "purl": "pkg:npm/%40types/estree@1.0.9"
+    },
+    {
+      "type": "library",
+      "name": "@types/node",
+      "version": "24.10.1",
+      "bom-ref": "@types/node@24.10.1",
+      "purl": "pkg:npm/%40types/node@24.10.1"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/expect",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/expect@4.1.9",
+      "purl": "pkg:npm/%40vitest/expect@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/mocker",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/mocker@4.1.9",
+      "purl": "pkg:npm/%40vitest/mocker@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/pretty-format",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/pretty-format@4.1.9",
+      "purl": "pkg:npm/%40vitest/pretty-format@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/runner",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/runner@4.1.9",
+      "purl": "pkg:npm/%40vitest/runner@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/snapshot",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/snapshot@4.1.9",
+      "purl": "pkg:npm/%40vitest/snapshot@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/spy",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/spy@4.1.9",
+      "purl": "pkg:npm/%40vitest/spy@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "@vitest/utils",
+      "version": "4.1.9",
+      "bom-ref": "@vitest/utils@4.1.9",
+      "purl": "pkg:npm/%40vitest/utils@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "abstract-logging",
+      "version": "2.0.1",
+      "bom-ref": "abstract-logging@2.0.1",
+      "purl": "pkg:npm/abstract-logging@2.0.1"
+    },
+    {
+      "type": "library",
+      "name": "ajv-formats",
+      "version": "3.0.1",
+      "bom-ref": "ajv-formats@3.0.1",
+      "purl": "pkg:npm/ajv-formats@3.0.1"
+    },
+    {
+      "type": "library",
+      "name": "ajv",
+      "version": "8.20.0",
+      "bom-ref": "ajv@8.20.0",
+      "purl": "pkg:npm/ajv@8.20.0"
+    },
+    {
+      "type": "library",
+      "name": "assertion-error",
+      "version": "2.0.1",
+      "bom-ref": "assertion-error@2.0.1",
+      "purl": "pkg:npm/assertion-error@2.0.1"
+    },
+    {
+      "type": "library",
+      "name": "atomic-sleep",
+      "version": "1.0.0",
+      "bom-ref": "atomic-sleep@1.0.0",
+      "purl": "pkg:npm/atomic-sleep@1.0.0"
+    },
+    {
+      "type": "library",
+      "name": "avvio",
+      "version": "9.2.0",
+      "bom-ref": "avvio@9.2.0",
+      "purl": "pkg:npm/avvio@9.2.0"
+    },
+    {
+      "type": "library",
+      "name": "chai",
+      "version": "6.2.2",
+      "bom-ref": "chai@6.2.2",
+      "purl": "pkg:npm/chai@6.2.2"
+    },
+    {
+      "type": "library",
+      "name": "convert-source-map",
+      "version": "2.0.0",
+      "bom-ref": "convert-source-map@2.0.0",
+      "purl": "pkg:npm/convert-source-map@2.0.0"
+    },
+    {
+      "type": "library",
+      "name": "cookie",
+      "version": "1.1.1",
+      "bom-ref": "cookie@1.1.1",
+      "purl": "pkg:npm/cookie@1.1.1"
+    },
+    {
+      "type": "library",
+      "name": "dequal",
+      "version": "2.0.3",
+      "bom-ref": "dequal@2.0.3",
+      "purl": "pkg:npm/dequal@2.0.3"
+    },
+    {
+      "type": "library",
+      "name": "detect-libc",
+      "version": "2.1.2",
+      "bom-ref": "detect-libc@2.1.2",
+      "purl": "pkg:npm/detect-libc@2.1.2"
+    },
+    {
+      "type": "library",
+      "name": "es-module-lexer",
+      "version": "2.3.1",
+      "bom-ref": "es-module-lexer@2.3.1",
+      "purl": "pkg:npm/es-module-lexer@2.3.1"
+    },
+    {
+      "type": "library",
+      "name": "esbuild",
+      "version": "0.27.7",
+      "bom-ref": "esbuild@0.27.7",
+      "purl": "pkg:npm/esbuild@0.27.7"
+    },
+    {
+      "type": "library",
+      "name": "estree-walker",
+      "version": "3.0.3",
+      "bom-ref": "estree-walker@3.0.3",
+      "purl": "pkg:npm/estree-walker@3.0.3"
+    },
+    {
+      "type": "library",
+      "name": "expect-type",
+      "version": "1.4.0",
+      "bom-ref": "expect-type@1.4.0",
+      "purl": "pkg:npm/expect-type@1.4.0"
+    },
+    {
+      "type": "library",
+      "name": "fast-decode-uri-component",
+      "version": "1.0.1",
+      "bom-ref": "fast-decode-uri-component@1.0.1",
+      "purl": "pkg:npm/fast-decode-uri-component@1.0.1"
+    },
+    {
+      "type": "library",
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "bom-ref": "fast-deep-equal@3.1.3",
+      "purl": "pkg:npm/fast-deep-equal@3.1.3"
+    },
+    {
+      "type": "library",
+      "name": "fast-json-stringify",
+      "version": "6.4.0",
+      "bom-ref": "fast-json-stringify@6.4.0",
+      "purl": "pkg:npm/fast-json-stringify@6.4.0"
+    },
+    {
+      "type": "library",
+      "name": "fast-json-stringify",
+      "version": "7.0.1",
+      "bom-ref": "fast-json-stringify@7.0.1",
+      "purl": "pkg:npm/fast-json-stringify@7.0.1"
+    },
+    {
+      "type": "library",
+      "name": "fast-querystring",
+      "version": "1.1.2",
+      "bom-ref": "fast-querystring@1.1.2",
+      "purl": "pkg:npm/fast-querystring@1.1.2"
+    },
+    {
+      "type": "library",
+      "name": "fast-uri",
+      "version": "3.1.3",
+      "bom-ref": "fast-uri@3.1.3",
+      "purl": "pkg:npm/fast-uri@3.1.3"
+    },
+    {
+      "type": "library",
+      "name": "fast-uri",
+      "version": "4.1.0",
+      "bom-ref": "fast-uri@4.1.0",
+      "purl": "pkg:npm/fast-uri@4.1.0"
+    },
+    {
+      "type": "library",
+      "name": "fastify",
+      "version": "5.8.5",
+      "bom-ref": "fastify@5.8.5",
+      "purl": "pkg:npm/fastify@5.8.5"
+    },
+    {
+      "type": "library",
+      "name": "fastq",
+      "version": "1.20.1",
+      "bom-ref": "fastq@1.20.1",
+      "purl": "pkg:npm/fastq@1.20.1"
+    },
+    {
+      "type": "library",
+      "name": "fdir",
+      "version": "6.5.0",
+      "bom-ref": "fdir@6.5.0",
+      "purl": "pkg:npm/fdir@6.5.0"
+    },
+    {
+      "type": "library",
+      "name": "find-my-way",
+      "version": "9.6.0",
+      "bom-ref": "find-my-way@9.6.0",
+      "purl": "pkg:npm/find-my-way@9.6.0"
+    },
+    {
+      "type": "library",
+      "name": "fsevents",
+      "version": "2.3.3",
+      "bom-ref": "fsevents@2.3.3",
+      "purl": "pkg:npm/fsevents@2.3.3"
+    },
+    {
+      "type": "library",
+      "name": "get-tsconfig",
+      "version": "4.14.0",
+      "bom-ref": "get-tsconfig@4.14.0",
+      "purl": "pkg:npm/get-tsconfig@4.14.0"
+    },
+    {
+      "type": "library",
+      "name": "gpt-tokenizer",
+      "version": "3.4.0",
+      "bom-ref": "gpt-tokenizer@3.4.0",
+      "purl": "pkg:npm/gpt-tokenizer@3.4.0"
+    },
+    {
+      "type": "library",
+      "name": "ipaddr.js",
+      "version": "2.4.0",
+      "bom-ref": "ipaddr.js@2.4.0",
+      "purl": "pkg:npm/ipaddr.js@2.4.0"
+    },
+    {
+      "type": "library",
+      "name": "json-schema-ref-resolver",
+      "version": "3.0.0",
+      "bom-ref": "json-schema-ref-resolver@3.0.0",
+      "purl": "pkg:npm/json-schema-ref-resolver@3.0.0"
+    },
+    {
+      "type": "library",
+      "name": "json-schema-traverse",
+      "version": "1.0.0",
+      "bom-ref": "json-schema-traverse@1.0.0",
+      "purl": "pkg:npm/json-schema-traverse@1.0.0"
+    },
+    {
+      "type": "library",
+      "name": "light-my-request",
+      "version": "6.6.0",
+      "bom-ref": "light-my-request@6.6.0",
+      "purl": "pkg:npm/light-my-request@6.6.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-android-arm64",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-android-arm64@1.32.0",
+      "purl": "pkg:npm/lightningcss-android-arm64@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-darwin-arm64",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-darwin-arm64@1.32.0",
+      "purl": "pkg:npm/lightningcss-darwin-arm64@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-darwin-x64",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-darwin-x64@1.32.0",
+      "purl": "pkg:npm/lightningcss-darwin-x64@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-freebsd-x64",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-freebsd-x64@1.32.0",
+      "purl": "pkg:npm/lightningcss-freebsd-x64@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-linux-arm-gnueabihf",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-linux-arm-gnueabihf@1.32.0",
+      "purl": "pkg:npm/lightningcss-linux-arm-gnueabihf@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-linux-arm64-gnu",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-linux-arm64-gnu@1.32.0",
+      "purl": "pkg:npm/lightningcss-linux-arm64-gnu@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-linux-arm64-musl",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-linux-arm64-musl@1.32.0",
+      "purl": "pkg:npm/lightningcss-linux-arm64-musl@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-linux-x64-gnu",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-linux-x64-gnu@1.32.0",
+      "purl": "pkg:npm/lightningcss-linux-x64-gnu@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-linux-x64-musl",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-linux-x64-musl@1.32.0",
+      "purl": "pkg:npm/lightningcss-linux-x64-musl@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-win32-arm64-msvc",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-win32-arm64-msvc@1.32.0",
+      "purl": "pkg:npm/lightningcss-win32-arm64-msvc@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss-win32-x64-msvc",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss-win32-x64-msvc@1.32.0",
+      "purl": "pkg:npm/lightningcss-win32-x64-msvc@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lightningcss",
+      "version": "1.32.0",
+      "bom-ref": "lightningcss@1.32.0",
+      "purl": "pkg:npm/lightningcss@1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "lite-harness-workspace",
+      "version": "0.1.0-alpha.0",
+      "bom-ref": "lite-harness-workspace@0.1.0-alpha.0",
+      "purl": "pkg:npm/lite-harness-workspace@0.1.0-alpha.0"
+    },
+    {
+      "type": "library",
+      "name": "magic-string",
+      "version": "0.30.21",
+      "bom-ref": "magic-string@0.30.21",
+      "purl": "pkg:npm/magic-string@0.30.21"
+    },
+    {
+      "type": "library",
+      "name": "nanoid",
+      "version": "3.3.16",
+      "bom-ref": "nanoid@3.3.16",
+      "purl": "pkg:npm/nanoid@3.3.16"
+    },
+    {
+      "type": "library",
+      "name": "obug",
+      "version": "2.1.3",
+      "bom-ref": "obug@2.1.3",
+      "purl": "pkg:npm/obug@2.1.3"
+    },
+    {
+      "type": "library",
+      "name": "on-exit-leak-free",
+      "version": "2.1.2",
+      "bom-ref": "on-exit-leak-free@2.1.2",
+      "purl": "pkg:npm/on-exit-leak-free@2.1.2"
+    },
+    {
+      "type": "library",
+      "name": "pathe",
+      "version": "2.0.3",
+      "bom-ref": "pathe@2.0.3",
+      "purl": "pkg:npm/pathe@2.0.3"
+    },
+    {
+      "type": "library",
+      "name": "picocolors",
+      "version": "1.1.1",
+      "bom-ref": "picocolors@1.1.1",
+      "purl": "pkg:npm/picocolors@1.1.1"
+    },
+    {
+      "type": "library",
+      "name": "picomatch",
+      "version": "4.0.5",
+      "bom-ref": "picomatch@4.0.5",
+      "purl": "pkg:npm/picomatch@4.0.5"
+    },
+    {
+      "type": "library",
+      "name": "pino-abstract-transport",
+      "version": "3.0.0",
+      "bom-ref": "pino-abstract-transport@3.0.0",
+      "purl": "pkg:npm/pino-abstract-transport@3.0.0"
+    },
+    {
+      "type": "library",
+      "name": "pino-std-serializers",
+      "version": "7.1.0",
+      "bom-ref": "pino-std-serializers@7.1.0",
+      "purl": "pkg:npm/pino-std-serializers@7.1.0"
+    },
+    {
+      "type": "library",
+      "name": "pino",
+      "version": "10.3.1",
+      "bom-ref": "pino@10.3.1",
+      "purl": "pkg:npm/pino@10.3.1"
+    },
+    {
+      "type": "library",
+      "name": "postcss",
+      "version": "8.5.18",
+      "bom-ref": "postcss@8.5.18",
+      "purl": "pkg:npm/postcss@8.5.18"
+    },
+    {
+      "type": "library",
+      "name": "process-warning",
+      "version": "4.0.1",
+      "bom-ref": "process-warning@4.0.1",
+      "purl": "pkg:npm/process-warning@4.0.1"
+    },
+    {
+      "type": "library",
+      "name": "process-warning",
+      "version": "5.0.0",
+      "bom-ref": "process-warning@5.0.0",
+      "purl": "pkg:npm/process-warning@5.0.0"
+    },
+    {
+      "type": "library",
+      "name": "pxpipe-proxy",
+      "version": "0.7.1",
+      "bom-ref": "pxpipe-proxy@0.7.1",
+      "purl": "pkg:npm/pxpipe-proxy@0.7.1"
+    },
+    {
+      "type": "library",
+      "name": "quick-format-unescaped",
+      "version": "4.0.4",
+      "bom-ref": "quick-format-unescaped@4.0.4",
+      "purl": "pkg:npm/quick-format-unescaped@4.0.4"
+    },
+    {
+      "type": "library",
+      "name": "real-require",
+      "version": "0.2.0",
+      "bom-ref": "real-require@0.2.0",
+      "purl": "pkg:npm/real-require@0.2.0"
+    },
+    {
+      "type": "library",
+      "name": "real-require",
+      "version": "1.0.0",
+      "bom-ref": "real-require@1.0.0",
+      "purl": "pkg:npm/real-require@1.0.0"
+    },
+    {
+      "type": "library",
+      "name": "require-from-string",
+      "version": "2.0.2",
+      "bom-ref": "require-from-string@2.0.2",
+      "purl": "pkg:npm/require-from-string@2.0.2"
+    },
+    {
+      "type": "library",
+      "name": "resolve-pkg-maps",
+      "version": "1.0.0",
+      "bom-ref": "resolve-pkg-maps@1.0.0",
+      "purl": "pkg:npm/resolve-pkg-maps@1.0.0"
+    },
+    {
+      "type": "library",
+      "name": "ret",
+      "version": "0.5.0",
+      "bom-ref": "ret@0.5.0",
+      "purl": "pkg:npm/ret@0.5.0"
+    },
+    {
+      "type": "library",
+      "name": "reusify",
+      "version": "1.1.0",
+      "bom-ref": "reusify@1.1.0",
+      "purl": "pkg:npm/reusify@1.1.0"
+    },
+    {
+      "type": "library",
+      "name": "rfdc",
+      "version": "1.4.1",
+      "bom-ref": "rfdc@1.4.1",
+      "purl": "pkg:npm/rfdc@1.4.1"
+    },
+    {
+      "type": "library",
+      "name": "rolldown",
+      "version": "1.1.5",
+      "bom-ref": "rolldown@1.1.5",
+      "purl": "pkg:npm/rolldown@1.1.5"
+    },
+    {
+      "type": "library",
+      "name": "safe-regex2",
+      "version": "5.1.1",
+      "bom-ref": "safe-regex2@5.1.1",
+      "purl": "pkg:npm/safe-regex2@5.1.1"
+    },
+    {
+      "type": "library",
+      "name": "safe-stable-stringify",
+      "version": "2.5.0",
+      "bom-ref": "safe-stable-stringify@2.5.0",
+      "purl": "pkg:npm/safe-stable-stringify@2.5.0"
+    },
+    {
+      "type": "library",
+      "name": "secure-json-parse",
+      "version": "4.1.0",
+      "bom-ref": "secure-json-parse@4.1.0",
+      "purl": "pkg:npm/secure-json-parse@4.1.0"
+    },
+    {
+      "type": "library",
+      "name": "semver",
+      "version": "7.8.5",
+      "bom-ref": "semver@7.8.5",
+      "purl": "pkg:npm/semver@7.8.5"
+    },
+    {
+      "type": "library",
+      "name": "set-cookie-parser",
+      "version": "2.7.2",
+      "bom-ref": "set-cookie-parser@2.7.2",
+      "purl": "pkg:npm/set-cookie-parser@2.7.2"
+    },
+    {
+      "type": "library",
+      "name": "siginfo",
+      "version": "2.0.0",
+      "bom-ref": "siginfo@2.0.0",
+      "purl": "pkg:npm/siginfo@2.0.0"
+    },
+    {
+      "type": "library",
+      "name": "sonic-boom",
+      "version": "4.2.1",
+      "bom-ref": "sonic-boom@4.2.1",
+      "purl": "pkg:npm/sonic-boom@4.2.1"
+    },
+    {
+      "type": "library",
+      "name": "source-map-js",
+      "version": "1.2.1",
+      "bom-ref": "source-map-js@1.2.1",
+      "purl": "pkg:npm/source-map-js@1.2.1"
+    },
+    {
+      "type": "library",
+      "name": "split2",
+      "version": "4.2.0",
+      "bom-ref": "split2@4.2.0",
+      "purl": "pkg:npm/split2@4.2.0"
+    },
+    {
+      "type": "library",
+      "name": "stackback",
+      "version": "0.0.2",
+      "bom-ref": "stackback@0.0.2",
+      "purl": "pkg:npm/stackback@0.0.2"
+    },
+    {
+      "type": "library",
+      "name": "std-env",
+      "version": "4.2.0",
+      "bom-ref": "std-env@4.2.0",
+      "purl": "pkg:npm/std-env@4.2.0"
+    },
+    {
+      "type": "library",
+      "name": "thread-stream",
+      "version": "4.2.0",
+      "bom-ref": "thread-stream@4.2.0",
+      "purl": "pkg:npm/thread-stream@4.2.0"
+    },
+    {
+      "type": "library",
+      "name": "tinybench",
+      "version": "2.9.0",
+      "bom-ref": "tinybench@2.9.0",
+      "purl": "pkg:npm/tinybench@2.9.0"
+    },
+    {
+      "type": "library",
+      "name": "tinyexec",
+      "version": "1.2.4",
+      "bom-ref": "tinyexec@1.2.4",
+      "purl": "pkg:npm/tinyexec@1.2.4"
+    },
+    {
+      "type": "library",
+      "name": "tinyglobby",
+      "version": "0.2.17",
+      "bom-ref": "tinyglobby@0.2.17",
+      "purl": "pkg:npm/tinyglobby@0.2.17"
+    },
+    {
+      "type": "library",
+      "name": "tinyrainbow",
+      "version": "3.1.0",
+      "bom-ref": "tinyrainbow@3.1.0",
+      "purl": "pkg:npm/tinyrainbow@3.1.0"
+    },
+    {
+      "type": "library",
+      "name": "toad-cache",
+      "version": "3.7.4",
+      "bom-ref": "toad-cache@3.7.4",
+      "purl": "pkg:npm/toad-cache@3.7.4"
+    },
+    {
+      "type": "library",
+      "name": "tslib",
+      "version": "2.8.1",
+      "bom-ref": "tslib@2.8.1",
+      "purl": "pkg:npm/tslib@2.8.1"
+    },
+    {
+      "type": "library",
+      "name": "tsx",
+      "version": "4.21.0",
+      "bom-ref": "tsx@4.21.0",
+      "purl": "pkg:npm/tsx@4.21.0"
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version": "5.9.3",
+      "bom-ref": "typescript@5.9.3",
+      "purl": "pkg:npm/typescript@5.9.3"
+    },
+    {
+      "type": "library",
+      "name": "undici-types",
+      "version": "7.16.0",
+      "bom-ref": "undici-types@7.16.0",
+      "purl": "pkg:npm/undici-types@7.16.0"
+    },
+    {
+      "type": "library",
+      "name": "vite",
+      "version": "8.1.4",
+      "bom-ref": "vite@8.1.4",
+      "purl": "pkg:npm/vite@8.1.4"
+    },
+    {
+      "type": "library",
+      "name": "vitest",
+      "version": "4.1.9",
+      "bom-ref": "vitest@4.1.9",
+      "purl": "pkg:npm/vitest@4.1.9"
+    },
+    {
+      "type": "library",
+      "name": "why-is-node-running",
+      "version": "2.3.0",
+      "bom-ref": "why-is-node-running@2.3.0",
+      "purl": "pkg:npm/why-is-node-running@2.3.0"
+    }
+  ]
+}

@@ -20,28 +20,32 @@ Lite-owned kernel and lazy capability packs.
   model-idle, and command timeouts
 - Host-side provider plane with capability-aware routing, opaque credential
   profiles, normalized usage/errors, and side-effect-safe fallback
-- Fake, OpenAI-compatible, and Anthropic direct provider routes
+- Fake, OpenAI-compatible, Anthropic, OpenRouter, Gemini, xAI, Kimi, and
+  MiniMax direct provider routes with incremental streaming
 - Official Codex app-server and Claude Code delegated process adapters with
   bounded supervision, cancellation, normalized events, and fail-closed actions
 - Hardened digest-pinned Docker tool runtime with persistent named volumes
 - Authenticated encrypted snapshots, previous-generation recovery, and owned
   artifact publish/download
 - Thin TypeScript SDK and replayable SSE
-- Manifest-first lazy plugins, deterministic SKILL.md snapshots, isolated MCP
-  stdio supervision, and process Plugin Host RPC/install locks
+- Manifest-first staged plugins, deterministic SKILL.md snapshots, isolated
+  MCP stdio/remote-HTTP supervision, and bounded Plugin Host compatibility RPC
 - On-demand managed Chromium in a digest-pinned, non-root Docker sidecar with
   run-owned sessions, stable refs, typed actions, bounded binary artifacts,
   private-network policy, action audit, and idle cleanup
-- Signed webhook-to-run ingress with durable bindings/receipts/dedupe, native
-  Telegram/Discord/Slack verification and outbound adapters, and an opt-in
-  restart-safe interval scheduler
+- Signed webhook-to-run ingress with durable bindings/receipts/dedupe/replies,
+  native Telegram/Discord/Slack verification and outbound adapters, and an
+  opt-in restart-safe time-zone-aware scheduler
 - Subagent graphs, offline FTS memory, and conservative exact-recoverable
-  context rendering foundations
+  context rendering integrated as brokered Manager capabilities
+- OS-backed credentials, a unified launcher, service definitions, rotating
+  redacted logs, OpenClaw migration tooling, SBOM/image/security workflows, and
+  TypeScript plus Python prerelease SDKs
 - Windows, macOS, and Linux CI definitions; real Docker lifecycle tests are
   environment-gated and have been exercised on Docker Desktop/WSL2
 
-The optional packs are foundation/reference implementations, not a claim that
-every OpenClaw connector or plugin has been ported. See
+Optional packs have explicit support tiers and do not imply that every
+OpenClaw connector or plugin has been ported. See
 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for precise
 support labels.
 
@@ -93,8 +97,9 @@ $env:LITE_HARNESS_TEST_BROWSER_IMAGE = docker image inspect lite-harness/browser
 pnpm vitest run test/browser-integrations.test.ts -t "runs the pinned Chromium sidecar"
 ```
 
-See [`docs/BROWSER.md`](docs/BROWSER.md) and
-[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+See [`docs/BROWSER.md`](docs/BROWSER.md),
+[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md), and
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## Run locally
 
@@ -150,8 +155,9 @@ $env:LITE_HARNESS_PROVIDER_API_KEY = 'set-in-your-secret-manager-or-shell'
 
 Use `anthropic` for Anthropic or `openai-compatible` plus
 `LITE_HARNESS_PROVIDER_BASE_URL` for an explicitly configured compatible
-endpoint. Production deployments should replace environment credential input
-with an OS-keychain-backed broker.
+endpoint. Presets also cover `openrouter`, `gemini`, `xai`, `kimi`, and
+`minimax`. Set `LITE_HARNESS_CREDENTIAL_STORE=os` to resolve
+`LITE_HARNESS_CREDENTIAL_PROFILE` through DPAPI, Keychain, or Secret Service.
 
 For trusted owner-local delegated execution, use `codex` or `claude` as
 `LITE_HARNESS_PROVIDER`; see
@@ -178,6 +184,11 @@ pnpm verify
 pnpm release:check
 pnpm lite doctor
 ```
+
+Model-backed maintainer tests use the local policy in
+[`docs/TESTING.md`](docs/TESTING.md); credential-free verification remains
+deterministic. Architecture support/evidence boundaries are recorded in
+[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
 
 Regular Docker is a local containment boundary, not a hostile multi-tenant
 micro-VM. Read [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and

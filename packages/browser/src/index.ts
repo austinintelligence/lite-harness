@@ -1,7 +1,8 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 
 export interface BrowserOwner {
@@ -63,6 +64,7 @@ export class BrowserSessionBroker {
   get activeCount(): number {
     return this.#sessions.size;
   }
+
 }
 
 export type BrowserAction =
@@ -77,6 +79,11 @@ export type BrowserAction =
   | { action: "screenshot"; fullPage?: boolean }
   | { action: "pdf" }
   | { action: "upload"; ref: string; name: string; dataBase64: string }
+  | { action: "scroll"; deltaX?: number; deltaY?: number }
+  | { action: "drag"; sourceRef: string; targetRef: string }
+  | { action: "tabs" | "new_tab" }
+  | { action: "switch_tab" | "close_tab"; tabId: string }
+  | { action: "inspect" }
   | { action: "back" | "forward" | "reload" };
 
 export interface BrowserActionResult {
@@ -90,7 +97,62 @@ export interface BrowserActionResult {
 export interface BrowserDriver {
   start(policy: BrowserNetworkPolicy): Promise<void>;
   execute(command: BrowserAction, signal?: AbortSignal): Promise<BrowserActionResult>;
+  restoreProfile?(data: string): Promise<void>;
+  exportProfile?(): Promise<string>;
   stop(): Promise<void>;
+}
+
+export interface BrowserProfileStore {
+  load(profileId: string, owner: Omit<BrowserOwner, "runId">): Promise<string | undefined>;
+  save(profileId: string, owner: Omit<BrowserOwner, "runId">, data: string): Promise<void>;
+}
+
+export class EncryptedBrowserProfileStore implements BrowserProfileStore {
+  constructor(private readonly root: string, private readonly masterKey: Buffer, private readonly maxBytes = 4 * 1024 * 1024) {
+    if (masterKey.length !== 32) throw new Error("Browser profile key must be 32 bytes");
+  }
+
+  async load(profileId: string, owner: Omit<BrowserOwner, "runId">): Promise<string | undefined> {
+    try {
+      const encoded = readFileSync(this.#path(profileId));
+      const envelope = JSON.parse(encoded.toString("utf8")) as { version: number; nonce: string; tag: string; ciphertext: string };
+      if (envelope.version !== 1) throw new Error("Browser profile version is unsupported");
+      const decipher = createDecipheriv("aes-256-gcm", this.#key(profileId, owner), Buffer.from(envelope.nonce, "base64"));
+      decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+      const plaintext = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, "base64")), decipher.final()]);
+      if (plaintext.length > this.maxBytes) throw new Error("Browser profile exceeds storage limit");
+      return plaintext.toString("utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+
+  async save(profileId: string, owner: Omit<BrowserOwner, "runId">, data: string): Promise<void> {
+    const plaintext = Buffer.from(data);
+    if (plaintext.length > this.maxBytes) throw new Error("Browser profile exceeds storage limit");
+    const nonce = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", this.#key(profileId, owner), nonce);
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const path = this.#path(profileId); const temporary = `${path}.${process.pid}.tmp`; const backup = `${path}.previous`;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(temporary, JSON.stringify({ version: 1, nonce: nonce.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ciphertext: ciphertext.toString("base64") }), { mode: 0o600 });
+    rmSync(backup, { force: true });
+    try { renameSync(path, backup); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try { renameSync(temporary, path); }
+    catch (error) { try { renameSync(backup, path); } catch { /* preserve original error */ } throw error; }
+    rmSync(backup, { force: true });
+  }
+
+  #path(profileId: string): string {
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(profileId)) throw new Error("Browser profile id is invalid");
+    const digest = createHash("sha256").update(profileId).digest("hex");
+    return join(this.root, digest.slice(0, 2), `${digest}.json`);
+  }
+
+  #key(profileId: string, owner: Omit<BrowserOwner, "runId">): Buffer {
+    return createHmac("sha256", this.masterKey).update(`${owner.appId}\0${owner.tenantId}\0${owner.userId}\0${profileId}`).digest();
+  }
 }
 
 export interface BrowserAuditRecord {
@@ -107,7 +169,10 @@ export class ProcessBrowserDriver implements BrowserDriver {
   readonly #rpc: JsonLineRpcClient;
   #started = false;
 
-  constructor(spec: ProcessSpec, private readonly options: { timeoutMs?: number; maxPayloadBytes?: number } = {}) {
+  constructor(
+    spec: ProcessSpec,
+    private readonly options: { timeoutMs?: number; maxPayloadBytes?: number; initialization?: Record<string, unknown> } = {},
+  ) {
     this.#rpc = new JsonLineRpcClient(spec, {
       requestTimeoutMs: options.timeoutMs ?? 30_000,
       // A 16 MiB binary artifact expands to roughly 21.4 MiB as base64 plus
@@ -120,7 +185,7 @@ export class ProcessBrowserDriver implements BrowserDriver {
   async start(policy: BrowserNetworkPolicy): Promise<void> {
     if (this.#started) return;
     try {
-      await this.#rpc.request("initialize", { policy });
+      await this.#rpc.request("initialize", { policy, ...(this.options.initialization ?? {}) });
       this.#started = true;
     } catch (error) {
       await this.#rpc.stop();
@@ -131,6 +196,17 @@ export class ProcessBrowserDriver implements BrowserDriver {
   async execute(command: BrowserAction, signal?: AbortSignal): Promise<BrowserActionResult> {
     if (!this.#started) throw new Error("Browser driver is not initialized");
     return await this.#rpc.request("invoke", command, { signal });
+  }
+
+  async restoreProfile(data: string): Promise<void> {
+    if (!this.#started) throw new Error("Browser driver is not initialized");
+    await this.#rpc.request("profile.restore", { data });
+  }
+
+  async exportProfile(): Promise<string> {
+    if (!this.#started) throw new Error("Browser driver is not initialized");
+    const result = await this.#rpc.request<{ data: string }>("profile.export", {});
+    return result.data;
   }
 
   async stop(): Promise<void> {
@@ -151,6 +227,7 @@ export class DockerBrowserDriver extends ProcessBrowserDriver {
     pidsLimit?: number;
     seccompProfile?: string;
     timeoutMs?: number;
+    remoteCdpEndpoint?: string;
   }) {
     if (!options.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(options.image)) {
       throw new Error("Browser image must be pinned by sha256 digest");
@@ -161,14 +238,25 @@ export class DockerBrowserDriver extends ProcessBrowserDriver {
         "run", "--rm", "--interactive", "--init", "--user", "pwuser",
         "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--security-opt", `seccomp=${options.seccompProfile ?? join(process.cwd(), "docker", "browser-runtime", "seccomp_profile.json")}`,
-        "--ipc", "host",
+        "--shm-size", "256m",
         "--memory", options.memory ?? "1g", "--cpus", options.cpus ?? "1.5",
         "--pids-limit", String(options.pidsLimit ?? 256),
         "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
         options.image,
       ],
-    }, { timeoutMs: options.timeoutMs ?? 30_000 });
+    }, {
+      timeoutMs: options.timeoutMs ?? 30_000,
+      ...(options.remoteCdpEndpoint ? { initialization: { remoteCdpEndpoint: validateRemoteCdpEndpoint(options.remoteCdpEndpoint) } } : {}),
+    });
   }
+}
+
+function validateRemoteCdpEndpoint(value: string): string {
+  const url = new URL(value);
+  if (!["ws:", "wss:", "http:", "https:"].includes(url.protocol) || url.username || url.password) {
+    throw new Error("Remote CDP endpoint is invalid");
+  }
+  return url.toString();
 }
 
 interface ManagedSession {
@@ -178,6 +266,8 @@ interface ManagedSession {
   started: boolean;
   expiresAt: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  profileId?: string;
+  profileLoaded: boolean;
 }
 
 export class ManagedBrowserBroker {
@@ -189,15 +279,17 @@ export class ManagedBrowserBroker {
       idleTtlMs?: number;
       maxSessions?: number;
       audit?: (record: BrowserAuditRecord) => void;
+      profileStore?: BrowserProfileStore;
     } = {},
   ) {}
 
-  create(owner: BrowserOwner, policy: BrowserNetworkPolicy = {}): string {
+  create(owner: BrowserOwner, policy: BrowserNetworkPolicy = {}, profileId?: string): string {
     if (this.#sessions.size >= (this.options.maxSessions ?? 8)) throw new Error("Browser session limit reached");
     const sessionId = `browser_${randomUUID().replaceAll("-", "")}`;
     const session: ManagedSession = {
       owner: { ...owner }, policy: { ...policy }, driver: this.factory(), started: false,
-      expiresAt: Date.now() + (this.options.idleTtlMs ?? 60_000),
+      expiresAt: Date.now() + (this.options.idleTtlMs ?? 60_000), profileLoaded: false,
+      ...(profileId ? { profileId } : {}),
     };
     this.#sessions.set(sessionId, session);
     this.#armIdle(sessionId, session);
@@ -212,6 +304,11 @@ export class ManagedBrowserBroker {
       if (!session.started) {
         await session.driver.start(session.policy);
         session.started = true;
+        if (session.profileId && this.options.profileStore && session.driver.restoreProfile) {
+          const data = await this.options.profileStore.load(session.profileId, browserProfileOwner(session.owner));
+          if (data) await session.driver.restoreProfile(data);
+          session.profileLoaded = true;
+        }
       }
       const result = await session.driver.execute(command, signal);
       this.#audit(sessionId, session, command.action, true, target);
@@ -227,11 +324,20 @@ export class ManagedBrowserBroker {
     const session = this.#owned(sessionId, owner);
     this.#sessions.delete(sessionId);
     if (session.idleTimer) clearTimeout(session.idleTimer);
-    await session.driver.stop();
+    await this.#stopSession(session);
   }
 
   get activeCount(): number {
     return this.#sessions.size;
+  }
+
+  async closeAll(): Promise<void> {
+    const sessions = [...this.#sessions.values()];
+    this.#sessions.clear();
+    await Promise.allSettled(sessions.map(async (session) => {
+      if (session.idleTimer) clearTimeout(session.idleTimer);
+      await this.#stopSession(session);
+    }));
   }
 
   #owned(sessionId: string, owner: BrowserOwner): ManagedSession {
@@ -249,7 +355,9 @@ export class ManagedBrowserBroker {
     session.expiresAt = Date.now() + ttl;
     session.idleTimer = setTimeout(() => {
       this.#sessions.delete(sessionId);
-      void session.driver.stop();
+      void this.#stopSession(session).catch(async () => {
+        try { await session.driver.stop(); } catch { /* idle cleanup is best-effort */ }
+      });
     }, ttl);
     session.idleTimer.unref?.();
   }
@@ -260,6 +368,18 @@ export class ManagedBrowserBroker {
       ...(target ? { target } : {}), ...(error ? { error } : {}),
     });
   }
+
+  async #stopSession(session: ManagedSession): Promise<void> {
+    if (session.started && session.profileId && session.profileLoaded && this.options.profileStore && session.driver.exportProfile) {
+      const data = await session.driver.exportProfile();
+      await this.options.profileStore.save(session.profileId, browserProfileOwner(session.owner), data);
+    }
+    await session.driver.stop();
+  }
+}
+
+function browserProfileOwner(owner: BrowserOwner): Omit<BrowserOwner, "runId"> {
+  return { appId: owner.appId, tenantId: owner.tenantId, userId: owner.userId };
 }
 
 async function defaultResolver(hostname: string): Promise<readonly string[]> {

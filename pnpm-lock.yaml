@@ -20,12 +20,31 @@ importers:
       vitest:
         specifier: 4.1.9
         version: 4.1.9(@types/node@24.10.1)(vite@8.1.4(@types/node@24.10.1)(esbuild@0.27.7)(tsx@4.21.0))
+    optionalDependencies:
+      pxpipe-proxy:
+        specifier: 0.7.1
+        version: 0.7.1
 
   apps/cli:
     dependencies:
+      '@lite-harness/credential-store':
+        specifier: workspace:*
+        version: link:../../packages/credential-store
+      '@lite-harness/migration-openclaw':
+        specifier: workspace:*
+        version: link:../../packages/migration-openclaw
+      '@lite-harness/operations':
+        specifier: workspace:*
+        version: link:../../packages/operations
+      '@lite-harness/plugin-core':
+        specifier: workspace:*
+        version: link:../../packages/plugin-core
       '@lite-harness/runtime-docker':
         specifier: workspace:*
         version: link:../../packages/runtime-docker
+      '@lite-harness/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/storage-sqlite
       '@lite-harness/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -42,6 +61,15 @@ importers:
         specifier: 5.8.5
         version: 5.8.5
 
+  apps/launcher:
+    dependencies:
+      '@lite-harness/credential-store':
+        specifier: workspace:*
+        version: link:../../packages/credential-store
+      '@lite-harness/operations':
+        specifier: workspace:*
+        version: link:../../packages/operations
+
   apps/manager:
     dependencies:
       '@lite-harness/agent-runtime':
@@ -50,15 +78,27 @@ importers:
       '@lite-harness/automation':
         specifier: workspace:*
         version: link:../../packages/automation
+      '@lite-harness/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lite-harness/control-plane':
         specifier: workspace:*
         version: link:../../packages/control-plane
+      '@lite-harness/credential-store':
+        specifier: workspace:*
+        version: link:../../packages/credential-store
       '@lite-harness/delegated-runtime':
         specifier: workspace:*
         version: link:../../packages/delegated-runtime
       '@lite-harness/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@lite-harness/memory-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/memory-sqlite
       '@lite-harness/provider-anthropic':
         specifier: workspace:*
         version: link:../../packages/provider-anthropic
@@ -127,6 +167,8 @@ importers:
         specifier: workspace:*
         version: link:../domain
 
+  packages/credential-store: {}
+
   packages/delegated-runtime:
     dependencies:
       '@lite-harness/process-rpc':
@@ -151,6 +193,10 @@ importers:
         version: link:../process-rpc
 
   packages/memory-sqlite: {}
+
+  packages/migration-openclaw: {}
+
+  packages/operations: {}
 
   packages/plugin-core:
     dependencies:
@@ -679,6 +725,9 @@ packages:
   get-tsconfig@4.14.0:
     resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
 
+  gpt-tokenizer@3.4.0:
+    resolution: {integrity: sha512-wxFLnhIXTDjYebd9A9pGl3e31ZpSypbpIJSOswbgop5jLte/AsZVDvjlbEuVFlsqZixVKqbcoNmRlFDf6pz/UQ==}
+
   ipaddr.js@2.4.0:
     resolution: {integrity: sha512-9VGk3HGanVE6JoZXHiCpnGy5X0jYDnN4EA4lntFPj+1vIWlFhIylq2CrrCOJH9EAhc5CYhq18F2Av2tgoAPsYQ==}
     engines: {node: '>= 10'}
@@ -811,6 +860,11 @@ packages:
 
   process-warning@5.0.0:
     resolution: {integrity: sha512-a39t9ApHNx2L4+HBnQKqxxHNs1r7KF+Intd8Q/g1bUh6q0WIp9voPXJ/x0j+ZL45KF1pJd9+q2jLIRMfvEshkA==}
+
+  pxpipe-proxy@0.7.1:
+    resolution: {integrity: sha512-7weuVAyJdSqo1geYzKA22orGZy3tR27dwx3PqQpj66COJcmENSNU3hBm8jgJ7vk8mIcweYNCjjQPY+AvXnUMJw==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
@@ -1396,6 +1450,9 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
+  gpt-tokenizer@3.4.0:
+    optional: true
+
   ipaddr.js@2.4.0: {}
 
   json-schema-ref-resolver@3.0.0:
@@ -1504,6 +1561,11 @@ snapshots:
   process-warning@4.0.1: {}
 
   process-warning@5.0.0: {}
+
+  pxpipe-proxy@0.7.1:
+    dependencies:
+      gpt-tokenizer: 3.4.0
+    optional: true
 
   quick-format-unescaped@4.0.4: {}
 

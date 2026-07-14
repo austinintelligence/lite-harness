@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import type { ToolCall, ToolResult } from "@lite-harness/contracts";
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
+import type { ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
 import type { ToolExecutionContext, ToolRuntime } from "@lite-harness/runtime";
-import { validateWorkspacePath } from "@lite-harness/runtime";
+import { validateWorkspacePath, WORKSPACE_TOOL_DEFINITIONS } from "@lite-harness/runtime";
 
 export interface DockerRuntimeConfig {
   image: string;
@@ -11,12 +13,19 @@ export interface DockerRuntimeConfig {
   cpus?: string;
   pidsLimit?: number;
   maxOutputBytes?: number;
+  workspaceQuotaBytes?: number;
+  /** Trusted Manager-owned lookup. Arbitrary run input never becomes a bind source. */
+  resolveRegisteredWorkspace?: (workspaceId: string) => string | undefined;
 }
 
 export interface DockerDoctorResult {
   available: boolean;
   clientVersion?: string;
   serverVersion?: string;
+  activeContext?: string;
+  serverOs?: string;
+  architecture?: string;
+  rootless?: boolean;
   error?: string;
 }
 
@@ -29,9 +38,14 @@ export class DockerToolRuntime implements ToolRuntime {
     if (!config.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(config.image)) {
       throw new Error("Docker runtime image must be pinned by sha256 digest");
     }
+    if (config.workspaceQuotaBytes !== undefined && (!Number.isSafeInteger(config.workspaceQuotaBytes) || config.workspaceQuotaBytes < 1024 * 1024)) {
+      throw new Error("Workspace quota must be an integer of at least 1 MiB");
+    }
     this.#docker = config.dockerCommand ?? "docker";
     this.#maxOutputBytes = config.maxOutputBytes ?? 4 * 1024 * 1024;
   }
+
+  listTools(): readonly ToolDefinition[] { return WORKSPACE_TOOL_DEFINITIONS; }
 
   async doctor(): Promise<DockerDoctorResult> {
     try {
@@ -56,15 +70,20 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async execute(params: ToolExecutionContext): Promise<ToolResult> {
     params.signal?.throwIfAborted();
-    const volume = volumeName(params.workspaceId);
-    await this.#ensureVolume(volume, params.signal);
+    const mount = await this.#workspaceMount(params.workspaceId, params.signal);
 
     if (params.call.name === "write_file") {
       const path = stringArgument(params.call, "path");
       const content = stringArgument(params.call, "content");
       validateWorkspacePath(path);
+      const contentBytes = Buffer.byteLength(content);
+      const quotaBytes = this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024;
+      const usage = await this.#workspaceUsage(mount, path, params.signal);
+      if (usage.totalBytes - usage.existingBytes + contentBytes > quotaBytes) {
+        throw new Error(`Workspace write exceeds the ${quotaBytes}-byte quota`);
+      }
       const result = await this.#runTool(
-        volume,
+        mount,
         [
           "sh",
           "-c",
@@ -75,14 +94,14 @@ export class DockerToolRuntime implements ToolRuntime {
         content,
         params.signal,
       );
-      return commandResult(params.call.id, result, { path, bytes: Buffer.byteLength(content) });
+      return commandResult(params.call.id, result, { path, bytes: contentBytes });
     }
 
     if (params.call.name === "read_file") {
       const path = stringArgument(params.call, "path");
       validateWorkspacePath(path);
       const result = await this.#runTool(
-        volume,
+        mount,
         ["sh", "-c", 'set -eu; cat -- "/workspace/$1"', "lite-read", path],
         undefined,
         params.signal,
@@ -94,13 +113,12 @@ export class DockerToolRuntime implements ToolRuntime {
   }
 
   async exportWorkspace(workspaceId: string, signal?: AbortSignal): Promise<Buffer> {
-    const volume = volumeName(workspaceId);
-    await this.#ensureVolume(volume, signal);
+    const mount = await this.#workspaceMount(workspaceId, signal);
     const result = await runCommandBytes(
       this.#docker,
       [
         "run", "--rm", "--user", "1000:1000", "--network", "none", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges", "--volume", `${volume}:/workspace:ro`,
+        "--security-opt", "no-new-privileges", ...mountArgs(mount, true),
         this.config.image, "tar", "-C", "/workspace", "-cf", "-", ".",
       ],
       undefined,
@@ -112,6 +130,7 @@ export class DockerToolRuntime implements ToolRuntime {
   }
 
   async importWorkspace(workspaceId: string, archive: Buffer, signal?: AbortSignal): Promise<void> {
+    if (this.#registeredPath(workspaceId)) throw new Error("Registered bind workspaces cannot be replaced by snapshot restore");
     const target = volumeName(workspaceId);
     await this.#ensureVolume(target, signal);
     const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
@@ -146,6 +165,7 @@ export class DockerToolRuntime implements ToolRuntime {
   }
 
   async removeWorkspace(workspaceId: string): Promise<boolean> {
+    if (this.#registeredPath(workspaceId)) throw new Error("Registered bind workspaces cannot be deleted by Lite-Harness");
     const volume = volumeName(workspaceId);
     const result = await runCommand(this.#docker, ["volume", "rm", volume], undefined, undefined);
     this.#readyVolumes.delete(volume);
@@ -229,8 +249,38 @@ export class DockerToolRuntime implements ToolRuntime {
     if (result.code !== 0) throw new Error(`Could not replace workspace volume: ${result.stderr}`);
   }
 
+  async #workspaceMount(workspaceId: string, signal?: AbortSignal): Promise<WorkspaceMount> {
+    const registered = this.#registeredPath(workspaceId);
+    if (registered) return { kind: "bind", source: registered };
+    const volume = volumeName(workspaceId);
+    await this.#ensureVolume(volume, signal);
+    return { kind: "volume", source: volume };
+  }
+
+  async #workspaceUsage(mount: WorkspaceMount, path: string, signal?: AbortSignal): Promise<{ totalBytes: number; existingBytes: number }> {
+    const result = await this.#runTool(
+      mount,
+      ["sh", "-c", 'set -eu; total=$(du -sk /workspace | cut -f1); target="/workspace/$1"; if [ -f "$target" ]; then old=$(wc -c < "$target"); else old=0; fi; printf "%s %s" "$total" "$old"', "lite-quota", path],
+      undefined,
+      signal,
+    );
+    if (result.code !== 0) throw new Error(`Could not inspect workspace quota usage: ${result.stderr}`);
+    const [kilobytes, existingBytes] = result.stdout.trim().split(/\s+/).map(Number);
+    if (!Number.isSafeInteger(kilobytes) || !Number.isSafeInteger(existingBytes)) throw new Error("Workspace quota usage was invalid");
+    return { totalBytes: kilobytes * 1024, existingBytes };
+  }
+
+  #registeredPath(workspaceId: string): string | undefined {
+    const configured = this.config.resolveRegisteredWorkspace?.(workspaceId);
+    if (!configured) return undefined;
+    if (!isAbsolute(configured)) throw new Error(`Registered workspace path must be absolute: ${workspaceId}`);
+    const path = realpathSync(configured);
+    if (!statSync(path).isDirectory()) throw new Error(`Registered workspace path is not a directory: ${workspaceId}`);
+    return path;
+  }
+
   #runTool(
-    volume: string,
+    mount: WorkspaceMount,
     command: string[],
     input?: string,
     signal?: AbortSignal,
@@ -258,8 +308,7 @@ export class DockerToolRuntime implements ToolRuntime {
         "1000:1000",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "--volume",
-        `${volume}:/workspace`,
+        ...mountArgs(mount),
         this.config.image,
         ...command,
       ],
@@ -268,6 +317,14 @@ export class DockerToolRuntime implements ToolRuntime {
       this.#maxOutputBytes,
     );
   }
+}
+
+interface WorkspaceMount { kind: "volume" | "bind"; source: string }
+
+function mountArgs(mount: WorkspaceMount, readOnly = false): string[] {
+  const options = [`type=${mount.kind}`, `src=${mount.source}`, "dst=/workspace"];
+  if (readOnly) options.push("readonly");
+  return ["--mount", options.join(",")];
 }
 
 export async function inspectDocker(dockerCommand = "docker"): Promise<DockerDoctorResult> {
@@ -280,10 +337,18 @@ export async function inspectDocker(dockerCommand = "docker"): Promise<DockerDoc
       64 * 1024,
     );
     const [clientVersion, serverVersion] = result.stdout.trim().split("|");
+    const context = await runCommand(dockerCommand, ["context", "show"], undefined, undefined, 64 * 1024);
+    const info = await runCommand(dockerCommand, ["info", "--format", "{{json .}}"], undefined, undefined, 1024 * 1024);
+    let details: { OSType?: string; Architecture?: string; SecurityOptions?: string[] } = {};
+    try { details = info.code === 0 ? JSON.parse(info.stdout) as typeof details : {}; } catch { /* retain version health */ }
     return {
       available: result.code === 0 && Boolean(serverVersion),
       ...(clientVersion ? { clientVersion } : {}),
       ...(serverVersion ? { serverVersion } : {}),
+      ...(context.code === 0 && context.stdout.trim() ? { activeContext: context.stdout.trim() } : {}),
+      ...(details.OSType ? { serverOs: details.OSType } : {}),
+      ...(details.Architecture ? { architecture: details.Architecture } : {}),
+      ...(details.SecurityOptions ? { rootless: details.SecurityOptions.some((option) => option.toLowerCase().includes("rootless")) } : {}),
       ...(result.code === 0 ? {} : { error: result.stderr.trim() || "Docker returned an error" }),
     };
   } catch (error) {

@@ -21,6 +21,10 @@ and backs up volumes before replacing live contents.
 
 Never delete a named volume until a snapshot restore has been verified. Use
 `pnpm lite workspace delete <workspace-id>` only as an explicit cleanup step.
+Docker-backed writes enforce `LITE_HARNESS_WORKSPACE_QUOTA_BYTES` (1 GiB by
+default) before replacement. `pnpm lite doctor` fails its disk check below 1
+GiB free, and the snapshot compactor defers work under the same emergency
+threshold rather than deleting a warm workspace.
 
 ## Database and artifacts
 

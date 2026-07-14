@@ -46,9 +46,18 @@ export interface InternalPrincipal {
   scopes: string[];
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
 export interface InternalStartRunRequest extends CreateRunRequest {
   idempotencyKey: string;
   principal: InternalPrincipal;
+  parentRunId?: string;
+  depth?: number;
+  deliveryAllowed?: boolean;
 }
 
 export interface RunRecord {
@@ -60,6 +69,9 @@ export interface RunRecord {
   agentId: string;
   workspaceId: string;
   sessionId?: string;
+  parentRunId?: string;
+  depth: number;
+  deliveryAllowed: boolean;
   input: string;
   budget: RunBudget;
   usage: RunUsage;
@@ -267,6 +279,8 @@ export type RunEventType =
   | "approval.requested"
   | "approval.resolved"
   | "artifact.created"
+  | "subagent.started"
+  | "subagent.completed"
   | "run.succeeded"
   | "run.failed"
   | "run.cancelled"

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ArtifactPublishingRuntime, InMemoryToolRuntime, validateWorkspacePath } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 
@@ -16,6 +19,18 @@ describe("tool runtime policy", () => {
 
   it("requires Docker images to be pinned by digest", () => {
     expect(() => new DockerToolRuntime({ image: "alpine:latest" })).toThrow(/pinned by sha256/);
+  });
+
+  it("treats registered bind workspaces as operator-owned and never deletes or restores over them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-bind-"));
+    try {
+      const runtime = new DockerToolRuntime({
+        image: `sha256:${"a".repeat(64)}`,
+        resolveRegisteredWorkspace: (id) => id === "registered" ? root : undefined,
+      });
+      await expect(runtime.removeWorkspace("registered")).rejects.toThrow(/cannot be deleted/);
+      await expect(runtime.importWorkspace("registered", Buffer.from("archive"))).rejects.toThrow(/cannot be replaced/);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
   it("keeps in-memory workspaces isolated", async () => {

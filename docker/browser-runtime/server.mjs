@@ -1,6 +1,8 @@
 import { createInterface } from "node:readline";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -9,6 +11,8 @@ let browser;
 let context;
 let page;
 let policy = {};
+let consoleRecords = [];
+let networkRecords = [];
 const input = createInterface({ input: process.stdin });
 const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
 
@@ -26,14 +30,26 @@ input.on("line", async (line) => {
 async function dispatch(method, params) {
   if (method === "initialize") {
     policy = params.policy ?? {};
-    browser = await chromium.launch({ headless: true });
-    context = await browser.newContext({ acceptDownloads: true, serviceWorkers: "block" });
-    await context.route("**/*", async (route) => {
-      try { await assertAllowed(route.request().url()); await route.continue(); }
-      catch { await route.abort("blockedbyclient"); }
-    });
-    page = await context.newPage();
+    if (params.remoteCdpEndpoint) {
+      const endpoint = new URL(params.remoteCdpEndpoint);
+      if (!["ws:", "wss:", "http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new Error("Invalid remote CDP endpoint");
+      browser = await chromium.connectOverCDP(endpoint.toString());
+    } else {
+      browser = await chromium.launch({ headless: true, args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
+    }
+    await createContext();
     return { ok: true };
+  }
+  if (method === "profile.restore") {
+    if (!browser || typeof params.data !== "string" || Buffer.byteLength(params.data) > 4 * 1024 * 1024) throw new Error("Invalid browser profile");
+    const storageState = JSON.parse(params.data);
+    await context?.close();
+    await createContext(storageState);
+    return { restored: true };
+  }
+  if (method === "profile.export") {
+    if (!context) throw new Error("Browser sidecar is not initialized");
+    return { data: JSON.stringify(await context.storageState()) };
   }
   if (method === "shutdown") {
     await browser?.close();
@@ -42,6 +58,25 @@ async function dispatch(method, params) {
   }
   if (method !== "invoke" || !page) throw new Error("Browser sidecar is not initialized");
   return await invoke(params);
+}
+
+async function createContext(storageState) {
+    consoleRecords = []; networkRecords = [];
+    context = await browser.newContext({ acceptDownloads: true, serviceWorkers: "block", ...(storageState ? { storageState } : {}) });
+    await context.route("**/*", async (route) => {
+      try {
+        const response = await fetchPinned(route.request());
+        await route.fulfill(response);
+      }
+      catch { await route.abort("blockedbyclient"); }
+    });
+    await context.routeWebSocket(/.*/, (socket) => socket.close({ code: 1008, reason: "WebSockets are disabled by the browser broker" }));
+    context.on("requestfinished", (request) => {
+      networkRecords.push({ method: request.method(), url: request.url().slice(0, 2_048), resourceType: request.resourceType(), at: new Date().toISOString() });
+      networkRecords = networkRecords.slice(-500);
+    });
+    page = await context.newPage();
+    attachPageObservers(page);
 }
 
 async function invoke(command) {
@@ -56,6 +91,20 @@ async function invoke(command) {
   if (command.action === "wait") {
     if (!Number.isInteger(command.milliseconds) || command.milliseconds < 0 || command.milliseconds > 30_000) throw new Error("Invalid browser wait");
     await page.waitForTimeout(command.milliseconds); return metadata();
+  }
+  if (command.action === "tabs") return { value: await tabList() };
+  if (command.action === "new_tab") { page = await context.newPage(); attachPageObservers(page); return { ...await metadata(), value: await tabList() }; }
+  if (command.action === "switch_tab") { page = tabById(command.tabId); return metadata(); }
+  if (command.action === "close_tab") {
+    const target = tabById(command.tabId); await target.close();
+    page = context.pages()[0] ?? await context.newPage(); attachPageObservers(page);
+    return { ...await metadata(), value: await tabList() };
+  }
+  if (command.action === "inspect") return { ...await metadata(), value: { console: consoleRecords.slice(-200), network: networkRecords.slice(-500) } };
+  if (command.action === "scroll") {
+    const x = Number(command.deltaX ?? 0); const y = Number(command.deltaY ?? 0);
+    if (![x, y].every(Number.isFinite) || Math.abs(x) > 100_000 || Math.abs(y) > 100_000) throw new Error("Invalid browser scroll");
+    await page.mouse.wheel(x, y); return metadata();
   }
   if (command.action === "keyboard") { await page.keyboard.press(command.key); return metadata(); }
   if (command.action === "snapshot") return await snapshot();
@@ -93,6 +142,11 @@ async function invoke(command) {
     if (command.action === "hover") await locator.hover();
     return metadata();
   }
+  if (command.action === "drag") {
+    assertRef(command.sourceRef); assertRef(command.targetRef);
+    await page.locator(`[data-lite-ref="${command.sourceRef}"]`).dragTo(page.locator(`[data-lite-ref="${command.targetRef}"]`));
+    return metadata();
+  }
   throw new Error(`Unsupported browser action: ${command.action}`);
 }
 
@@ -113,6 +167,32 @@ async function artifact(name, mediaType, data) {
 function assertRef(ref) { if (!/^e[1-9][0-9]{0,4}$/.test(ref)) throw new Error("Invalid browser element reference"); }
 function safeName(name) { return String(name).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 128) || "file"; }
 
+function attachPageObservers(target) {
+  if (target.__liteObserved) return;
+  target.__liteObserved = true;
+  target.on("console", (message) => {
+    consoleRecords.push({ type: message.type(), text: message.text().slice(0, 2_000), at: new Date().toISOString() });
+    consoleRecords = consoleRecords.slice(-200);
+  });
+  target.on("dialog", async (dialog) => {
+    consoleRecords.push({ type: "dialog", text: `${dialog.type()}: ${dialog.message()}`.slice(0, 2_000), at: new Date().toISOString() });
+    await dialog.dismiss().catch(() => undefined);
+  });
+}
+
+function tabById(tabId) {
+  if (!/^tab-[1-9][0-9]{0,3}$/.test(tabId)) throw new Error("Invalid browser tab id");
+  const target = context.pages()[Number(tabId.slice(4)) - 1];
+  if (!target) throw new Error("Browser tab is unavailable");
+  return target;
+}
+
+async function tabList() {
+  return await Promise.all(context.pages().slice(0, 32).map(async (candidate, index) => ({
+    tabId: `tab-${index + 1}`, active: candidate === page, url: candidate.url(), title: await candidate.title(),
+  })));
+}
+
 async function assertAllowed(rawUrl) {
   const url = new URL(rawUrl);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Blocked browser protocol");
@@ -120,7 +200,53 @@ async function assertAllowed(rawUrl) {
   if (policy.allowedOrigins && !policy.allowedOrigins.includes(url.origin)) throw new Error("Blocked browser origin");
   const addresses = isIP(url.hostname) ? [url.hostname] : (await lookup(url.hostname, { all: true, verbatim: true })).map((entry) => entry.address);
   if (!policy.allowPrivateNetworks && addresses.some(isPrivate)) throw new Error("Blocked private network");
+  return { url, addresses };
 }
+
+async function fetchPinned(request) {
+  const { url, addresses } = await assertAllowed(request.url());
+  const address = addresses[0];
+  if (!address) throw new Error("Browser hostname did not resolve");
+  const headers = { ...request.headers(), host: url.host };
+  for (const name of HOP_BY_HOP_HEADERS) delete headers[name];
+  const body = request.postDataBuffer() ?? undefined;
+  if (body && body.length > 16 * 1024 * 1024) throw new Error("Browser request body exceeds broker limit");
+  const maxBytes = Number.isSafeInteger(policy.maxResponseBytes) ? Math.min(policy.maxResponseBytes, 64 * 1024 * 1024) : 32 * 1024 * 1024;
+  return await new Promise((resolveRequest, reject) => {
+    const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const outgoing = transport({
+      protocol: url.protocol, hostname: address, port: url.port || undefined,
+      method: request.method(), path: `${url.pathname}${url.search}`, headers,
+      ...(url.protocol === "https:" ? { servername: url.hostname } : {}),
+      timeout: 30_000,
+    }, (response) => {
+      const chunks = []; let bytes = 0;
+      response.on("data", (chunk) => {
+        bytes += chunk.length;
+        if (bytes > maxBytes) response.destroy(new Error("Browser response exceeds broker limit"));
+        else chunks.push(chunk);
+      });
+      response.once("error", reject);
+      response.once("end", () => {
+        const responseHeaders = {};
+        for (const [name, value] of Object.entries(response.headers)) {
+          if (value !== undefined && !HOP_BY_HOP_HEADERS.has(name) && name !== "content-length") {
+            responseHeaders[name] = Array.isArray(value) ? value.join("\n") : value;
+          }
+        }
+        resolveRequest({ status: response.statusCode ?? 502, headers: responseHeaders, body: Buffer.concat(chunks) });
+      });
+    });
+    outgoing.once("timeout", () => outgoing.destroy(new Error("Browser request timed out")));
+    outgoing.once("error", reject);
+    if (body) outgoing.end(body); else outgoing.end();
+  });
+}
+
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+  "te", "trailer", "transfer-encoding", "upgrade",
+]);
 
 function isPrivate(address) {
   const value = address.toLowerCase();

@@ -44,6 +44,14 @@ polling/WebSocket workers and interactive approval rendering remain separate
 optional workers; the current built-in lane is webhook/API driven and has zero
 idle process cost.
 
+`DeliveryCoordinator` leases pending receipts after restart and sends one
+terminal reply with a stable idempotency key. Webhook callbacks are fixed by
+operator configuration and HMAC signed. A receiver must deduplicate that key to
+cover the unavoidable crash window between remote acceptance and local receipt
+commit. Attachment URLs are rendered as untrusted references and never grant
+network authority. Signed app callbacks expose the same bounded pattern to
+application-defined tools.
+
 ## Durable schedules
 
 Manager enables the scheduler only when `LITE_HARNESS_SCHEDULES_JSON` is set.
@@ -69,3 +77,7 @@ dedicated SQLite database. Restart preserves an existing next-fire time.
 Firing uses a deterministic idempotency key derived from trigger and occurrence,
 and overlapping scheduler ticks cannot claim the same occurrence. Failures are
 released for bounded retry. Disabled automation starts no timer or database.
+
+Daily schedules add `timeZone` (IANA name), `localTime` (`HH:mm`), and
+`missedRunPolicy` (`skip` or `catch-up`). Nonexistent DST wall times advance to
+the next valid day; repeated wall times produce one occurrence.

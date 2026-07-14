@@ -25,6 +25,7 @@ export interface ManagerServerOptions {
 }
 
 export function buildManagerServer(options: ManagerServerOptions): FastifyInstance {
+  if (!options.internalToken.trim()) throw new Error("Manager IPC token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
 
   app.addHook("onRequest", async (request, reply) => {
@@ -36,7 +37,9 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     }
   });
 
-  app.get("/healthz", async () => ({ ok: true, role: "manager" }));
+  app.get("/healthz", async () => ({
+    ok: true, role: "manager", uptimeSeconds: Math.floor(process.uptime()), rssBytes: process.memoryUsage().rss,
+  }));
 
   app.post<{ Params: { accountId: string }; Body: { envelope?: unknown; signature?: string } }>(
     "/internal/integrations/webhook/:accountId/inbound",
@@ -93,6 +96,12 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId/attempts", async (request, reply) => {
     return options.runService.getRun(request.params.runId)
       ? { attempts: options.runService.listRunAttempts(request.params.runId) }
+      : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+  });
+
+  app.get<{ Params: { runId: string } }>("/internal/runs/:runId/children", async (request, reply) => {
+    return options.runService.getRun(request.params.runId)
+      ? { runs: options.runService.listChildRuns(request.params.runId) }
       : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
   });
 
@@ -155,6 +164,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
 
   app.post<{ Params: { runId: string }; Body: InternalPublishArtifactRequest }>(
     "/internal/runs/:runId/artifacts",
+    { bodyLimit: 24 * 1024 * 1024 },
     async (request, reply) => {
       if (!options.artifactStore || !isInternalArtifactRequest(request.body)) {
         return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });

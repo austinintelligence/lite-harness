@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
-import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
+import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
 import type { ModelDescriptor } from "@lite-harness/provider-core";
 
 const model = (id: string, providerId: string): ModelDescriptor => ({
@@ -18,6 +18,10 @@ describe("direct provider adapters", () => {
   it("normalizes an OpenAI-compatible response", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ authorization: "Bearer upstream-secret" });
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        messages: [{ role: "system", content: "Be precise" }, { role: "user", content: "hi" }],
+        tools: [{ type: "function", function: { name: "read_file" } }], tool_choice: "auto",
+      });
       return new Response(JSON.stringify({
         choices: [{ message: { content: "hello" } }],
         usage: { prompt_tokens: 2, completion_tokens: 1 },
@@ -31,7 +35,8 @@ describe("direct provider adapters", () => {
     const events = [];
     for await (const event of adapter.stream({
       model: model("example-model", "openai"),
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "system", content: "Be precise" }, { role: "user", content: "hi" }],
+      tools: [{ name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
       credential: { authorizationHeader: "Bearer upstream-secret" },
     })) events.push(event);
     expect(events).toEqual([
@@ -41,9 +46,63 @@ describe("direct provider adapters", () => {
     ]);
   });
 
+  it.each(Object.values(OPENAI_COMPATIBLE_PRESETS))(
+    "streams normalized events through the fixed $providerId endpoint",
+    async (preset) => {
+      const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        expect(new URL(String(input)).origin).toBe(preset.allowedOrigins[0]);
+        expect(new URL(String(input)).pathname).toBe(new URL("chat/completions", preset.baseUrl).pathname);
+        expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+        return sseResponse([
+          { choices: [{ delta: { content: "streamed" }, finish_reason: null }] },
+          { choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 2 } },
+          "[DONE]",
+        ]);
+      });
+      const adapter = new OpenAICompatibleProvider({ ...preset, fetch });
+      const events = [];
+      for await (const event of adapter.stream({
+        model: model("fixture", preset.providerId), messages: [{ role: "user", content: "hi" }],
+        credential: { authorizationHeader: "Bearer fixture-secret" },
+      })) events.push(event);
+      expect(events).toEqual([
+        { type: "text.delta", delta: "streamed" },
+        { type: "usage", inputTokens: 3, outputTokens: 2 },
+        { type: "completed", finishReason: "stop" },
+      ]);
+    },
+  );
+
+  it("preserves tool-call and tool-result pairing in OpenAI-compatible requests", async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> };
+      expect(body.messages[1]).toMatchObject({ role: "assistant", tool_calls: [{ id: "call-1" }] });
+      expect(body.messages[2]).toMatchObject({ role: "tool", tool_call_id: "call-1" });
+      return sseResponse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-2", function: { name: "write_file", arguments: "{\"path\":\"x\"}" } }] }, finish_reason: "tool_calls" }] },
+        "[DONE]",
+      ]);
+    });
+    const adapter = new OpenAICompatibleProvider({
+      providerId: "openai", baseUrl: "https://api.openai.com/v1/", allowedOrigins: ["https://api.openai.com"], fetch,
+    });
+    const events = [];
+    for await (const event of adapter.stream({
+      model: model("fixture", "openai"),
+      messages: [
+        { role: "user", content: "work" },
+        { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "read_file", arguments: { path: "x" } }] },
+        { role: "tool", content: "contents", toolCallId: "call-1" },
+      ],
+      credential: { authorizationHeader: "Bearer fixture-secret" },
+    })) events.push(event);
+    expect(events).toContainEqual({ type: "tool.call", call: { id: "call-2", name: "write_file", arguments: { path: "x" } } });
+  });
+
   it("normalizes an Anthropic response", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "x-api-key": "upstream-secret" });
+      expect(JSON.parse(String(init?.body))).toMatchObject({ system: "Be precise", tools: [{ name: "read_file" }] });
       return new Response(JSON.stringify({
         content: [{ type: "text", text: "hello" }],
         stop_reason: "end_turn",
@@ -54,9 +113,44 @@ describe("direct provider adapters", () => {
     const events = [];
     for await (const event of adapter.stream({
       model: model("claude-example", "anthropic"),
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "system", content: "Be precise" }, { role: "user", content: "hi" }],
+      tools: [{ name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
       credential: { authorizationHeader: "Bearer upstream-secret" },
     })) events.push(event);
     expect(events.at(-1)).toEqual({ type: "completed", finishReason: "stop" });
   });
+
+  it("streams Anthropic text, usage, and tool calls with paired tool results", async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { stream: boolean; messages: Array<{ role: string; content: unknown[] }> };
+      expect(body.stream).toBe(true);
+      expect(body.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "tool_result", tool_use_id: "old-tool" }] });
+      return sseResponse([
+        { type: "message_start", message: { usage: { input_tokens: 4 } } },
+        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello" } },
+        { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "new-tool", name: "read_file", input: {} } },
+        { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"path\":\"a\"}" } },
+        { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 3 } },
+        { type: "message_stop" },
+      ]);
+    });
+    const adapter = new AnthropicProvider({ fetch });
+    const events = [];
+    for await (const event of adapter.stream({
+      model: model("claude-fixture", "anthropic"),
+      messages: [
+        { role: "assistant", content: "", toolCalls: [{ id: "old-tool", name: "read_file", arguments: { path: "x" } }] },
+        { role: "tool", content: "contents", toolCallId: "old-tool" },
+      ],
+      credential: { authorizationHeader: "Bearer fixture-secret" },
+    })) events.push(event);
+    expect(events).toContainEqual({ type: "text.delta", delta: "hello" });
+    expect(events).toContainEqual({ type: "tool.call", call: { id: "new-tool", name: "read_file", arguments: { path: "a" } } });
+    expect(events).toContainEqual({ type: "usage", inputTokens: 4, outputTokens: 3 });
+  });
 });
+
+function sseResponse(events: readonly unknown[]): Response {
+  const body = events.map((event) => `data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`).join("");
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+}

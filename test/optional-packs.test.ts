@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryTriggerStore, SchedulerEngine } from "@lite-harness/automation";
+import { InMemoryTriggerStore, SchedulerEngine, nextDailyOccurrence } from "@lite-harness/automation";
 import { assertBrowserUrlAllowed, BrowserSessionBroker } from "@lite-harness/browser";
 import { DeliveryDedupe, normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
 import { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
@@ -49,6 +49,22 @@ describe("optional capability packs", () => {
     const second = new SchedulerEngine(store, "scheduler-b", createRun);
     expect(await Promise.all([first.tick(1_000), second.tick(1_000)])).toEqual([1, 0]);
     expect(createRun).toHaveBeenCalledOnce();
+  });
+
+  it("supports explicit missed-run catch-up and daylight-aware local schedules", async () => {
+    const store = new InMemoryTriggerStore();
+    store.put({ id: "catch-up", intervalMs: 1_000, nextFireAt: 1_000, payload: {}, missedRunPolicy: "catch-up" });
+    const createRun = vi.fn(async () => undefined);
+    const scheduler = new SchedulerEngine(store, "scheduler", createRun);
+    expect(await scheduler.tick(5_000)).toBe(1);
+    expect(await scheduler.tick(5_000)).toBe(1);
+    expect(createRun).toHaveBeenCalledTimes(2);
+    const next = nextDailyOccurrence("America/Chicago", "09:30", Date.parse("2026-03-08T13:00:00Z"));
+    expect(new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(next)).toBe("09:30");
+    const afterMissingTime = nextDailyOccurrence("America/Chicago", "02:30", Date.parse("2026-03-08T06:00:00Z"));
+    expect(new Date(afterMissingTime).toISOString()).toBe("2026-03-09T07:30:00.000Z");
   });
 
   it("propagates parent cancellation and enforces child budgets and depth", () => {

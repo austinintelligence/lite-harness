@@ -27,10 +27,17 @@
     "verify": "pnpm typecheck && pnpm check:boundaries && pnpm test",
     "check": "pnpm verify",
     "release:check": "pnpm verify && pnpm check:secrets && pnpm check:provenance && pnpm check:release",
+    "generate:sbom": "node scripts/generate-sbom.mjs",
+    "evaluate:pxpipe": "tsx scripts/evaluate-context.ts",
+    "benchmark:kernel": "node scripts/benchmark-kernel.mjs",
+    "test:hermes": "node scripts/with-hermes-model.mjs node node_modules/vitest/vitest.mjs run test/hermes-provider.live.test.ts",
+    "with:hermes": "node scripts/with-hermes-model.mjs",
+    "harness:hermes": "node scripts/with-hermes-model.mjs node --import tsx apps/launcher/src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:manager": "tsx apps/manager/src/main.ts",
     "dev:gateway": "tsx apps/gateway/src/main.ts",
+    "dev:launcher": "tsx apps/launcher/src/main.ts",
     "lite": "tsx apps/cli/src/main.ts"
   },
   "devDependencies": {
@@ -38,5 +45,8 @@
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "4.1.9"
+  },
+  "optionalDependencies": {
+    "pxpipe-proxy": "0.7.1"
   }
 }

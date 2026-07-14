@@ -18,6 +18,7 @@ const app = buildGatewayServer({
 });
 
 await app.listen({ host, port });
+installShutdownHandlers(app);
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -25,4 +26,19 @@ function requiredEnvironment(name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function installShutdownHandlers(server: { close(): Promise<void> }): void {
+  let closing = false;
+  const shutdown = (signal: string) => {
+    if (closing) return;
+    closing = true;
+    process.stderr.write(`lite-harness gateway: received ${signal}, shutting down\n`);
+    void server.close().catch((error) => {
+      process.stderr.write(`lite-harness gateway: shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
+  };
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
 }

@@ -33,6 +33,9 @@ interface RunRow {
   agent_id: string;
   workspace_id: string;
   session_id: string | null;
+  parent_run_id: string | null;
+  depth: number;
+  delivery_allowed: number;
   input: string;
   budget_json: string;
   usage_input_tokens: number;
@@ -138,6 +141,9 @@ function toRunRecord(row: RunRow): RunRecord {
     agentId: row.agent_id,
     workspaceId: row.workspace_id,
     ...(row.session_id ? { sessionId: row.session_id } : {}),
+    ...(row.parent_run_id ? { parentRunId: row.parent_run_id } : {}),
+    depth: row.depth ?? 0,
+    deliveryAllowed: (row.delivery_allowed ?? 1) === 1,
     input: row.input,
     budget: normalizeBudget(JSON.parse(row.budget_json || "{}") as Partial<RunBudget>),
     usage: {
@@ -381,12 +387,17 @@ export class SqliteRunStore implements RunStore {
         VALUES (3, datetime('now'));
       INSERT OR IGNORE INTO schema_migrations(version, applied_at)
         VALUES (4, datetime('now'));
+      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+        VALUES (5, datetime('now'));
     `);
     this.#ensureColumn("runs", "budget_json", "TEXT NOT NULL DEFAULT '{}'");
     this.#ensureColumn("runs", "usage_input_tokens", "INTEGER NOT NULL DEFAULT 0");
     this.#ensureColumn("runs", "usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
     this.#ensureColumn("runs", "usage_cost_usd", "REAL NOT NULL DEFAULT 0");
     this.#ensureColumn("runs", "usage_tool_calls", "INTEGER NOT NULL DEFAULT 0");
+    this.#ensureColumn("runs", "parent_run_id", "TEXT REFERENCES runs(id) ON DELETE SET NULL");
+    this.#ensureColumn("runs", "depth", "INTEGER NOT NULL DEFAULT 0");
+    this.#ensureColumn("runs", "delivery_allowed", "INTEGER NOT NULL DEFAULT 1");
   }
 
   #ensureColumn(table: string, column: string, definition: string): void {
@@ -421,6 +432,13 @@ export class SqliteRunStore implements RunStore {
       }
 
       const now = new Date().toISOString();
+      if (request.parentRunId) {
+        const parent = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(request.parentRunId) as RunRow | undefined;
+        if (!parent || !sameOwner(parent, request.principal)) throw new Error("Parent run does not belong to the requesting principal");
+        if (request.depth !== (parent.depth ?? 0) + 1) throw new Error("Child run depth is invalid");
+      } else if ((request.depth ?? 0) !== 0) {
+        throw new Error("Root run depth must be zero");
+      }
       const agent = this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(request.agent) as AgentRow | undefined;
       if (agent && !sameOwner(agent, request.principal)) throw new Error("Agent profile does not belong to the requesting principal");
       if (!agent) {
@@ -479,9 +497,9 @@ export class SqliteRunStore implements RunStore {
         .prepare(
           `INSERT INTO runs (
             id, idempotency_key, request_fingerprint, app_id, tenant_id, user_id, agent_id,
-            workspace_id, session_id, input, budget_json, status, last_sequence,
+            workspace_id, session_id, parent_run_id, depth, delivery_allowed, input, budget_json, status, last_sequence,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
         )
         .run(
           id,
@@ -493,6 +511,9 @@ export class SqliteRunStore implements RunStore {
           request.agent,
           request.workspace,
           sessionId,
+          request.parentRunId ?? null,
+          request.depth ?? 0,
+          request.deliveryAllowed === false ? 0 : 1,
           request.input,
           JSON.stringify(budget),
           now,
@@ -524,6 +545,12 @@ export class SqliteRunStore implements RunStore {
       | RunRow
       | undefined;
     return row ? toRunRecord(row) : undefined;
+  }
+
+  listChildRuns(parentRunId: string): RunRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC, id ASC",
+    ).all(parentRunId) as unknown as RunRow[]).map(toRunRecord);
   }
 
   appendEvent(params: AppendRunEvent): RunEvent {
@@ -830,6 +857,9 @@ function requestFingerprint(request: InternalStartRunRequest): string {
         session: request.session ?? null,
         input: request.input,
         budget: request.budget ?? null,
+        parentRunId: request.parentRunId ?? null,
+        depth: request.depth ?? 0,
+        deliveryAllowed: request.deliveryAllowed ?? true,
       }),
     )
     .digest("hex");

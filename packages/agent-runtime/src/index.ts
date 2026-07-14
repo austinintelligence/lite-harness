@@ -17,6 +17,8 @@ export class AgentRunner {
 
   async run(params: {
     input: string;
+    instructions?: string;
+    allowedTools?: readonly string[];
     workspaceId: string;
     runId?: string;
     principal?: InternalPrincipal;
@@ -29,9 +31,14 @@ export class AgentRunner {
     signal?: AbortSignal;
     onEvent: (event: AgentRuntimeEvent) => void;
   }): Promise<void> {
-    const messages: ModelMessage[] = params.history?.length
-      ? params.history.map((message) => ({ ...message }))
-      : [{ role: "user", content: params.input }];
+    const messages: ModelMessage[] = [
+      ...(params.instructions?.trim() ? [{ role: "system" as const, content: params.instructions.trim() }] : []),
+      ...(params.history?.length
+        ? params.history.map((message) => ({ ...message }))
+        : [{ role: "user" as const, content: params.input }]),
+    ];
+    const allowed = new Set(params.allowedTools ?? []);
+    const advertisedTools = (this.tools.listTools?.() ?? []).filter((tool) => allowed.has(tool.name));
 
     const turnLimit = params.maxTurns ?? this.maxTurns;
     for (let turn = 0; turn < turnLimit; turn += 1) {
@@ -44,29 +51,34 @@ export class AgentRunner {
 
       const stream = this.model.streamTurn({
         messages,
+        ...(advertisedTools.length ? { tools: advertisedTools } : {}),
         ...(params.signal ? { signal: params.signal } : {}),
       })[Symbol.asyncIterator]();
-      while (true) {
-        const next = await nextWithIdleTimeout(
-          stream,
-          params.modelIdleTimeoutMs ?? 120_000,
-          params.signal,
-        );
-        if (next.done) break;
-        const event = next.value;
-        if (event.type === "text.delta") {
-          assistantText += event.delta;
-          params.onEvent({
-            type: "agent.message.delta",
-            payload: { delta: event.delta, turn },
-          });
-        } else if (event.type === "tool.call") {
-          toolCalls.push(event.call);
-        } else if (event.type === "usage") {
-          params.onEvent({ type: "usage.updated", payload: event });
-        } else {
-          finishReason = event.finishReason;
+      try {
+        while (true) {
+          const next = await nextWithIdleTimeout(
+            stream,
+            params.modelIdleTimeoutMs ?? 120_000,
+            params.signal,
+          );
+          if (next.done) break;
+          const event = next.value;
+          if (event.type === "text.delta") {
+            assistantText += event.delta;
+            params.onEvent({
+              type: "agent.message.delta",
+              payload: { delta: event.delta, turn },
+            });
+          } else if (event.type === "tool.call") {
+            toolCalls.push(event.call);
+          } else if (event.type === "usage") {
+            params.onEvent({ type: "usage.updated", payload: event });
+          } else {
+            finishReason = event.finishReason;
+          }
         }
+      } finally {
+        await stream.return?.();
       }
 
       messages.push({ role: "assistant", content: assistantText, toolCalls });
@@ -118,6 +130,7 @@ export class AgentRunner {
 export class FakeModelGateway implements ModelGateway {
   async *streamTurn(params: {
     messages: readonly ModelMessage[];
+    tools?: readonly import("@lite-harness/contracts").ToolDefinition[];
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent> {
     params.signal?.throwIfAborted();

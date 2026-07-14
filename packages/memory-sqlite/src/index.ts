@@ -11,12 +11,38 @@ export interface MemoryEntry {
   createdAt: string;
 }
 
+export interface VectorMemoryIndex {
+  upsert(entry: MemoryEntry): Promise<void>;
+  search(scope: { tenantId: string; workspaceId: string }, query: string, limit: number): Promise<Array<{ id: string; score: number }>>;
+  remove(scope: { tenantId: string; workspaceId: string }, id: string): Promise<void>;
+}
+
+/** Optional vector augmentation; deleting the index leaves exact SQLite memory authoritative. */
+export class HybridMemorySearch {
+  constructor(private readonly exact: SqliteMemoryStore, private readonly vectors?: VectorMemoryIndex) {}
+
+  async search(tenantId: string, workspaceId: string, query: string, limit = 20): Promise<MemoryEntry[]> {
+    const exact = this.exact.search(tenantId, workspaceId, query, limit);
+    if (!this.vectors || exact.length >= limit) return exact;
+    const seen = new Set(exact.map((entry) => entry.id));
+    const semantic = await this.vectors.search({ tenantId, workspaceId }, query, limit);
+    for (const match of semantic.sort((left, right) => right.score - left.score)) {
+      if (seen.has(match.id)) continue;
+      const entry = this.exact.get(tenantId, workspaceId, match.id);
+      if (entry) { exact.push(entry); seen.add(entry.id); }
+      if (exact.length >= limit) break;
+    }
+    return exact;
+  }
+}
+
 export class SqliteMemoryStore {
   readonly #database: DatabaseSync;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.#database = new DatabaseSync(path);
+    this.#database.exec("PRAGMA journal_mode = WAL");
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
@@ -32,6 +58,10 @@ export class SqliteMemoryStore {
   }
 
   add(tenantId: string, workspaceId: string, markdown: string): MemoryEntry {
+    validateScope(tenantId, workspaceId);
+    if (!markdown.trim() || Buffer.byteLength(markdown, "utf8") > 256 * 1024) {
+      throw new Error("Memory markdown must contain 1-262144 UTF-8 bytes");
+    }
     const entry = {
       id: `mem_${randomUUID().replaceAll("-", "")}`,
       tenantId,
@@ -56,6 +86,8 @@ export class SqliteMemoryStore {
   }
 
   search(tenantId: string, workspaceId: string, query: string, limit = 20): MemoryEntry[] {
+    validateScope(tenantId, workspaceId);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("Memory search limit must be 1-100");
     const match = query.split(/\s+/).filter(Boolean).map((token) => `"${token.replaceAll('"', '""')}"`).join(" AND ");
     if (!match) return [];
     return this.#database.prepare(`
@@ -74,7 +106,47 @@ export class SqliteMemoryStore {
     });
   }
 
+  get(tenantId: string, workspaceId: string, id: string): MemoryEntry | undefined {
+    validateScope(tenantId, workspaceId);
+    const row = this.#database.prepare(
+      "SELECT * FROM memories WHERE id = ? AND tenant_id = ? AND workspace_id = ?",
+    ).get(id, tenantId, workspaceId) as Record<string, unknown> | undefined;
+    return row ? toEntry(row) : undefined;
+  }
+
+  remove(tenantId: string, workspaceId: string, id: string): boolean {
+    validateScope(tenantId, workspaceId);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.#database.prepare(
+        "DELETE FROM memories WHERE id = ? AND tenant_id = ? AND workspace_id = ?",
+      ).run(id, tenantId, workspaceId);
+      if (result.changes === 1) this.#database.prepare("DELETE FROM memories_fts WHERE id = ?").run(id);
+      this.#database.exec("COMMIT");
+      return result.changes === 1;
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   close(): void {
     this.#database.close();
+  }
+}
+
+function toEntry(value: Record<string, unknown>): MemoryEntry {
+  return {
+    id: value.id as string,
+    tenantId: value.tenant_id as string,
+    workspaceId: value.workspace_id as string,
+    markdown: value.markdown as string,
+    createdAt: value.created_at as string,
+  };
+}
+
+function validateScope(tenantId: string, workspaceId: string): void {
+  if (!tenantId.trim() || !workspaceId.trim() || tenantId.length > 256 || workspaceId.length > 256) {
+    throw new Error("Memory tenant and workspace scope are invalid");
   }
 }

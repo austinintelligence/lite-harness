@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerBrowserDriver,
+  EncryptedBrowserProfileStore,
   ManagedBrowserBroker,
   assertBrowserUrlAllowed,
   type BrowserAction,
@@ -14,10 +15,13 @@ import {
 } from "@lite-harness/browser";
 import {
   DiscordConnector,
+  DeliveryCoordinator,
   InboundRunRouter,
   SlackConnector,
   SqliteIntegrationStore,
   TelegramConnector,
+  WebhookCallbackConnector,
+  composeInboundPrompt,
   normalizeInbound,
   verifyDiscordRequest,
   verifySlackRequest,
@@ -57,6 +61,15 @@ describe("managed browser broker", () => {
 
   it("requires an immutable managed-browser image", () => {
     expect(() => new DockerBrowserDriver({ image: "playwright:latest" })).toThrow(/pinned by sha256/);
+  });
+
+  it("encrypts persistent browser state and binds it to the app tenant and user", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-browser-profile-")); cleanup.push(directory);
+    const profiles = new EncryptedBrowserProfileStore(directory, Buffer.alloc(32, 7));
+    const owner = { appId: "app", tenantId: "tenant", userId: "user" };
+    await profiles.save("default", owner, JSON.stringify({ cookies: [{ name: "session", value: "secret" }] }));
+    await expect(profiles.load("default", owner)).resolves.toContain("session");
+    await expect(profiles.load("default", { ...owner, tenantId: "other" })).rejects.toThrow();
   });
 
   it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("runs the pinned Chromium sidecar and stops it", async () => {
@@ -119,6 +132,33 @@ describe("durable connectors", () => {
     store.close();
   });
 
+  it("delivers one durable reply after restart and carries attachment references into the run", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-delivery-")); cleanup.push(directory);
+    const path = join(directory, "integrations.db");
+    const envelope = normalizeInbound({
+      connectorId: "webhook", accountId: "primary", deliveryId: "delivery-reply",
+      senderExternalId: "sender", conversationExternalId: "conversation", text: "review these",
+      attachmentUrls: ["https://files.example/report.pdf"],
+    });
+    expect(composeInboundPrompt(envelope)).toContain("https://files.example/report.pdf");
+    let store = new SqliteIntegrationStore(path);
+    store.bind({ connectorId: "webhook", accountId: "primary", senderExternalId: "sender",
+      appId: "app", tenantId: "tenant", userId: "user", agentId: "agent", workspaceId: "workspace", sessionPrefix: "hook" });
+    await new InboundRunRouter(store, async () => "run-complete").route(envelope);
+    store.close();
+
+    store = new SqliteIntegrationStore(path);
+    const sends = vi.fn(async () => ({ externalId: "reply-one" }));
+    const coordinator = new DeliveryCoordinator(store, "manager-restarted", new Map([["webhook", {
+      connectorId: "webhook", send: sends,
+    }]]), async () => ({ terminal: true, text: "done" }));
+    expect(await coordinator.tick()).toBe(1);
+    expect(await coordinator.tick()).toBe(0);
+    expect(sends).toHaveBeenCalledOnce();
+    expect(store.getReceipt(envelope)).toMatchObject({ status: "REPLIED", replyExternalId: "reply-one" });
+    store.close();
+  });
+
   it("verifies Telegram, Slack, and Discord webhook authenticity", () => {
     expect(verifyTelegramSecret("secret", "secret")).toBe(true);
     const body = Buffer.from("{\"event\":1}");
@@ -148,6 +188,21 @@ describe("durable connectors", () => {
     expect(fetch.mock.calls.map(([url]) => new URL(String(url)).origin)).toEqual([
       "https://api.telegram.org", "https://discord.com", "https://slack.com",
     ]);
+  });
+
+  it("signs fixed-origin webhook callbacks with a stable idempotency key", async () => {
+    const fetch = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const body = String(init?.body);
+      expect(init?.headers).toMatchObject({
+        "idempotency-key": "reply:one",
+        "x-lite-signature": `sha256=${createHmac("sha256", "reply-secret").update(body).digest("hex")}`,
+      });
+      return new Response(null, { status: 202, headers: { "x-lite-delivery-id": "accepted-one" } });
+    });
+    const connector = new WebhookCallbackConnector(async () => ({ url: "https://app.example/callback", secret: "reply-secret" }),
+      fetch as unknown as typeof globalThis.fetch);
+    await expect(connector.send({ accountId: "primary", conversationExternalId: "thread", text: "done", idempotencyKey: "reply:one" }))
+      .resolves.toEqual({ externalId: "accepted-one" });
   });
 });
 

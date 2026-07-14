@@ -30,6 +30,7 @@
     "check:requirements": "node scripts/check-requirements.mjs",
     "generate:defects": "node scripts/generate-defect-ledger.mjs",
     "reproduce:defects:critical": "node scripts/record-defect-reproductions.mjs critical",
+    "reproduce:defects:high": "node scripts/record-defect-reproductions.mjs high",
     "check:defects:structure": "node scripts/check-defects.mjs --structure",
     "check:defects": "node scripts/check-defects.mjs",
     "evidence:collect": "node scripts/collect-release-evidence.mjs",

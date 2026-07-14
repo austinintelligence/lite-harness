@@ -286,12 +286,17 @@
         "section": "Known baseline defects / 9",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-009-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-009-REGRESSION",
@@ -301,7 +306,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -315,12 +320,17 @@
         "section": "Known baseline defects / 10",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-010-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-010-REGRESSION",
@@ -330,7 +340,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -344,12 +354,17 @@
         "section": "Known baseline defects / 11",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-011-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-011-REGRESSION",
@@ -359,7 +374,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -373,12 +388,17 @@
         "section": "Known baseline defects / 12",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-012-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-012-REGRESSION",
@@ -388,7 +408,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -402,12 +422,17 @@
         "section": "Known baseline defects / 13",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-013-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-013-REGRESSION",
@@ -417,7 +442,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -431,12 +456,17 @@
         "section": "Known baseline defects / 14",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-014-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-014-REGRESSION",
@@ -446,7 +476,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -460,12 +490,17 @@
         "section": "Known baseline defects / 15",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-015-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-015-REGRESSION",
@@ -475,7 +510,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -489,12 +524,17 @@
         "section": "Known baseline defects / 16",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-016-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-016-REGRESSION",
@@ -504,7 +544,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -518,12 +558,17 @@
         "section": "Known baseline defects / 17",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-017-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-017-REGRESSION",
@@ -533,7 +578,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -547,12 +592,17 @@
         "section": "Known baseline defects / 18",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-018-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-018-REGRESSION",
@@ -562,7 +612,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -576,12 +626,17 @@
         "section": "Known baseline defects / 19",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-019-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-019-REGRESSION",
@@ -591,7 +646,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -605,12 +660,17 @@
         "section": "Known baseline defects / 20",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-020-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-020-REGRESSION",
@@ -620,7 +680,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -634,12 +694,17 @@
         "section": "Known baseline defects / 21",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-021-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-021-REGRESSION",
@@ -649,7 +714,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -663,12 +728,17 @@
         "section": "Known baseline defects / 22",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-022-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-022-REGRESSION",
@@ -678,7 +748,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -692,12 +762,17 @@
         "section": "Known baseline defects / 23",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-023-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-023-REGRESSION",
@@ -707,7 +782,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -721,12 +796,17 @@
         "section": "Known baseline defects / 24",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-024-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-024-REGRESSION",
@@ -736,7 +816,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -750,12 +830,17 @@
         "section": "Known baseline defects / 25",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-025-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-025-REGRESSION",
@@ -765,7 +850,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -779,12 +864,17 @@
         "section": "Known baseline defects / 26",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-026-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-026-REGRESSION",
@@ -794,7 +884,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -808,12 +898,17 @@
         "section": "Known baseline defects / 27",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-027-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-027-REGRESSION",
@@ -823,7 +918,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -837,12 +932,17 @@
         "section": "Known baseline defects / 28",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-028-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-028-REGRESSION",
@@ -852,7 +952,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -866,12 +966,17 @@
         "section": "Known baseline defects / 29",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-029-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-029-REGRESSION",
@@ -881,7 +986,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -895,12 +1000,17 @@
         "section": "Known baseline defects / 30",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-030-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-030-REGRESSION",
@@ -910,7 +1020,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -924,12 +1034,17 @@
         "section": "Known baseline defects / 31",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-031-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-031-REGRESSION",
@@ -939,7 +1054,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -953,12 +1068,17 @@
         "section": "Known baseline defects / 32",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-032-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-032-REGRESSION",
@@ -968,7 +1088,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -982,12 +1102,17 @@
         "section": "Known baseline defects / 33",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-033-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-033-REGRESSION",
@@ -997,7 +1122,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1011,12 +1136,17 @@
         "section": "Known baseline defects / 34",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-034-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-034-REGRESSION",
@@ -1026,7 +1156,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1040,12 +1170,17 @@
         "section": "Known baseline defects / 35",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-035-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-035-REGRESSION",
@@ -1055,7 +1190,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1069,12 +1204,17 @@
         "section": "Known baseline defects / 36",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-036-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-036-REGRESSION",
@@ -1084,7 +1224,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1098,12 +1238,17 @@
         "section": "Known baseline defects / 37",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-037-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-037-REGRESSION",
@@ -1113,7 +1258,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1127,12 +1272,17 @@
         "section": "Known baseline defects / 38",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-038-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-038-REGRESSION",
@@ -1142,7 +1292,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1156,12 +1306,17 @@
         "section": "Known baseline defects / 39",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-039-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-039-REGRESSION",
@@ -1171,7 +1326,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1185,12 +1340,17 @@
         "section": "Known baseline defects / 40",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-040-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-040-REGRESSION",
@@ -1200,7 +1360,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1214,12 +1374,17 @@
         "section": "Known baseline defects / 41",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-041-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-041-REGRESSION",
@@ -1229,7 +1394,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1243,12 +1408,17 @@
         "section": "Known baseline defects / 42",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-042-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-042-REGRESSION",
@@ -1258,7 +1428,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1272,12 +1442,17 @@
         "section": "Known baseline defects / 43",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-043-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-043-REGRESSION",
@@ -1287,7 +1462,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1301,12 +1476,17 @@
         "section": "Known baseline defects / 44",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-044-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-044-REGRESSION",
@@ -1316,7 +1496,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1330,12 +1510,17 @@
         "section": "Known baseline defects / 45",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-045-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-045-REGRESSION",
@@ -1345,7 +1530,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1359,12 +1544,17 @@
         "section": "Known baseline defects / 46",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-046-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-046-REGRESSION",
@@ -1374,7 +1564,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1388,12 +1578,17 @@
         "section": "Known baseline defects / 47",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-047-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-047-REGRESSION",
@@ -1403,7 +1598,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1417,12 +1612,17 @@
         "section": "Known baseline defects / 48",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-048-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-048-REGRESSION",
@@ -1432,7 +1632,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1446,12 +1646,17 @@
         "section": "Known baseline defects / 49",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-049-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-049-REGRESSION",
@@ -1461,7 +1666,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1475,12 +1680,17 @@
         "section": "Known baseline defects / 50",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-050-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-050-REGRESSION",
@@ -1490,7 +1700,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1504,12 +1714,17 @@
         "section": "Known baseline defects / 51",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-051-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-051-REGRESSION",
@@ -1519,7 +1734,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1533,12 +1748,17 @@
         "section": "Known baseline defects / 52",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-052-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-052-REGRESSION",
@@ -1548,7 +1768,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1562,12 +1782,17 @@
         "section": "Known baseline defects / 53",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-053-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-053-REGRESSION",
@@ -1577,7 +1802,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1591,12 +1816,17 @@
         "section": "Known baseline defects / 54",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-054-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-054-REGRESSION",
@@ -1606,7 +1836,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1620,12 +1850,17 @@
         "section": "Known baseline defects / 55",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-055-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-055-REGRESSION",
@@ -1635,7 +1870,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1649,12 +1884,17 @@
         "section": "Known baseline defects / 56",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-056-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-056-REGRESSION",
@@ -1664,7 +1904,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1678,12 +1918,17 @@
         "section": "Known baseline defects / 57",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-057-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-057-REGRESSION",
@@ -1693,7 +1938,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1707,12 +1952,17 @@
         "section": "Known baseline defects / 58",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-058-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-058-REGRESSION",
@@ -1722,7 +1972,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1736,12 +1986,17 @@
         "section": "Known baseline defects / 59",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-059-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-059-REGRESSION",
@@ -1751,7 +2006,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1765,12 +2020,17 @@
         "section": "Known baseline defects / 60",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-060-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-060-REGRESSION",
@@ -1780,7 +2040,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1794,12 +2054,17 @@
         "section": "Known baseline defects / 61",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-061-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-061-REGRESSION",
@@ -1809,7 +2074,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1823,12 +2088,17 @@
         "section": "Known baseline defects / 62",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-062-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-062-REGRESSION",
@@ -1838,7 +2108,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1852,12 +2122,17 @@
         "section": "Known baseline defects / 63",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-063-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-063-REGRESSION",
@@ -1867,7 +2142,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     },
     {
@@ -1881,12 +2156,17 @@
         "section": "Known baseline defects / 64",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "open",
+      "status": "reproduced",
       "reproduction": {
         "testId": "BD-064-REPRO",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/reproduction/high.repro.ts",
+        "result": "reproduced",
+        "evidenceArtifact": {
+          "path": "docs/evidence/defects/high-reproduction.json",
+          "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+          "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+          "skips": 0
+        }
       },
       "regression": {
         "testId": "BD-064-REGRESSION",
@@ -1896,7 +2176,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "baseline-reproduction-required"
+        "regression-fix-required"
       ]
     }
   ]

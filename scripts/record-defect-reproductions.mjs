@@ -11,6 +11,11 @@ const batches = {
     testPath: "test/reproduction/critical.repro.ts",
     evidencePath: "docs/evidence/defects/critical-reproduction.json",
   },
+  high: {
+    ids: Array.from({ length: 56 }, (_, index) => `BD-${String(index + 9).padStart(3, "0")}`),
+    testPath: "test/reproduction/high.repro.ts",
+    evidencePath: "docs/evidence/defects/high-reproduction.json",
+  },
 };
 
 const name = process.argv[2];

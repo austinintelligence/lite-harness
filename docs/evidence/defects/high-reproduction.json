@@ -1,0 +1,353 @@
+{
+  "schemaVersion": 1,
+  "batch": "high",
+  "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
+  "sourceCommit": "7c2241c0ee29d9cdd93ce62b386b0abae5453508",
+  "recordedAt": "2026-07-14T22:49:25.448Z",
+  "platform": "win32-x64",
+  "node": "v24.14.0",
+  "command": "pnpm reproduce:defects:high",
+  "testPath": "test/reproduction/high.repro.ts",
+  "testSha256": "d7d946295fc348827564fe9048619795b267e6616d5ec6422ec516c384b7af42",
+  "expectedFailures": 56,
+  "observedFailures": 56,
+  "skips": 0,
+  "results": [
+    {
+      "id": "BD-009",
+      "testId": "BD-009-REPRO",
+      "status": "failed",
+      "observed": "Error: promise rejected \"Error: Unsupported state or unable to aut \" instead of resolving"
+    },
+    {
+      "id": "BD-010",
+      "testId": "BD-010-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'ORDER BY sequence DESC LIMIT'"
+    },
+    {
+      "id": "BD-011",
+      "testId": "BD-011-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'tool_calls_json'"
+    },
+    {
+      "id": "BD-012",
+      "testId": "BD-012-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'deadline_at'"
+    },
+    {
+      "id": "BD-013",
+      "testId": "BD-013-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'owner_scoped_external_id'"
+    },
+    {
+      "id": "BD-014",
+      "testId": "BD-014-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'idempotency_fingerprint'"
+    },
+    {
+      "id": "BD-015",
+      "testId": "BD-015-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import {\\n createCipheriv,\\n create ' to contain 'snapshotAssociatedData'"
+    },
+    {
+      "id": "BD-016",
+      "testId": "BD-016-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import {\\n createCipheriv,\\n create ' to contain 'verifySnapshotBeforeRotation'"
+    },
+    {
+      "id": "BD-017",
+      "testId": "BD-017-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import {\\n createCipheriv,\\n create ' to contain 'createStreamingSnapshotPipeline'"
+    },
+    {
+      "id": "BD-018",
+      "testId": "BD-018-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash, randomUUID } fro ' to contain 'validateArchiveEntries'"
+    },
+    {
+      "id": "BD-019",
+      "testId": "BD-019-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'runtime_container_id'"
+    },
+    {
+      "id": "BD-020",
+      "testId": "BD-020-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash, randomUUID } fro ' to contain 'killAndReapContainer'"
+    },
+    {
+      "id": "BD-021",
+      "testId": "BD-021-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'appendEventAndProjectTransaction'"
+    },
+    {
+      "id": "BD-022",
+      "testId": "BD-022-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { randomUUID, timingSafeEqual ' to contain 'awaitSseDrain'"
+    },
+    {
+      "id": "BD-023",
+      "testId": "BD-023-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import Fastify, { type FastifyInstanc ' to contain 'productionReadinessChecks'"
+    },
+    {
+      "id": "BD-024",
+      "testId": "BD-024-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash } from \"node:cryp ' to contain 'orderedMigrationSteps'"
+    },
+    {
+      "id": "BD-025",
+      "testId": "BD-025-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { randomUUID } from \"node:cryp ' to contain 'workspacePathForRun'"
+    },
+    {
+      "id": "BD-026",
+      "testId": "BD-026-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { randomUUID } from \"node:cryp ' to contain 'claudePromptStdin'"
+    },
+    {
+      "id": "BD-027",
+      "testId": "BD-027-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { spawn, type ChildProcessWith ' to contain 'isolatedChildHome'"
+    },
+    {
+      "id": "BD-028",
+      "testId": "BD-028-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { EventEmitter } from \"node:ev ' to contain 'approvalExecutionDigest'"
+    },
+    {
+      "id": "BD-029",
+      "testId": "BD-029-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import type { InternalPrincipal, RunE ' to contain 'validateAdvertisedToolArguments'"
+    },
+    {
+      "id": "BD-030",
+      "testId": "BD-030-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash, randomUUID } fro ' to contain 'unknown_model_price'"
+    },
+    {
+      "id": "BD-031",
+      "testId": "BD-031-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHash, randomUUID } fro ' to contain 'providerRequestBecameVisible'"
+    },
+    {
+      "id": "BD-032",
+      "testId": "BD-032-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import type {\\n ModelEvent,\\n Provi ' to contain 'responses.create'"
+    },
+    {
+      "id": "BD-033",
+      "testId": "BD-033-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import type { ModelEvent, ProviderAda ' to contain 'plaintext Anthropic endpoints must be '"
+    },
+    {
+      "id": "BD-034",
+      "testId": "BD-034-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import {\\n createCipheriv,\\n create ' to contain 'rejectSensitiveRegisteredRoot'"
+    },
+    {
+      "id": "BD-035",
+      "testId": "BD-035-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import type { ArtifactRecord, Interna ' to contain 'authorizedWorkspaceArtifactPath'"
+    },
+    {
+      "id": "BD-036",
+      "testId": "BD-036-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import Fastify, { type FastifyInstanc ' to contain 'request.rawBody'"
+    },
+    {
+      "id": "BD-037",
+      "testId": "BD-037-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import Fastify, { type FastifyInstanc ' to contain 'InternalStartRunRequestSchema'"
+    },
+    {
+      "id": "BD-038",
+      "testId": "BD-038-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { rmSync } from \"node:fs\";\\nim ' to contain 'ContextOptimizationGate'"
+    },
+    {
+      "id": "BD-039",
+      "testId": "BD-039-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { rmSync } from \"node:fs\";\\nim ' to contain 'persistRunRoutePlan'"
+    },
+    {
+      "id": "BD-040",
+      "testId": "BD-040-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import type { ArtifactRecord, Interna ' to contain 'shell_exec'"
+    },
+    {
+      "id": "BD-041",
+      "testId": "BD-041-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'FROM alpine@sha256:fd791d74b68913cbb0 ' to contain 'bookworm-slim'"
+    },
+    {
+      "id": "BD-042",
+      "testId": "BD-042-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { lookup } from \"node:dns/prom ' to contain 'ExternalBrowserEgressBroker'"
+    },
+    {
+      "id": "BD-043",
+      "testId": "BD-043-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { lookup } from \"node:dns/prom ' to contain 'DurableBrowserSessionStore'"
+    },
+    {
+      "id": "BD-044",
+      "testId": "BD-044-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { lstatSync, readFileSync, rea ' to contain 'ImmutableSkillSnapshot'"
+    },
+    {
+      "id": "BD-045",
+      "testId": "BD-045-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { JsonLineRpcClient, type Proc ' to contain 'BrokeredMcpToolPolicy'"
+    },
+    {
+      "id": "BD-046",
+      "testId": "BD-046-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import {\\n createCipheriv,\\n create ' to contain 'CachePopulationLease'"
+    },
+    {
+      "id": "BD-047",
+      "testId": "BD-047-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { rmSync } from \"node:fs\";\\nim ' to contain 'automaticWorkspaceCheckpoint'"
+    },
+    {
+      "id": "BD-048",
+      "testId": "BD-048-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { Type, type Static } from \"@s ' to contain 'interface RunSnapshot'"
+    },
+    {
+      "id": "BD-049",
+      "testId": "BD-049-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHmac } from \"node:cryp ' to contain 'disabledPackResourceProbe'"
+    },
+    {
+      "id": "BD-050",
+      "testId": "BD-050-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { readFileSync, writeFileSync ' to contain 'pairedHermesModelEvaluation'"
+    },
+    {
+      "id": "BD-051",
+      "testId": "BD-051-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected '{\\n \"name\": \"lite-harness-workspace\" ' not to contain '\"build\": \"pnpm typecheck\"'"
+    },
+    {
+      "id": "BD-052",
+      "testId": "BD-052-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected '{\"name\":\"@lite-harness/sdk\",\"version\" ' to contain './dist/index.js'"
+    },
+    {
+      "id": "BD-053",
+      "testId": "BD-053-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import io\\nimport json\\nimport unitte ' to contain 'installed_distribution_gateway'"
+    },
+    {
+      "id": "BD-054",
+      "testId": "BD-054-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { createHmac } from \"node:cryp ' to contain 'spawnPackagedHarness'"
+    },
+    {
+      "id": "BD-055",
+      "testId": "BD-055-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { describe, expect, it } from ' not to contain 'describe.skip'"
+    },
+    {
+      "id": "BD-056",
+      "testId": "BD-056-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'name: Runtime images\\n\\non:\\n push:\\ ' to contain 'docker run --rm ${{ steps.build.outpu '"
+    },
+    {
+      "id": "BD-057",
+      "testId": "BD-057-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { execFileSync } from \"node:ch ' to contain 'validateOpenApiSemantics'"
+    },
+    {
+      "id": "BD-058",
+      "testId": "BD-058-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'name: CI\\n\\non:\\n workflow_dispatch: ' to contain 'rootless-product-evidence'"
+    },
+    {
+      "id": "BD-059",
+      "testId": "BD-059-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { randomBytes } from \"node:cry ' to contain 'databaseIntegrityCheck'"
+    },
+    {
+      "id": "BD-060",
+      "testId": "BD-060-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { spawn } from \"node:child_pro ' not to contain '\"--import\", \"tsx\"'"
+    },
+    {
+      "id": "BD-061",
+      "testId": "BD-061-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected '{\\n \"openapi\": \"3.1.0\",\\n \"info\": { ' to contain 'x-lite-generated-from-contracts'"
+    },
+    {
+      "id": "BD-062",
+      "testId": "BD-062-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected 'import { rmSync } from \"node:fs\";\\nim ' to contain 'ValidatedManagerConfiguration'"
+    },
+    {
+      "id": "BD-063",
+      "testId": "BD-063-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected '# Architecture\\n\\nLite-Harness keeps ' to contain 'NOT YET A VERIFIED ALPHA'"
+    },
+    {
+      "id": "BD-064",
+      "testId": "BD-064-REPRO",
+      "status": "failed",
+      "observed": "AssertionError: expected '# ADR 0033: Public identity and publi ' to contain '- Status: accepted'"
+    }
+  ]
+}

@@ -7,6 +7,8 @@ import type {
   InternalCreateAgentProfileRequest,
   InternalCreateWorkspaceRequest,
   ManagerHealth,
+  ManagerReadiness,
+  ReadinessDependency,
 } from "@lite-harness/contracts";
 import {
   DEFAULT_RUN_BUDGET,
@@ -29,6 +31,7 @@ export interface ManagerServerOptions {
   integrationStore?: SqliteIntegrationStore;
   webhookSecret?: (accountId: string) => Promise<Buffer | undefined>;
   logger?: boolean;
+  productionReadinessChecks: () => Promise<Record<string, ReadinessDependency>>;
 }
 
 export function buildManagerServer(options: ManagerServerOptions): FastifyInstance {
@@ -85,6 +88,22 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     uptimeSeconds: Math.floor(process.uptime()),
     rssBytes: process.memoryUsage().rss,
   }));
+
+  app.get("/readyz", async (_request, reply): Promise<ManagerReadiness> => {
+    let dependencies: Record<string, ReadinessDependency>;
+    try {
+      dependencies = await options.productionReadinessChecks();
+    } catch {
+      dependencies = { readiness: { ok: false, reason: "dependency-check-failed" } };
+    }
+    const ready = Object.values(dependencies).every((dependency) => dependency.ok);
+    return reply.code(ready ? 200 : 503).send({
+      ok: ready,
+      role: "manager",
+      protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+      dependencies,
+    });
+  });
 
   app.post<{ Params: { accountId: string }; Body: { envelope?: unknown; signature?: string } }>(
     "/internal/integrations/webhook/:accountId/inbound",

@@ -49,6 +49,18 @@ export interface ManagerHealth {
   rssBytes: number;
 }
 
+export interface ReadinessDependency {
+  ok: boolean;
+  reason?: string;
+}
+
+export interface ManagerReadiness {
+  ok: boolean;
+  role: "manager";
+  protocolVersion: typeof LITE_IPC_PROTOCOL_VERSION;
+  dependencies: Record<string, ReadinessDependency>;
+}
+
 export const RunStatusSchema = Type.Union([
   Type.Literal("ACCEPTED"),
   Type.Literal("QUEUED"),

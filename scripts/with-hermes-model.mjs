@@ -17,7 +17,12 @@ if (!requestedCommand) throw new Error("Usage: node scripts/with-hermes-model.mj
 const command = requestedCommand === "node" ? process.execPath : requestedCommand;
 const child = spawn(command, args, {
   cwd: process.cwd(),
-  env: { ...process.env, LITE_HARNESS_RUNTIME: process.env.LITE_HARNESS_RUNTIME ?? "fake", ...configured },
+  env: {
+    ...process.env,
+    LITE_HARNESS_MODE: process.env.LITE_HARNESS_MODE ?? "development",
+    LITE_HARNESS_RUNTIME: process.env.LITE_HARNESS_RUNTIME ?? "fake",
+    ...configured,
+  },
   stdio: "inherit", shell: false, windowsHide: true,
 });
 child.once("error", (error) => { throw error; });

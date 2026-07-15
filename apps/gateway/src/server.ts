@@ -25,6 +25,7 @@ import {
   type SessionMessageRecord,
   type SessionRecord,
   type ManagerHealth,
+  type ManagerReadiness,
   errorEnvelope,
   MintRunTokenRequestSchema,
   type MintRunTokenRequest,
@@ -36,6 +37,7 @@ const authenticatedPrincipals = new WeakMap<object, InternalPrincipal>();
 
 export interface ManagerTransport {
   health(): Promise<ManagerHealth>;
+  readiness(): Promise<ManagerReadiness>;
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse>;
   getRun(runId: string): Promise<RunRecord>;
   cancelRun(runId: string): Promise<RunRecord>;
@@ -159,9 +161,8 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
   app.get("/readyz", async (_request, reply) => {
     try {
-      const manager = await options.manager.health();
-      if (!manager.ok) throw new Error("Manager reported unhealthy");
-      return { ok: true, role: "gateway", dependencies: { manager } };
+      const manager = await options.manager.readiness();
+      return reply.code(manager.ok ? 200 : 503).send({ ok: manager.ok, role: "gateway", dependencies: { manager } });
     } catch {
       return reply.code(503).send({
         ok: false,

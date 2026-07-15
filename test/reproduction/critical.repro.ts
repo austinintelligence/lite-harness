@@ -119,7 +119,11 @@ describe("critical baseline defect reproductions", () => {
     const store = new SqliteRunStore(temporaryDatabase());
     const model = manuallyReleasedModel();
     const service = new RunService(store, new AgentRunner(model.gateway, new InMemoryToolRuntime()));
-    const app = buildManagerServer({ runService: service, internalToken: "internal" });
+    const app = buildManagerServer({
+      runService: service,
+      internalToken: "internal",
+      productionReadinessChecks: async () => ({ embedded: { ok: true } }),
+    });
     const created = service.createRun({ agent: "coder", workspace: "shutdown-workspace", input: "hold", idempotencyKey: "shutdown", principal });
     try {
       await waitUntil(() => service.getRun(created.runId)?.status === "RUNNING");

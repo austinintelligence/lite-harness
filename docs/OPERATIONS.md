@@ -8,7 +8,8 @@ either child fails.
 
 Core process configuration has schema version 1. `LITE_HARNESS_PROVIDER` and
 `LITE_HARNESS_RUNTIME` are mandatory for Manager startup; fake implementations
-are available only when selected explicitly. Ports, hosts, tokens, socket paths,
+are available only in explicit `LITE_HARNESS_MODE=development`. Production mode
+is the default and rejects either fake implementation. Ports, hosts, tokens, socket paths,
 and config versions are validated before Manager opens durable state. Manager
 holds `<data-dir>/manager.lock`, refuses a live owner, reclaims only a proven
 dead owner, and removes only its own endpoint on shutdown.
@@ -22,7 +23,9 @@ generated definition before enabling it on a shared machine.
 Operational probes:
 
 - `GET /healthz` proves the public Gateway process is alive.
-- `GET /readyz` proves Gateway can authenticate to and reach Manager.
+- `GET /readyz` proves Gateway can authenticate to Manager and that Manager's
+  database, writable disk budget, configured provider credential or delegated
+  command, Docker engine, pinned runtime image, and production snapshot key are ready.
 - `pnpm lite doctor` checks Node, Docker, the data directory, and service
   configuration without printing secret values.
 

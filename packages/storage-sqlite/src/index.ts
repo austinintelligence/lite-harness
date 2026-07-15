@@ -1209,6 +1209,22 @@ export class SqliteRunStore implements RunStore {
     }));
   }
 
+  readiness(): { ok: boolean; reason?: string } {
+    try {
+      const quick = this.#database.prepare("PRAGMA quick_check").all() as Array<{ quick_check: string }>;
+      const foreignKeys = this.#database.prepare("PRAGMA foreign_key_check").all();
+      if (quick.length !== 1 || quick[0]?.quick_check !== "ok" || foreignKeys.length !== 0) {
+        return { ok: false, reason: "integrity-check-failed" };
+      }
+      this.#database.exec("BEGIN IMMEDIATE");
+      this.#database.exec("ROLLBACK");
+      return { ok: true };
+    } catch {
+      try { this.#database.exec("ROLLBACK"); } catch { /* no active transaction */ }
+      return { ok: false, reason: "database-unavailable" };
+    }
+  }
+
   close(): void {
     this.#database.close();
   }

@@ -9,6 +9,7 @@ export interface ValidatedManagerConfiguration {
   internalToken: string;
   provider: string;
   runtime: "fake" | "docker";
+  mode: "development" | "production";
 }
 
 export interface ValidatedGatewayConfiguration {
@@ -36,13 +37,20 @@ export function loadManagerConfiguration(
 ): ValidatedManagerConfiguration {
   validateVersion(environment);
   const dataDir = resolveDataDir(environment, cwd);
+  const provider = requiredIdentifier(environment, "LITE_HARNESS_PROVIDER");
+  const runtime = requiredEnum(environment, "LITE_HARNESS_RUNTIME", ["fake", "docker"] as const);
+  const mode = requiredEnum(environment, "LITE_HARNESS_MODE", ["development", "production"] as const, "production");
+  if (mode === "production" && (provider === "fake" || runtime === "fake")) {
+    throw new Error("Production mode forbids fake provider and runtime implementations");
+  }
   return Object.freeze({
     schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
     dataDir,
     socketPath: resolveSocketPath(environment, dataDir, platform),
     internalToken: requiredSecret(environment, "LITE_HARNESS_INTERNAL_TOKEN"),
-    provider: requiredIdentifier(environment, "LITE_HARNESS_PROVIDER"),
-    runtime: requiredEnum(environment, "LITE_HARNESS_RUNTIME", ["fake", "docker"] as const),
+    provider,
+    runtime,
+    mode,
   });
 }
 
@@ -132,8 +140,13 @@ function optionalSlug(environment: NodeJS.ProcessEnv, name: string, fallback: st
   return value;
 }
 
-function requiredEnum<const T extends readonly string[]>(environment: NodeJS.ProcessEnv, name: string, values: T): T[number] {
-  const value = environment[name]?.trim();
+function requiredEnum<const T extends readonly string[]>(
+  environment: NodeJS.ProcessEnv,
+  name: string,
+  values: T,
+  fallback?: T[number],
+): T[number] {
+  const value = environment[name]?.trim() || fallback;
   if (!value || !values.includes(value)) throw new Error(`${name} must be one of: ${values.join(", ")}`);
   return value;
 }

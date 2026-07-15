@@ -56,6 +56,7 @@ try {
     LITE_HARNESS_APP_TOKEN: "artifact-app-token",
     LITE_HARNESS_PROVIDER: "fake",
     LITE_HARNESS_RUNTIME: "fake",
+    LITE_HARNESS_MODE: "development",
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
   };

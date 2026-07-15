@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { accessSync, constants, statfsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence, type IntervalTrigger } from "@lite-harness/automation";
@@ -11,7 +13,12 @@ import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegate
 import {
   DeliveryCoordinator, InboundRunRouter, SignedAppCallbackClient, SqliteIntegrationStore, WebhookCallbackConnector, composeInboundPrompt,
 } from "@lite-harness/integrations";
-import { LITE_IPC_PROTOCOL_VERSION, isTerminalRunStatus, type InternalPrincipal } from "@lite-harness/contracts";
+import {
+  LITE_IPC_PROTOCOL_VERSION,
+  isTerminalRunStatus,
+  type InternalPrincipal,
+  type ReadinessDependency,
+} from "@lite-harness/contracts";
 import type { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
 import {
@@ -51,13 +58,14 @@ if (baseRuntime instanceof DockerToolRuntime) {
 }
 const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
+const modelGateway = resolveModelGateway(configuration.provider);
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
   : undefined;
 const memoryStore = process.env.LITE_HARNESS_ENABLE_MEMORY === "true"
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
-const service = new RunService(store, new AgentRunner(resolveModelGateway(configuration.provider), runtime), {
+const service = new RunService(store, new AgentRunner(modelGateway, runtime), {
   requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
     ? () => true
     : () => false,
@@ -85,6 +93,7 @@ if (reconciled > 0) {
 }
 const app = buildManagerServer({
   runService: service, internalToken, instanceId: instanceLock.owner.instanceId, artifactStore,
+  productionReadinessChecks: createProductionReadinessChecks(store, baseRuntime, configuration),
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
     const secret = process.env.LITE_HARNESS_WEBHOOK_SECRET;
@@ -302,6 +311,116 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
       return workspace?.mode === "registered-bind" ? workspace.registeredPath : undefined;
     },
   });
+}
+
+function createProductionReadinessChecks(
+  runStore: SqliteRunStore,
+  toolRuntime: ToolRuntime,
+  config: typeof configuration,
+): () => Promise<Record<string, ReadinessDependency>> {
+  return async () => {
+    const database = runStore.readiness();
+    const disk = diskReadiness(config.dataDir);
+    const provider = await providerReadiness(config.provider, config.mode);
+    const snapshotKey = await snapshotKeyReadiness(config.dataDir, config.mode);
+    if (toolRuntime instanceof DockerToolRuntime) {
+      const docker = await toolRuntime.doctor();
+      const image = await toolRuntime.imageReadiness();
+      return {
+        database,
+        disk,
+        provider,
+        snapshotKey,
+        runtime: docker.available ? { ok: true } : { ok: false, reason: "docker-unavailable" },
+        image: image.ok ? { ok: true } : { ok: false, reason: "runtime-image-unavailable" },
+      };
+    }
+    return {
+      database,
+      disk,
+      provider,
+      snapshotKey,
+      runtime: config.mode === "development" ? { ok: true } : { ok: false, reason: "fake-runtime-forbidden" },
+      image: config.mode === "development" ? { ok: true } : { ok: false, reason: "runtime-image-required" },
+    };
+  };
+}
+
+function diskReadiness(path: string): ReadinessDependency {
+  try {
+    accessSync(path, constants.R_OK | constants.W_OK);
+    const disk = statfsSync(path);
+    return disk.bavail * disk.bsize >= 1024 * 1024 * 1024
+      ? { ok: true }
+      : { ok: false, reason: "insufficient-free-space" };
+  } catch {
+    return { ok: false, reason: "data-directory-unavailable" };
+  }
+}
+
+async function providerReadiness(provider: string, mode: "development" | "production"): Promise<ReadinessDependency> {
+  if (provider === "fake") return mode === "development" ? { ok: true } : { ok: false, reason: "fake-provider-forbidden" };
+  if (provider === "codex" || provider === "claude") {
+    const command = provider === "codex"
+      ? process.env.LITE_HARNESS_CODEX_COMMAND ?? "codex"
+      : process.env.LITE_HARNESS_CLAUDE_COMMAND ?? "claude";
+    return await executableReadiness(command);
+  }
+  const kind = process.env.LITE_HARNESS_CREDENTIAL_STORE ?? "environment";
+  if (kind === "environment") return process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()
+    ? { ok: true }
+    : { ok: false, reason: "provider-credential-missing" };
+  if (kind !== "os") return { ok: false, reason: "credential-store-unsupported" };
+  try {
+    const profileId = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${provider}_default`;
+    const secret = await new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") }).get(profileId);
+    return secret ? { ok: true } : { ok: false, reason: "provider-credential-missing" };
+  } catch {
+    return { ok: false, reason: "credential-store-unavailable" };
+  }
+}
+
+async function snapshotKeyReadiness(path: string, mode: "development" | "production"): Promise<ReadinessDependency> {
+  if (mode === "development") return { ok: true };
+  const configured = process.env.LITE_HARNESS_SNAPSHOT_KEY;
+  if (configured) return validBase64Key(configured)
+    ? { ok: true }
+    : { ok: false, reason: "snapshot-key-invalid" };
+  try {
+    const secret = await new OsSecretStore({ windowsPath: join(path, "credentials.dpapi.json") }).get("snapshot.root");
+    return secret && validBase64Key(secret)
+      ? { ok: true }
+      : { ok: false, reason: "snapshot-key-missing" };
+  } catch {
+    return { ok: false, reason: "snapshot-key-store-unavailable" };
+  }
+}
+
+function executableReadiness(command: string): Promise<ReadinessDependency> {
+  return new Promise((resolve) => {
+    const child = spawn(command, ["--version"], {
+      stdio: "ignore",
+      windowsHide: true,
+      signal: AbortSignal.timeout(3_000),
+    });
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok ? { ok: true } : { ok: false, reason: "provider-command-unavailable" });
+    };
+    child.once("error", () => finish(false));
+    child.once("close", (code) => finish(code === 0));
+  });
+}
+
+function validBase64Key(value: string): boolean {
+  try {
+    const decoded = Buffer.from(value, "base64");
+    return decoded.length === 32 && decoded.toString("base64") === value;
+  } catch {
+    return false;
+  }
 }
 
 function resolveModelGateway(provider: string): ModelGateway {

@@ -18,6 +18,7 @@ import type {
   SessionRecord,
   ErrorEnvelope,
   ManagerHealth,
+  ManagerReadiness,
 } from "@lite-harness/contracts";
 import { LITE_IPC_PROTOCOL_VERSION, LITE_IPC_VERSION_HEADER } from "@lite-harness/contracts";
 
@@ -52,6 +53,14 @@ export class ManagerClient {
       );
     }
     return health;
+  }
+
+  async readiness(): Promise<ManagerReadiness> {
+    const readiness = await this.#request<ManagerReadiness>("GET", "/readyz", undefined, {}, undefined, [503]);
+    if (readiness.protocolVersion !== LITE_IPC_PROTOCOL_VERSION) {
+      throw new ManagerIpcError(426, "ipc_version_mismatch", "Manager readiness protocol version is incompatible");
+    }
+    return readiness;
   }
 
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse> {
@@ -175,6 +184,7 @@ export class ManagerClient {
     body?: unknown,
     additionalHeaders: Record<string, string> = {},
     signal?: AbortSignal,
+    allowedStatuses: readonly number[] = [],
   ): Promise<T> {
     signal?.throwIfAborted();
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -213,7 +223,7 @@ export class ManagerClient {
               reject(new Error(`Manager returned invalid JSON (${response.statusCode}): ${text}`));
               return;
             }
-            if ((response.statusCode ?? 500) >= 400) {
+            if ((response.statusCode ?? 500) >= 400 && !allowedStatuses.includes(response.statusCode ?? 500)) {
               const envelope = parseErrorEnvelope(parsed);
               reject(envelope
                 ? new ManagerIpcError(

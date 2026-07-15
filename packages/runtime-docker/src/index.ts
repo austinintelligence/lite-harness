@@ -69,6 +69,12 @@ export interface DockerDoctorResult {
   error?: string;
 }
 
+export interface DockerImageReadiness {
+  ok: boolean;
+  imageId?: string;
+  error?: string;
+}
+
 export class DockerToolRuntime implements ToolRuntime {
   readonly #docker: string;
   readonly #readyVolumes = new Set<string>();
@@ -105,6 +111,21 @@ export class DockerToolRuntime implements ToolRuntime {
       };
     } catch (error) {
       return { available: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async imageReadiness(): Promise<DockerImageReadiness> {
+    try {
+      const result = await this.#run(
+        ["image", "inspect", "--format", "{{.Id}}", this.config.image],
+        { maxOutputBytes: 64 * 1024 },
+      );
+      const imageId = result.stdout.trim();
+      return result.code === 0 && /^sha256:[a-f0-9]{64}$/i.test(imageId)
+        ? { ok: true, imageId }
+        : { ok: false, error: "Pinned runtime image is unavailable" };
+    } catch {
+      return { ok: false, error: "Pinned runtime image could not be inspected" };
     }
   }
 

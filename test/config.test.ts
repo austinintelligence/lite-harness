@@ -13,6 +13,7 @@ describe("versioned application configuration", () => {
       LITE_HARNESS_CONFIG_VERSION: "1",
       LITE_HARNESS_PROVIDER: "fake",
       LITE_HARNESS_RUNTIME: "fake",
+      LITE_HARNESS_MODE: "development",
     }, "C:/fixture", "win32");
     expect(manager).toMatchObject({ schemaVersion: 1, provider: "fake", runtime: "fake" });
 
@@ -40,5 +41,14 @@ describe("versioned application configuration", () => {
 
   it("requires explicit provider and runtime selection", () => {
     expect(() => loadManagerConfiguration(tokens, "C:/fixture", "win32")).toThrow(/LITE_HARNESS_PROVIDER/);
+  });
+
+  it("fails closed when production selects a fake provider or runtime", () => {
+    expect(() => loadManagerConfiguration({
+      ...tokens, LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_RUNTIME: "docker",
+    }, "C:/fixture", "win32")).toThrow(/Production mode forbids fake/);
+    expect(() => loadManagerConfiguration({
+      ...tokens, LITE_HARNESS_PROVIDER: "openai-compatible", LITE_HARNESS_RUNTIME: "fake",
+    }, "C:/fixture", "win32")).toThrow(/Production mode forbids fake/);
   });
 });

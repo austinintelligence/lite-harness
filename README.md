@@ -118,6 +118,7 @@ Use separate random values for public app authentication and internal IPC:
 ```powershell
 $env:LITE_HARNESS_INTERNAL_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()
 $env:LITE_HARNESS_APP_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()
+$env:LITE_HARNESS_MODE = 'development'
 $env:LITE_HARNESS_RUNTIME = 'docker'
 $env:LITE_HARNESS_PROVIDER = 'fake'
 pnpm dev:manager

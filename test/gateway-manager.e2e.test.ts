@@ -46,6 +46,7 @@ describe("Gateway to Manager vertical slice", () => {
     }).runId);
     const manager = buildManagerServer({
       runService: service, internalToken, artifactStore, integrationStore, integrationRouter,
+      productionReadinessChecks: async () => ({ embedded: { ok: true } }),
       webhookSecret: async (accountId) => accountId === "primary" ? Buffer.from("webhook-secret") : undefined,
     });
     const accessTokens = {
@@ -101,6 +102,12 @@ describe("Gateway to Manager vertical slice", () => {
         instanceId: "embedded-test",
         uptimeSeconds: 1,
         rssBytes: process.memoryUsage().rss,
+      }),
+      readiness: async () => ({
+        ok: true,
+        role: "manager",
+        protocolVersion: "1",
+        dependencies: { embedded: { ok: true } },
       }),
       startRun: async (request) => service.createRun(request),
       getRun: async (runId) => {

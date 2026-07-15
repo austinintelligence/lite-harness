@@ -22,6 +22,7 @@ const child = spawn(process.execPath, ["--import", "tsx", "apps/launcher/src/mai
     LITE_HARNESS_PORT: String(port),
     LITE_HARNESS_PROVIDER: "fake",
     LITE_HARNESS_RUNTIME: "fake",
+    LITE_HARNESS_MODE: "development",
   },
   stdio: ["ignore", "ignore", "pipe"],
   windowsHide: true,

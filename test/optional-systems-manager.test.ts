@@ -37,7 +37,10 @@ describe("production optional-system composition", () => {
         LITE_HARNESS_CONTEXT_FILE: contextPath,
         LITE_HARNESS_CONTEXT_OPTIMIZATION: "false",
         LITE_HARNESS_SKILL_ROOTS: JSON.stringify([{ root: skillRoot, precedence: 10, source: "app", visibilityScope: "tenant:tenant-a" }]),
-        LITE_HARNESS_MCP_SERVERS: JSON.stringify([{ transport: "stdio", id: "demo", command: "does-not-start-during-configuration", tools: [{ name: "lookup", inputSchema: { type: "object", additionalProperties: false } }] }]),
+        LITE_HARNESS_MCP_SERVERS: JSON.stringify([{
+          transport: "stdio", id: "demo", image: `sha256:${"d".repeat(64)}`, command: "does-not-start-during-configuration",
+          tools: [{ name: "lookup", inputSchema: { type: "object", additionalProperties: false } }],
+        }]),
         LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION: "true",
         LITE_HARNESS_ENABLE_CACHE_CATALOG: "true",
       },
@@ -45,6 +48,10 @@ describe("production optional-system composition", () => {
     expect(runtime.listTools().map((tool) => tool.name)).toEqual(expect.arrayContaining([
       "skill_list", "skill_view", "mcp_demo_lookup", "workspace_snapshot", "cache_resolve",
     ]));
+    await expect(runtime.execute({
+      ...execution("mcp_demo_lookup", {}, { appId: "app", tenantId: "tenant-a", userId: "user", scopes: [] }),
+      allowedTools: [],
+    })).rejects.toThrow(/not advertised to this run/);
     expect(await systems.context?.compile({ input: "hello", workspaceId: "wsp" })).toEqual([
       { role: "system", content: "Keep responses exact.\n" },
     ]);

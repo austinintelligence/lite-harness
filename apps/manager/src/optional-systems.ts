@@ -10,7 +10,7 @@ import {
   TenantContextRenderCache,
 } from "@lite-harness/context";
 import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
-import { McpSupervisor, StdioMcpTransport, StreamableHttpMcpTransport } from "@lite-harness/mcp";
+import { DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } from "@lite-harness/mcp";
 import {
   createOpenClawCompatibilityWorker,
   DockerPluginExecutionSandbox,
@@ -186,11 +186,17 @@ function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessE
     const include = optionalStringArray(server.include, "MCP include");
     const exclude = optionalStringArray(server.exclude, "MCP exclude");
     if (server.transport === "stdio") {
+      const image = requiredString(server.image, "MCP image");
+      if (!image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error(`MCP server ${id} image must be pinned by sha256 digest`);
       const command = requiredString(server.command, "MCP command");
       const args = optionalStringArray(server.args, "MCP args") ?? [];
-      const cwd = server.cwd === undefined ? undefined : resolve(requiredString(server.cwd, "MCP cwd"));
-      const inheritEnv = optionalStringArray(server.inheritEnv, "MCP inherited environment") ?? [];
-      supervisor.register(id, () => new StdioMcpTransport({ command, args, ...(cwd ? { cwd } : {}), inheritEnv }), { include, exclude });
+      const seccompProfile = server.seccompProfile === undefined ? undefined : resolve(requiredString(server.seccompProfile, "MCP seccomp profile"));
+      if (server.cwd !== undefined || server.inheritEnv !== undefined || server.env !== undefined) {
+        throw new Error(`MCP server ${id} cannot request host cwd or environment inheritance`);
+      }
+      supervisor.register(id, () => new DockerStdioMcpTransport({
+        image, command, args, ...(seccompProfile ? { seccompProfile } : {}),
+      }), { include, exclude });
     } else if (server.transport === "http") {
       const url = requiredString(server.url, "MCP URL");
       const allowedOrigins = optionalStringArray(server.allowedOrigins, "MCP allowed origins") ?? [];
@@ -205,11 +211,14 @@ function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessE
     }
     for (const tool of tools) {
       const publicName = tool.alias ?? `mcp_${id}_${tool.name}`.replace(/[^a-z0-9_]/g, "_");
-      runtime.register(publicName, async (params) => ({
-        callId: params.call.id, ok: true,
-        content: JSON.stringify(await supervisor.call(id, tool.name, params.call.arguments)),
-        metadata: { serverId: id, tool: tool.name },
-      }), toolDefinition(tool.description ?? `Invoke MCP tool ${id}.${tool.name}.`, tool.inputSchema));
+      runtime.register(publicName, async (params) => {
+        if (params.allowedTools && !params.allowedTools.includes(publicName)) throw new Error(`MCP tool was not advertised to this run: ${publicName}`);
+        return {
+          callId: params.call.id, ok: true,
+          content: JSON.stringify(await supervisor.call(id, tool.name, params.call.arguments, params.signal)),
+          metadata: { serverId: id, tool: tool.name },
+        };
+      }, toolDefinition(tool.description ?? `Invoke MCP tool ${id}.${tool.name}.`, tool.inputSchema));
     }
   }
   return supervisor;
@@ -310,12 +319,18 @@ function validateSkillSource(value: unknown): SkillSource {
 }
 
 function validateAdvertisedTools(value: unknown, label: string): Array<{ name: string; alias?: string; description?: string; inputSchema: Record<string, unknown> }> {
-  if (!Array.isArray(value)) throw new Error(`${label} tools must be an array`);
+  if (!Array.isArray(value) || value.length > 256) throw new Error(`${label} tools must be an array of at most 256 entries`);
+  const names = new Set<string>();
   return value.map((entry) => {
     const tool = objectRecord(entry, `${label} tool`);
     const inputSchema = objectRecord(tool.inputSchema, `${label} tool schema`);
+    const name = requiredString(tool.name, `${label} tool name`);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/.test(name) || names.has(name)) throw new Error(`${label} tool name is invalid or duplicated`);
+    const encodedSchema = JSON.stringify(inputSchema);
+    if (Buffer.byteLength(encodedSchema) > 1024 * 1024) throw new Error(`${label} tool schema exceeds 1 MiB`);
+    names.add(name);
     return {
-      name: requiredString(tool.name, `${label} tool name`),
+      name,
       ...(tool.alias === undefined ? {} : { alias: identifier(tool.alias, `${label} tool alias`) }),
       ...(tool.description === undefined ? {} : { description: requiredString(tool.description, `${label} tool description`) }),
       inputSchema,

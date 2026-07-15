@@ -22,9 +22,20 @@ Before the first model turn, the context boundary writes the exact eligible
 name/digest set to `skill-run-snapshots.sqlite`; a later attempt to bind a
 different generation to the same owned run fails instead of mutating replay.
 
-MCP servers are registered as lazy transports. Payloads and time are bounded;
-a timeout, oversized response, or crash stops only that server. Remote MCP
-origins and credentials must pass normal plugin/network policy.
+MCP servers are registered as lazy transports behind `BrokeredMcpToolPolicy`.
+The exact static schema is validated before it can become a normal advertised
+tool, and the run's ordinary allowed-tool set remains authoritative. Payloads,
+schemas, server lists, time, and cancellation are bounded; a timeout, malformed
+schema, oversized response, abort, or crash stops only that server.
+
+Production stdio MCP never starts the configured command on the host. It runs
+inside a digest-pinned Docker image with no network, read-only root, non-root
+UID, dropped capabilities, no-new-privileges, explicit seccomp, bounded
+CPU/memory/PIDs/tmpfs, no inherited host environment, no host cwd, and no
+mounts or Docker socket. The exported direct stdio transport exists only for
+protocol fixtures and reviewed embedding code, not Manager composition. Remote
+HTTP MCP remains a Manager-owned client restricted to an exact HTTPS (or
+loopback HTTP) origin; credentials are resolved only at request time.
 
 Process-backed plugins use bounded JSON-RPC 2.0 with `initialize`, `health`,
 `invoke`, `migrate`, and `shutdown`. The atomic install lock records source,
@@ -61,8 +72,10 @@ shutdown:
   immutable digest before loading one body. `LITE_HARNESS_SKILL_CAPABILITIES`
   is the comma-separated operator capability gate.
 - `LITE_HARNESS_MCP_SERVERS` is a JSON array of stdio or HTTP server records.
-  Every record declares its advertised tool schemas up front. Transports start
-  only when one of those brokered tools is invoked.
+  Every record declares its advertised tool schemas up front. Stdio records
+  require `image` pinned by SHA-256 plus the in-image `command` and `args`; host
+  `cwd`, `env`, and inherited environment are rejected. Transports start only
+  when one of those brokered tools is invoked.
 - `LITE_HARNESS_ENABLE_PLUGINS=true` activates enabled entries from
   `plugins.lock.json`. `LITE_HARNESS_PLUGIN_IMAGE` must be a digest-pinned
   sandbox image; workers remain lazy and receive only intersected grants.

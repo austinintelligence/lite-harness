@@ -1,4 +1,5 @@
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
+import { join } from "node:path";
 
 export interface McpToolDescriptor {
   name: string;
@@ -7,9 +8,9 @@ export interface McpToolDescriptor {
 }
 
 export interface McpTransport {
-  start(): Promise<void>;
-  call(tool: string, input: unknown): Promise<unknown>;
-  listTools?(): Promise<McpToolDescriptor[]>;
+  start(signal?: AbortSignal): Promise<void>;
+  call(tool: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
+  listTools?(signal?: AbortSignal): Promise<McpToolDescriptor[]>;
   stop(): Promise<void>;
 }
 
@@ -29,13 +30,13 @@ export class StdioMcpTransport implements McpTransport {
     });
   }
 
-  async start(): Promise<void> {
+  async start(signal?: AbortSignal): Promise<void> {
     if (this.#started) return;
     const result = await this.#rpc.request<{ protocolVersion?: string }>("initialize", {
       protocolVersion: "2025-11-25",
       capabilities: {},
       clientInfo: { name: "lite-harness", title: "Lite-Harness", version: "0.1.0-alpha.0" },
-    });
+    }, { signal });
     if (!result.protocolVersion || !["2025-11-25", "2025-06-18", "2025-03-26"].includes(result.protocolVersion)) {
       await this.#rpc.stop();
       throw new Error(`MCP protocol version is unsupported: ${result.protocolVersion ?? "missing"}`);
@@ -44,21 +45,66 @@ export class StdioMcpTransport implements McpTransport {
     this.#started = true;
   }
 
-  async listTools(): Promise<McpToolDescriptor[]> {
-    await this.start();
-    const result = await this.#rpc.request<{ tools?: McpToolDescriptor[] }>("tools/list", {});
-    return (result.tools ?? []).map((tool) => ({ ...tool }));
+  async listTools(signal?: AbortSignal): Promise<McpToolDescriptor[]> {
+    await this.start(signal);
+    const result = await this.#rpc.request<{ tools?: McpToolDescriptor[] }>("tools/list", {}, { signal });
+    return validateMcpToolDescriptors(result.tools ?? []);
   }
 
-  async call(tool: string, input: unknown): Promise<unknown> {
-    await this.start();
-    return await this.#rpc.request("tools/call", { name: tool, arguments: input });
+  async call(tool: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    await this.start(signal);
+    return await this.#rpc.request("tools/call", { name: tool, arguments: input }, { signal });
   }
 
   async stop(): Promise<void> {
     this.#started = false;
     await this.#rpc.stop();
   }
+}
+
+export class DockerStdioMcpTransport extends StdioMcpTransport {
+  constructor(options: {
+    image: string;
+    command: string;
+    args?: readonly string[];
+    dockerCommand?: string;
+    seccompProfile?: string;
+    memory?: string;
+    cpus?: string;
+    pidsLimit?: number;
+    timeoutMs?: number;
+    maxPayloadBytes?: number;
+  }) {
+    super(createDockerMcpProcessSpec(options), { timeoutMs: options.timeoutMs, maxPayloadBytes: options.maxPayloadBytes });
+  }
+}
+
+export function createDockerMcpProcessSpec(options: {
+  image: string;
+  command: string;
+  args?: readonly string[];
+  dockerCommand?: string;
+  seccompProfile?: string;
+  memory?: string;
+  cpus?: string;
+  pidsLimit?: number;
+}): ProcessSpec {
+  if (!options.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(options.image)) throw new Error("MCP image must be pinned by sha256 digest");
+  if (!options.command || options.command.length > 4096 || /[\0\r\n]/.test(options.command)) throw new Error("MCP container command is invalid");
+  const args = options.args ?? [];
+  if (args.length > 256 || args.some((arg) => arg.length > 4096 || /\0/.test(arg))) throw new Error("MCP container arguments are invalid");
+  return {
+    command: options.dockerCommand ?? "docker",
+    args: [
+      "run", "--rm", "--interactive", "--init", "--network", "none",
+      "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+      "--security-opt", `seccomp=${options.seccompProfile ?? join(process.cwd(), "docker", "browser-runtime", "seccomp_profile.json")}`,
+      "--user", "1000:1000", "--pids-limit", String(options.pidsLimit ?? 64),
+      "--memory", options.memory ?? "256m", "--cpus", options.cpus ?? "1",
+      "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
+      options.image, options.command, ...args,
+    ],
+  };
 }
 
 export class StreamableHttpMcpTransport implements McpTransport {
@@ -92,28 +138,28 @@ export class StreamableHttpMcpTransport implements McpTransport {
   private readonly maxPayloadBytes: number;
   private readonly timeoutMs: number;
 
-  async start(): Promise<void> {
+  async start(signal?: AbortSignal): Promise<void> {
     if (this.#started) return;
     const result = await this.#request("initialize", {
       protocolVersion: "2025-11-25", capabilities: {},
       clientInfo: { name: "lite-harness", title: "Lite-Harness", version: "0.1.0-alpha.0" },
-    }) as { protocolVersion?: string };
+    }, signal) as { protocolVersion?: string };
     if (!result.protocolVersion || !["2025-11-25", "2025-06-18", "2025-03-26"].includes(result.protocolVersion)) {
       throw new Error(`MCP protocol version is unsupported: ${result.protocolVersion ?? "missing"}`);
     }
-    await this.#notify("notifications/initialized");
+    await this.#notify("notifications/initialized", signal);
     this.#started = true;
   }
 
-  async listTools(): Promise<McpToolDescriptor[]> {
-    await this.start();
-    const result = await this.#request("tools/list", {}) as { tools?: McpToolDescriptor[] };
-    return (result.tools ?? []).map((tool) => ({ ...tool }));
+  async listTools(signal?: AbortSignal): Promise<McpToolDescriptor[]> {
+    await this.start(signal);
+    const result = await this.#request("tools/list", {}, signal) as { tools?: McpToolDescriptor[] };
+    return validateMcpToolDescriptors(result.tools ?? []);
   }
 
-  async call(tool: string, input: unknown): Promise<unknown> {
-    await this.start();
-    return await this.#request("tools/call", { name: tool, arguments: input });
+  async call(tool: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    await this.start(signal);
+    return await this.#request("tools/call", { name: tool, arguments: input }, signal);
   }
 
   async stop(): Promise<void> {
@@ -126,25 +172,27 @@ export class StreamableHttpMcpTransport implements McpTransport {
     if (!response.ok && response.status !== 404 && response.status !== 405) throw new Error(`MCP session termination failed with HTTP ${response.status}`);
   }
 
-  async #request(method: string, params: unknown): Promise<unknown> {
+  async #request(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
     const id = this.#nextId++;
-    const response = await this.#send({ jsonrpc: "2.0", id, method, params });
+    const response = await this.#send({ jsonrpc: "2.0", id, method, params }, signal);
     if (!response || typeof response !== "object" || (response as { id?: unknown }).id !== id) throw new Error("MCP response id did not match the request");
     const message = response as { result?: unknown; error?: { code?: number; message?: string } };
     if (message.error) throw new Error(`MCP ${method} failed: ${message.error.message ?? message.error.code ?? "unknown"}`);
     return message.result;
   }
 
-  async #notify(method: string): Promise<void> {
-    await this.#send({ jsonrpc: "2.0", method });
+  async #notify(method: string, signal?: AbortSignal): Promise<void> {
+    await this.#send({ jsonrpc: "2.0", method }, signal);
   }
 
-  async #send(payload: unknown): Promise<unknown> {
+  async #send(payload: unknown, signal?: AbortSignal): Promise<unknown> {
     const encoded = JSON.stringify(payload);
     if (Buffer.byteLength(encoded) > this.maxPayloadBytes) throw new Error("MCP request exceeds the payload limit");
+    const deadline = AbortSignal.timeout(this.timeoutMs);
+    const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
     const response = await this.#fetch(this.#url, {
       method: "POST", redirect: "manual", headers: await this.#headers(this.#sessionId), body: encoded,
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: requestSignal,
     });
     if (response.status >= 300 && response.status < 400) throw new Error("MCP redirects are denied");
     if (!response.ok) throw new Error(`MCP HTTP transport returned ${response.status}`);
@@ -189,6 +237,37 @@ interface McpRegistration {
   failures: number;
   retryAt: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  policy: BrokeredMcpToolPolicy;
+}
+
+/** One policy object gates advertised schemas and every brokered MCP call. */
+export class BrokeredMcpToolPolicy {
+  constructor(private readonly options: {
+    include?: readonly string[];
+    exclude?: readonly string[];
+    maxPayloadBytes?: number;
+    maxTools?: number;
+  } = {}) {}
+
+  assertCall(tool: string, input: unknown): void {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/.test(tool)) throw new Error("MCP tool name is invalid");
+    if (!this.allows(tool)) throw new Error(`MCP tool is denied by policy: ${tool}`);
+    if (encodedBytes(input) > (this.options.maxPayloadBytes ?? 1024 * 1024)) throw new Error("MCP input exceeds the payload limit");
+  }
+
+  assertOutput(output: unknown): void {
+    if (encodedBytes(output) > (this.options.maxPayloadBytes ?? 1024 * 1024)) throw new Error("MCP output exceeds the payload limit");
+  }
+
+  filterTools(tools: unknown): McpToolDescriptor[] {
+    const validated = validateMcpToolDescriptors(tools, this.options.maxTools ?? 256, this.options.maxPayloadBytes ?? 1024 * 1024);
+    return validated.filter((tool) => this.allows(tool.name));
+  }
+
+  allows(tool: string): boolean {
+    if (this.options.exclude?.some((pattern) => matches(pattern, tool))) return false;
+    return !this.options.include || this.options.include.some((pattern) => matches(pattern, tool));
+  }
 }
 
 export class McpSupervisor {
@@ -198,33 +277,38 @@ export class McpSupervisor {
 
   register(serverId: string, factory: () => McpTransport, policy: { include?: readonly string[]; exclude?: readonly string[] } = {}): void {
     if (this.#registrations.has(serverId)) throw new Error(`MCP server already registered: ${serverId}`);
-    this.#registrations.set(serverId, { factory, ...policy, failures: 0, retryAt: 0 });
+    this.#registrations.set(serverId, {
+      factory, ...policy, failures: 0, retryAt: 0,
+      policy: new BrokeredMcpToolPolicy({ ...policy, maxPayloadBytes: this.limits.maxPayloadBytes }),
+    });
   }
 
   isActive(serverId: string): boolean {
     return this.#registrations.get(serverId)?.transport !== undefined;
   }
 
-  async call(serverId: string, tool: string, input: unknown): Promise<unknown> {
+  async call(serverId: string, tool: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
     const registration = this.#registrations.get(serverId);
     if (!registration) throw new Error(`MCP server is not registered: ${serverId}`);
-    if (!isToolAllowed(tool, registration)) throw new Error(`MCP tool is denied by policy: ${serverId}.${tool}`);
+    registration.policy.assertCall(tool, input);
     if (registration.retryAt > Date.now()) throw new Error(`MCP server is in crash backoff: ${serverId}`);
-    const inputBytes = Buffer.byteLength(JSON.stringify(input));
-    if (inputBytes > (this.limits.maxPayloadBytes ?? 1024 * 1024)) throw new Error("MCP input exceeds the payload limit");
     if (!registration.transport) {
       registration.transport = registration.factory();
-      try { await registration.transport.start(); }
-      catch (error) { this.#recordFailure(registration); registration.transport = undefined; throw error; }
+      try { await withTimeout(registration.transport.start(signal), this.limits.timeoutMs ?? 15_000, signal); }
+      catch (error) {
+        const failed = registration.transport;
+        this.#recordFailure(registration); registration.transport = undefined;
+        await failed.stop().catch(() => undefined);
+        throw error;
+      }
     }
     try {
       const output = await withTimeout(
-        registration.transport.call(tool, input),
+        registration.transport.call(tool, input, signal),
         this.limits.timeoutMs ?? 15_000,
+        signal,
       );
-      if (Buffer.byteLength(JSON.stringify(output)) > (this.limits.maxPayloadBytes ?? 1024 * 1024)) {
-        throw new Error("MCP output exceeds the payload limit");
-      }
+      registration.policy.assertOutput(output);
       registration.failures = 0;
       registration.retryAt = 0;
       this.#armIdle(serverId, registration);
@@ -236,21 +320,30 @@ export class McpSupervisor {
     }
   }
 
-  async listTools(serverId: string): Promise<McpToolDescriptor[]> {
+  async listTools(serverId: string, signal?: AbortSignal): Promise<McpToolDescriptor[]> {
     const registration = this.#registrations.get(serverId);
     if (!registration) throw new Error(`MCP server is not registered: ${serverId}`);
     if (registration.retryAt > Date.now()) throw new Error(`MCP server is in crash backoff: ${serverId}`);
     if (!registration.transport) {
       registration.transport = registration.factory();
-      try { await registration.transport.start(); }
-      catch (error) { this.#recordFailure(registration); registration.transport = undefined; throw error; }
+      try { await withTimeout(registration.transport.start(signal), this.limits.timeoutMs ?? 15_000, signal); }
+      catch (error) {
+        const failed = registration.transport;
+        this.#recordFailure(registration); registration.transport = undefined;
+        await failed.stop().catch(() => undefined);
+        throw error;
+      }
     }
     try {
-      const tools = await registration.transport.listTools?.() ?? [];
+      const tools = registration.policy.filterTools(await withTimeout(
+        registration.transport.listTools?.(signal) ?? Promise.resolve([]),
+        this.limits.timeoutMs ?? 15_000,
+        signal,
+      ));
       registration.failures = 0;
       registration.retryAt = 0;
       this.#armIdle(serverId, registration);
-      return tools.filter((tool) => isToolAllowed(tool.name, registration));
+      return tools;
     } catch (error) {
       this.#recordFailure(registration);
       await this.stop(serverId);
@@ -287,11 +380,6 @@ export class McpSupervisor {
   }
 }
 
-function isToolAllowed(tool: string, registration: Pick<McpRegistration, "include" | "exclude">): boolean {
-  if (registration.exclude?.some((pattern) => matches(pattern, tool))) return false;
-  return !registration.include || registration.include.some((pattern) => matches(pattern, tool));
-}
-
 function matches(pattern: string, value: string): boolean {
   if (pattern === "*") return true;
   if (!pattern.includes("*")) return pattern === value;
@@ -299,14 +387,59 @@ function matches(pattern: string, value: string): boolean {
   return new RegExp(`^${escaped}$`).test(value);
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP call timed out after ${timeoutMs}ms`)), timeoutMs);
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => finish(() => reject(signal?.reason ?? new Error("MCP call was aborted")));
+    const timer = setTimeout(() => finish(() => reject(new Error(`MCP call timed out after ${timeoutMs}ms`))), timeoutMs);
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener("abort", abort, { once: true });
     promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
     );
   });
+}
+
+function validateMcpToolDescriptors(value: unknown, maxTools = 256, maxBytes = 1024 * 1024): McpToolDescriptor[] {
+  if (!Array.isArray(value) || value.length > maxTools) throw new Error("MCP tool list is invalid or too large");
+  const seen = new Set<string>();
+  const tools = value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("MCP tool descriptor is invalid");
+    const descriptor = item as Record<string, unknown>;
+    if (typeof descriptor.name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/.test(descriptor.name) || seen.has(descriptor.name)) {
+      throw new Error("MCP tool descriptor name is invalid or duplicated");
+    }
+    if (descriptor.description !== undefined && (typeof descriptor.description !== "string" || descriptor.description.length > 4096)) {
+      throw new Error("MCP tool description is invalid");
+    }
+    if (!descriptor.inputSchema || typeof descriptor.inputSchema !== "object" || Array.isArray(descriptor.inputSchema)) {
+      throw new Error("MCP tool input schema is invalid");
+    }
+    if (encodedBytes(descriptor.inputSchema) > maxBytes) throw new Error("MCP tool input schema exceeds the payload limit");
+    seen.add(descriptor.name);
+    return {
+      name: descriptor.name,
+      ...(typeof descriptor.description === "string" ? { description: descriptor.description } : {}),
+      inputSchema: structuredClone(descriptor.inputSchema),
+    };
+  });
+  return tools;
+}
+
+function encodedBytes(value: unknown): number {
+  let encoded: string | undefined;
+  try { encoded = JSON.stringify(value); }
+  catch { throw new Error("MCP payload is not JSON serializable"); }
+  if (encoded === undefined) throw new Error("MCP payload is not JSON serializable");
+  return Buffer.byteLength(encoded);
 }
 
 async function boundedText(response: Response, maxBytes: number): Promise<string> {

@@ -6817,14 +6817,22 @@
         "lineStart": 1052,
         "lineEnd": 1052
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-openai-compatible/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "BD-032-REGRESSION"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R14-1053",
@@ -7772,14 +7780,22 @@
         "lineStart": 1281,
         "lineEnd": 1281
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-openai-compatible/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "BD-032-REGRESSION"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R14-1282",

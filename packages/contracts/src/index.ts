@@ -245,6 +245,23 @@ export interface RunModelUsageRecord {
   recordedAt: string;
 }
 
+export interface RunSnapshot {
+  schemaVersion: 1;
+  runId: string;
+  attemptId: string;
+  agent: AgentProfileRecord;
+  tools: Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>;
+  skills: Array<{ name: string; digest: string }>;
+  plugins: Array<{ id: string; version: string; digest: string }>;
+  providerRoute: RunRoutePlanRecord;
+  runtimeProfile: { id: string; imageDigest?: string; policyDigest: string };
+  networkPolicy: { id: string; digest: string };
+  budget: RunBudget;
+  credentialProfileIds: string[];
+  createdAt: string;
+  digest: string;
+}
+
 export type AgentModelCapability = "text" | "tools" | "vision" | "json" | "reasoning" | "delegated-agent";
 export const AgentModelCapabilitySchema = Type.Union([
   Type.Literal("text"), Type.Literal("tools"), Type.Literal("vision"),
@@ -438,6 +455,7 @@ export type RunEventType =
   | "run.queued"
   | "run.preparing"
   | "run.started"
+  | "run.snapshot.frozen"
   | "run.checkpointing"
   | "run.timed_out"
   | "run.steered"

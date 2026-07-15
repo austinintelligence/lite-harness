@@ -45,6 +45,7 @@ interface OptionalSystemsOptions {
 export interface ProductionOptionalSystems {
   context?: AgentContextCompiler;
   workspaceLifecycle?: ManagedWorkspaceLifecycle;
+  plugins: Array<{ id: string; version: string; digest: string }>;
   stop(): Promise<void>;
 }
 
@@ -60,13 +61,14 @@ export function configureProductionOptionalSystems(options: OptionalSystemsOptio
   const mcp = configureMcp(options.runtime, environment);
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = configurePlugins(options.runtime, options.dataDir, environment);
-  if (plugins.length) stops.push(() => Promise.all(plugins.map((plugin) => plugin.stop())).then(() => undefined));
+  if (plugins.supervisors.length) stops.push(() => Promise.all(plugins.supervisors.map((plugin) => plugin.stop())).then(() => undefined));
   const workspaceLifecycle = configureSnapshots(options);
   configureCacheCatalog(options.runtime, options.dataDir, environment);
   const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
   return {
     ...(context ? { context } : {}),
     ...(workspaceLifecycle ? { workspaceLifecycle } : {}),
+    plugins: plugins.snapshots,
     stop: async () => { for (const stop of stops.reverse()) await stop(); },
   };
 }
@@ -166,6 +168,7 @@ function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environm
         if (params.runId && params.principal) recordRunSnapshot(params);
         return [];
       },
+      snapshotForRun: async ({ runId, principal }) => ({ skills: snapshots.get(runId, principal)?.skills.map((skill) => ({ name: skill.name, digest: skill.digest })) ?? [] }),
     },
     stop: async () => snapshots.close(),
   };
@@ -174,6 +177,9 @@ function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environm
 function composeContextCompilers(compilers: readonly AgentContextCompiler[]): AgentContextCompiler {
   return {
     compile: async (params) => (await Promise.all(compilers.map((compiler) => compiler.compile(params)))).flat(),
+    snapshotForRun: async (params) => ({
+      skills: (await Promise.all(compilers.map(async (compiler) => (await compiler.snapshotForRun?.(params))?.skills ?? []))).flat(),
+    }),
   };
 }
 
@@ -228,14 +234,19 @@ function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessE
   return supervisor;
 }
 
-function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): LazyPluginSupervisor[] {
-  if (environment.LITE_HARNESS_ENABLE_PLUGINS !== "true") return [];
+function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): {
+  supervisors: LazyPluginSupervisor[];
+  snapshots: Array<{ id: string; version: string; digest: string }>;
+} {
+  if (environment.LITE_HARNESS_ENABLE_PLUGINS !== "true") return { supervisors: [], snapshots: [] };
   const image = requiredString(environment.LITE_HARNESS_PLUGIN_IMAGE, "LITE_HARNESS_PLUGIN_IMAGE");
   const pluginRoot = join(dataDir, "plugins");
   const lock = new PluginInstallLock(join(dataDir, "plugins.lock.json"));
   const sandbox = new DockerPluginExecutionSandbox({ image });
   const supervisors: LazyPluginSupervisor[] = [];
+  const snapshots: Array<{ id: string; version: string; digest: string }> = [];
   for (const entry of Object.values(lock.read().plugins).filter((item) => item.enabled)) {
+    snapshots.push({ id: entry.id, version: entry.version, digest: entry.digest });
     if (entry.trust === "data-only") continue;
     const inspected = inspectPluginManifest(join(pluginRoot, entry.id, entry.version, "lite-plugin.json"));
     if (pluginPackageDigest(inspected) !== entry.digest) throw new Error(`Enabled plugin digest mismatch: ${entry.id}@${entry.version}`);
@@ -251,7 +262,7 @@ function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environ
       }));
     }
   }
-  return supervisors;
+  return { supervisors, snapshots: snapshots.sort((left, right) => `${left.id}@${left.version}`.localeCompare(`${right.id}@${right.version}`)) };
 }
 
 function configureSnapshots(options: OptionalSystemsOptions): ManagedWorkspaceLifecycle | undefined {

@@ -15,6 +15,7 @@ import type {
   RunEvent,
   RunEventType,
   RunRecord,
+  RunSnapshot,
   RunStatus,
   SessionMessageRecord,
   SessionMessageRole,
@@ -723,6 +724,17 @@ export class SqliteRunStore implements RunStore {
         ) STRICT;
         CREATE INDEX run_model_usage_run ON run_model_usage(run_id, attempt_id, id);
       `),
+      () => this.#database.exec(`
+        CREATE TABLE run_snapshots (
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          attempt_id TEXT NOT NULL REFERENCES run_attempts(id) ON DELETE CASCADE,
+          digest TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(run_id, attempt_id),
+          UNIQUE(digest)
+        ) STRICT;
+      `),
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -1316,6 +1328,26 @@ export class SqliteRunStore implements RunStore {
       "SELECT * FROM run_route_plans WHERE run_id = ? AND attempt_id = ?",
     ).get(runId, attemptId) as RoutePlanRow | undefined;
     return row ? toRoutePlan(row) : undefined;
+  }
+
+  persistRunSnapshot(snapshot: RunSnapshot): RunSnapshot {
+    const existing = this.getRunSnapshot(snapshot.runId, snapshot.attemptId);
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(snapshot)) throw new Error("An immutable run snapshot is already frozen for this attempt");
+      return existing;
+    }
+    this.#database.prepare(`
+      INSERT INTO run_snapshots(run_id, attempt_id, digest, snapshot_json, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(snapshot.runId, snapshot.attemptId, snapshot.digest, JSON.stringify(snapshot), snapshot.createdAt);
+    return this.getRunSnapshot(snapshot.runId, snapshot.attemptId) as RunSnapshot;
+  }
+
+  getRunSnapshot(runId: string, attemptId: string): RunSnapshot | undefined {
+    const row = this.#database.prepare(
+      "SELECT snapshot_json FROM run_snapshots WHERE run_id = ? AND attempt_id = ?",
+    ).get(runId, attemptId) as { snapshot_json: string } | undefined;
+    return row ? JSON.parse(row.snapshot_json) as RunSnapshot : undefined;
   }
 
   persistRunModelUsage(record: Omit<RunModelUsageRecord, "id">): RunModelUsageRecord {

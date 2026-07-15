@@ -10,6 +10,7 @@ import type {
   RunEvent,
   RunEventType,
   RunRecord,
+  RunSnapshot,
   RunStatus,
   SessionMessageRecord,
   SessionRecord,
@@ -19,6 +20,7 @@ import type {
 import { isTerminalRunStatus } from "@lite-harness/contracts";
 import {
   AgentRunner,
+  type AgentPreparedState,
   type AgentRuntimeEvent,
   type ModelMessage,
 } from "@lite-harness/agent-runtime";
@@ -27,6 +29,13 @@ import { assertRunTransition, createId, type RunStore } from "@lite-harness/doma
 export interface WorkspaceRunLifecycle {
   prepare(run: RunRecord, signal?: AbortSignal): Promise<{ restored: boolean; recoveredFromPrevious: boolean }>;
   checkpoint(run: RunRecord, options?: { makeCold?: boolean; signal?: AbortSignal }): Promise<{ state: "WARM" | "COLD"; skipped: boolean; snapshot?: { sha256: string; plaintextBytes: number } }>;
+}
+
+export interface RunSnapshotConfiguration {
+  runtimeProfile: RunSnapshot["runtimeProfile"];
+  networkPolicy: RunSnapshot["networkPolicy"];
+  plugins?: RunSnapshot["plugins"];
+  credentialProfileIds?: string[];
 }
 
 export class RunService {
@@ -52,6 +61,7 @@ export class RunService {
       workspaceLifecycle?: WorkspaceRunLifecycle;
       workspaceCheckpointTimeoutMs?: number;
       makeWorkspaceColdAfterCheckpoint?: boolean | ((run: RunRecord) => boolean);
+      runSnapshot?: RunSnapshotConfiguration;
     } = {},
   ) {
     this.#events.setMaxListeners(0);
@@ -465,6 +475,10 @@ export class RunService {
           if (!lease || !this.store.validateWorkspaceLease(lease)) throw new WorkspaceLeaseLostError();
           return await this.#authorizeTool(run, call, controller.signal);
         },
+        onPrepared: async (prepared) => {
+          if (!this.options.runSnapshot || !attempt) return;
+          this.#freezeRunSnapshot(run, attempt, profile, prepared);
+        },
         onEvent: (event) => this.#appendAgentEvent(run, event),
       });
 
@@ -605,6 +619,30 @@ export class RunService {
     const queued = this.#steering.get(runId) ?? [];
     this.#steering.set(runId, []);
     return queued;
+  }
+
+  #freezeRunSnapshot(run: RunRecord, attempt: RunAttemptRecord, profile: AgentProfileRecord, prepared: AgentPreparedState): void {
+    const providerRoute = this.store.getRunRoutePlan(run.id, attempt.id);
+    if (!providerRoute || !prepared.route || providerRoute.routePlanId !== prepared.route.routePlanId) {
+      throw new Error("Provider route was not durably frozen before the first model turn");
+    }
+    const configuration = this.options.runSnapshot as RunSnapshotConfiguration;
+    const createdAt = new Date().toISOString();
+    const content = {
+      schemaVersion: 1 as const, runId: run.id, attemptId: attempt.id,
+      agent: structuredClone(profile),
+      tools: prepared.tools.map((tool) => structuredClone(tool)).sort((left, right) => left.name.localeCompare(right.name)),
+      skills: prepared.contextSnapshot.skills.map((skill) => ({ ...skill })).sort((left, right) => left.name.localeCompare(right.name)),
+      plugins: (configuration.plugins ?? []).map((plugin) => ({ ...plugin })).sort((left, right) => `${left.id}@${left.version}`.localeCompare(`${right.id}@${right.version}`)),
+      providerRoute: structuredClone(providerRoute), runtimeProfile: structuredClone(configuration.runtimeProfile),
+      networkPolicy: structuredClone(configuration.networkPolicy), budget: structuredClone(run.budget),
+      credentialProfileIds: [...new Set([providerRoute.selectedCredentialProfileId, ...(configuration.credentialProfileIds ?? [])])].sort(),
+      createdAt,
+    };
+    const snapshot: RunSnapshot = { ...content, digest: createHash("sha256").update(JSON.stringify(content)).digest("hex") };
+    this.store.persistRunSnapshot(snapshot);
+    this.store.appendEvent({ runId: run.id, type: "run.snapshot.frozen", payload: { attemptId: attempt.id, digest: snapshot.digest } });
+    this.#notify(run.id);
   }
 
   async #approveToolIfRequired(

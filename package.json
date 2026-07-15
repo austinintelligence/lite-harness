@@ -64,6 +64,7 @@
     "test:browser": "node scripts/check-browser.mjs",
     "test:docker": "node scripts/check-docker.mjs",
     "test:workspace-lifecycle": "node scripts/check-workspace-lifecycle.mjs",
+    "test:run-snapshot": "node scripts/check-run-snapshot.mjs",
     "test:integrations": "node scripts/check-integrations.mjs",
     "test:migrations": "node scripts/check-migrations.mjs",
     "test:optional-systems": "node scripts/check-optional-systems.mjs",

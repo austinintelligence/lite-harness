@@ -17,11 +17,25 @@ not appear in the Manager import graph until enabled.
 1. Gateway authenticates the app token and derives app/tenant/user identity.
 2. Manager atomically creates or replays an idempotent run and session message.
 3. The run queues, acquires a fenced workspace lease, and starts Agent Runtime.
-4. Provider Plane freezes a capability-compatible route and streams normalized events.
+4. Provider Plane freezes a capability-compatible route; Manager commits the
+   complete immutable `RunSnapshot`; only then may the first model turn begin.
 5. Tool calls pass policy/approval and execute in a bounded Docker container.
 6. Every event receives the next durable per-run sequence number.
 7. The runtime container disappears; the named volume, session, and events remain.
 8. Manager restart marks interrupted attempts `ORPHANED` with retry guidance.
+
+## Immutable run boundary
+
+Every attempt has one content-digested SQLite `RunSnapshot`. It contains the
+exact agent profile and budget, advertised tool schemas, eligible skill
+digests, enabled plugin versions and package digests, durable provider route,
+runtime image/profile policy, network-policy digest, and credential profile
+IDs. It contains identifiers rather than credential values. A second write may
+only be an exact idempotent replay; any changed field fails closed.
+
+Agent Runtime awaits this commit after route and context preparation and before
+calling the provider stream. Configuration changes therefore affect a later
+attempt, never an already-prepared attempt.
 
 ## Approval boundary
 

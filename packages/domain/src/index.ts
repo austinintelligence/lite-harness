@@ -11,6 +11,8 @@ import type {
   RunEvent,
   RunEventType,
   RunRecord,
+  RunRoutePlanRecord,
+  RunSnapshot,
   RunStatus,
   SessionMessageRecord,
   SessionMessageRole,
@@ -77,6 +79,9 @@ export interface RunStore {
   completeRunningAttempts(runId: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): number;
   listRunAttempts(runId: string): RunAttemptRecord[];
   recordUsage(runId: string, delta: Partial<RunUsage>): RunRecord;
+  getRunRoutePlan(runId: string, attemptId: string): RunRoutePlanRecord | undefined;
+  persistRunSnapshot(snapshot: RunSnapshot): RunSnapshot;
+  getRunSnapshot(runId: string, attemptId: string): RunSnapshot | undefined;
 }
 
 const allowedTransitions: Readonly<Record<RunStatus, readonly RunStatus[]>> = {

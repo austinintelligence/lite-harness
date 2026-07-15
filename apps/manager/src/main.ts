@@ -88,6 +88,26 @@ const optionalSystems = configureProductionOptionalSystems({
   snapshotKey: snapshotRootKey,
 });
 const automaticWorkspaceCheckpoint = optionalSystems.workspaceLifecycle;
+const runtimeImageDigest = baseRuntime instanceof DockerToolRuntime ? requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") : undefined;
+const runSnapshotConfiguration = {
+  runtimeProfile: {
+    id: configuration.runtime,
+    ...(runtimeImageDigest ? { imageDigest: runtimeImageDigest } : {}),
+    policyDigest: createHash("sha256").update(JSON.stringify({
+      runtime: configuration.runtime,
+      memory: process.env.LITE_HARNESS_RUNTIME_MEMORY ?? "512m",
+      cpus: process.env.LITE_HARNESS_RUNTIME_CPUS ?? "1",
+      pids: process.env.LITE_HARNESS_RUNTIME_PIDS ?? "128",
+      profile: process.env.LITE_HARNESS_TOOL_PROFILE ?? "node-profile",
+    })).digest("hex"),
+  },
+  networkPolicy: {
+    id: baseRuntime instanceof DockerToolRuntime ? "docker-tool-network-none-v1" : "development-in-memory-v1",
+    digest: createHash("sha256").update(baseRuntime instanceof DockerToolRuntime ? "docker:--network=none:v1" : "in-memory:no-egress:v1").digest("hex"),
+  },
+  plugins: optionalSystems.plugins,
+  credentialProfileIds: ["snapshot.root", "browser.profile-root"],
+};
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
   : undefined;
@@ -102,6 +122,7 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
   ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
   makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
+  runSnapshot: runSnapshotConfiguration,
 });
 const integrationRouter = integrationStore ? new InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({

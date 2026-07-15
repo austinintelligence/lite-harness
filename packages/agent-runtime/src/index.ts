@@ -1,4 +1,4 @@
-import type { InternalPrincipal, RunEventType, ToolCall, ToolResult } from "@lite-harness/contracts";
+import type { InternalPrincipal, RunEventType, ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import { ProviderError, type ModelCapability, type ModelEvent, type ModelGateway, type ModelMessage } from "@lite-harness/provider-core";
 import type { ToolRuntime } from "@lite-harness/runtime";
@@ -22,6 +22,13 @@ export interface AgentContextCompiler {
     principal?: InternalPrincipal;
     modelId?: string;
   }): Promise<readonly ModelMessage[]>;
+  snapshotForRun?(params: { runId: string; principal: InternalPrincipal }): Promise<{ skills: Array<{ name: string; digest: string }> }>;
+}
+
+export interface AgentPreparedState {
+  route?: { routePlanId: string; modelId: string; providerId: string; capabilities: readonly ModelCapability[] };
+  tools: readonly ToolDefinition[];
+  contextSnapshot: { skills: Array<{ name: string; digest: string }> };
 }
 
 export class AgentRunner {
@@ -63,6 +70,7 @@ export class AgentRunner {
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
     beforeToolCall?: (call: ToolCall) => Promise<void | (() => void)>;
+    onPrepared?: (state: AgentPreparedState) => Promise<void>;
     maxTurns?: number;
     modelIdleTimeoutMs?: number;
     commandTimeoutMs?: number;
@@ -101,6 +109,14 @@ export class AgentRunner {
       this.#schemaCompiler,
       this.#validatorCache,
     );
+    const contextSnapshot = params.runId && params.principal
+      ? await this.context?.snapshotForRun?.({ runId: params.runId, principal: params.principal }) ?? { skills: [] }
+      : { skills: [] };
+    await params.onPrepared?.({
+      ...(preparedRoute ? { route: preparedRoute } : {}),
+      tools: Object.freeze(advertisedTools.map((tool) => Object.freeze({ ...tool, inputSchema: structuredClone(tool.inputSchema) }))),
+      contextSnapshot,
+    });
 
     const turnLimit = params.maxTurns ?? this.maxTurns;
     for (let turn = 0; turn < turnLimit; turn += 1) {

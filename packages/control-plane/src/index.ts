@@ -228,31 +228,45 @@ export class RunService {
   }
 
   listEvents(runId: string, after = 0): RunEvent[] {
-    return this.store.listEvents(runId, after);
+    return boundedEventBatch(this.store.listEvents(runId, after, EVENT_PAGE_LIMIT));
   }
 
   listRunAttempts(runId: string): RunAttemptRecord[] {
     return this.store.listRunAttempts(runId);
   }
 
-  async waitForEvents(runId: string, after: number, waitMs = 1_000): Promise<RunEvent[]> {
+  async waitForEvents(runId: string, after: number, waitMs = 1_000, signal?: AbortSignal): Promise<RunEvent[]> {
+    signal?.throwIfAborted();
     const immediate = this.listEvents(runId, after);
     const run = this.getRun(runId);
     if (immediate.length > 0 || !run || isTerminalRunStatus(run.status) || waitMs <= 0) {
       return immediate;
     }
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        this.#events.removeListener(runId, onEvent);
+        signal?.removeEventListener("abort", onAbort);
+      };
       const onEvent = () => {
-        clearTimeout(timer);
+        cleanup();
         resolve();
       };
-      const timer = setTimeout(() => {
-        this.#events.removeListener(runId, onEvent);
+      const onAbort = () => {
+        cleanup();
+        reject(signal?.reason instanceof Error ? signal.reason : new Error("Event wait aborted"));
+      };
+      timer = setTimeout(() => {
+        cleanup();
         resolve();
       }, waitMs);
       this.#events.once(runId, onEvent);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
     });
+    signal?.throwIfAborted();
     return this.listEvents(runId, after);
   }
 
@@ -822,4 +836,28 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
       { once: true },
     );
   });
+}
+
+export const EVENT_PAGE_LIMIT = 256;
+export const EVENT_PAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Keeps each cursor page well below the bounded local IPC response ceiling. */
+export function boundedEventBatch(
+  events: readonly RunEvent[],
+  maxBytes = EVENT_PAGE_MAX_BYTES,
+): RunEvent[] {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error("Event page byte limit is invalid");
+  const page: RunEvent[] = [];
+  let bytes = Buffer.byteLength('{"events":[]}');
+  for (const event of events.slice(0, EVENT_PAGE_LIMIT)) {
+    const eventBytes = Buffer.byteLength(JSON.stringify(event)) + (page.length ? 1 : 0);
+    if (eventBytes > maxBytes) throw new Error(`Run event ${event.sequence} exceeds the IPC event page limit`);
+    if (bytes + eventBytes > maxBytes) {
+      if (page.length === 0) throw new Error(`Run event ${event.sequence} exceeds the IPC event page envelope limit`);
+      break;
+    }
+    page.push(event);
+    bytes += eventBytes;
+  }
+  return page;
 }

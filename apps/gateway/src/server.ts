@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ServerResponse } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -41,7 +42,7 @@ export interface ManagerTransport {
   steerRun(runId: string, instruction: string): Promise<RunRecord>;
   getApproval(approvalId: string): Promise<ApprovalRecord>;
   resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord>;
-  getEvents(runId: string, after: number, waitMs: number): Promise<RunEvent[]>;
+  getEvents(runId: string, after: number, waitMs: number, signal?: AbortSignal): Promise<RunEvent[]>;
   getRunAttempts(runId: string): Promise<RunAttemptRecord[]>;
   getChildRuns(runId: string): Promise<RunRecord[]>;
   getSession(sessionId: string, principal: InternalPrincipal): Promise<SessionRecord>;
@@ -317,20 +318,21 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
         connection: "keep-alive",
         "x-accel-buffering": "no",
       });
+      response.flushHeaders();
 
       let cursor = startAfter;
       let closed = false;
-      request.raw.once("close", () => {
+      const disconnected = new AbortController();
+      response.once("close", () => {
         closed = true;
+        disconnected.abort(new Error("SSE client disconnected"));
       });
 
       try {
         while (!closed) {
-          const events = await options.manager.getEvents(request.params.runId, cursor, 5_000);
+          const events = await options.manager.getEvents(request.params.runId, cursor, 5_000, disconnected.signal);
           for (const event of events) {
-            response.write(`id: ${event.sequence}\n`);
-            response.write(`event: ${event.type}\n`);
-            response.write(`data: ${JSON.stringify(event)}\n\n`);
+            await writeSse(response, `id: ${event.sequence}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`, disconnected.signal);
             cursor = event.sequence;
           }
           const run = await options.manager.getRun(request.params.runId);
@@ -338,13 +340,14 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
             break;
           }
           if (events.length === 0) {
-            response.write(": keepalive\n\n");
+            await writeSse(response, ": keepalive\n\n", disconnected.signal);
           }
         }
       } catch (error) {
-        if (!closed) {
-          response.write(
+        if (!closed && !disconnected.signal.aborted) {
+          await writeSse(response,
             `event: stream.error\ndata: ${JSON.stringify({ message: error instanceof Error ? error.message : String(error) })}\n\n`,
+            disconnected.signal,
           );
         }
       } finally {
@@ -486,6 +489,37 @@ function principalFromRequest(request: FastifyRequest): InternalPrincipal {
 
 function stringHeader(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function writeSse(response: ServerResponse, frame: string, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  if (response.destroyed || response.writableEnded) throw new Error("SSE response is closed");
+  if (!response.write(frame)) await awaitSseDrain(response, signal);
+}
+
+export function awaitSseDrain(response: ServerResponse, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  if (response.destroyed || response.writableEnded) throw new Error("SSE response closed before drain");
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      response.off("drain", onDrain);
+      response.off("close", onClose);
+      response.off("error", onError);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const onDrain = () => { cleanup(); resolve(); };
+    const onClose = () => { cleanup(); reject(new Error("SSE response closed before drain")); };
+    const onError = (error: Error) => { cleanup(); reject(error); };
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason instanceof Error ? signal.reason : new Error("SSE drain aborted"));
+    };
+    response.once("drain", onDrain);
+    response.once("close", onClose);
+    response.once("error", onError);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
 }
 
 function parseCursor(value: string | undefined): number {

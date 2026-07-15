@@ -134,8 +134,20 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     }
     const after = boundedInteger(request.query.after, 0, Number.MAX_SAFE_INTEGER, 0);
     const waitMs = boundedInteger(request.query.wait_ms, 0, 10_000, 0);
-    const events = await options.runService.waitForEvents(request.params.runId, after, waitMs);
-    return reply.send({ events });
+    const disconnected = new AbortController();
+    const onAborted = () => disconnected.abort(new Error("Gateway IPC request disconnected"));
+    request.raw.once("aborted", onAborted);
+    request.raw.socket.once("close", onAborted);
+    try {
+      const events = await options.runService.waitForEvents(request.params.runId, after, waitMs, disconnected.signal);
+      return reply.send({ events });
+    } catch (error) {
+      if (disconnected.signal.aborted) return reply;
+      throw error;
+    } finally {
+      request.raw.off("aborted", onAborted);
+      request.raw.socket.off("close", onAborted);
+    }
   });
 
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId/attempts", async (request, reply) => {

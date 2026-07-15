@@ -78,10 +78,13 @@ export class ManagerClient {
     return this.#request<ApprovalRecord>("POST", `/internal/approvals/${encodeURIComponent(approvalId)}/resolve`, { approved });
   }
 
-  async getEvents(runId: string, after: number, waitMs: number): Promise<RunEvent[]> {
+  async getEvents(runId: string, after: number, waitMs: number, signal?: AbortSignal): Promise<RunEvent[]> {
     const result = await this.#request<{ events: RunEvent[] }>(
       "GET",
       `/internal/runs/${encodeURIComponent(runId)}/events?after=${after}&wait_ms=${waitMs}`,
+      undefined,
+      {},
+      signal,
     );
     return result.events;
   }
@@ -171,7 +174,9 @@ export class ManagerClient {
     path: string,
     body?: unknown,
     additionalHeaders: Record<string, string> = {},
+    signal?: AbortSignal,
   ): Promise<T> {
+    signal?.throwIfAborted();
     const payload = body === undefined ? undefined : JSON.stringify(body);
     return new Promise<T>((resolve, reject) => {
       const request = httpRequest(
@@ -188,6 +193,7 @@ export class ManagerClient {
               ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }
               : {}),
           },
+          ...(signal ? { signal } : {}),
         },
         (response) => {
           const chunks: Buffer[] = [];

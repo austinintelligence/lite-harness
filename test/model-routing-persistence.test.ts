@@ -36,7 +36,7 @@ describe("capability-derived durable model routing", () => {
       async *stream() {
         called.push(model.id);
         yield { type: "request.accepted" };
-        yield { type: "usage", inputTokens: 12, outputTokens: 3 };
+        yield { type: "usage", inputTokens: 12, outputTokens: 3, cachedInputTokens: 2, imageInputTokens: 4 };
         yield { type: "completed", finishReason: "stop" };
       },
     }));
@@ -52,6 +52,12 @@ describe("capability-derived durable model routing", () => {
         runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
         modelId: model.id, providerId: model.providerId, inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens, ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
+        ...(usage.cachedInputTokens === undefined ? {} : { cachedInputTokens: usage.cachedInputTokens }),
+        ...(usage.imageInputTokens === undefined ? {} : { imageInputTokens: usage.imageInputTokens }),
+        priceSnapshot: {
+          currency: "USD", source: "test", inputUsdPerMillion: 0,
+          outputUsdPerMillion: 0, imageInputUsdPerMillion: 0,
+        },
         recordedAt: new Date().toISOString(),
       }); },
     };
@@ -73,7 +79,8 @@ describe("capability-derived durable model routing", () => {
     });
     expect(store.listRunModelUsage(created.runId)).toMatchObject([{
       routePlanId: expect.stringMatching(/^route_/), modelId: "vision-model", providerId: "vision-provider",
-      inputTokens: 12, outputTokens: 3, costUsd: 0,
+      inputTokens: 12, outputTokens: 3, cachedInputTokens: 2, imageInputTokens: 4, costUsd: 0,
+      priceSnapshot: { currency: "USD", source: "test", imageInputUsdPerMillion: 0 },
     }]);
     await service.shutdown();
   });

@@ -27,9 +27,23 @@ use. Neither lane serializes secret material into run state, logs, or Docker.
 Fallback occurs only for typed retryable failures before the provider accepts
 the request and before any text, tool call, or usage becomes visible. Once any
 of those boundaries is crossed, the route is never replayed through a fallback,
-preventing duplicate billing and repeated work. Model IDs, prices, capabilities,
-and context limits are operator/discovery data, not hard-coded aliases disguised
-as compatibility.
+preventing duplicate billing and repeated work. Unknown model IDs, prices,
+capabilities, and context limits remain operator/discovery data. The three
+exact GPT-5.6 IDs use a dated official standard-processing snapshot unless an
+operator explicitly overrides both input and output rates:
+
+| Model | Input / image-input MTok | Cached read MTok | Cache write MTok | Output MTok |
+| --- | ---: | ---: | ---: | ---: |
+| `gpt-5.6-luna` | $1.00 | $0.10 | $1.25 | $6.00 |
+| `gpt-5.6-terra` | $2.50 | $0.25 | $3.125 | $15.00 |
+| `gpt-5.6-sol` | $5.00 | $0.50 | $6.25 | $30.00 |
+
+Sources: [OpenAI GPT-5.6 launch and caching terms](https://openai.com/index/gpt-5-6/)
+and the [OpenAI model catalog](https://developers.openai.com/api/docs/models),
+retrieved 2026-07-14. The model catalog describes text and image as input
+modalities under one input-token price, so image tokens use that model's input
+rate. Requests above 272,000 input tokens use the published 2x input and 1.5x
+output long-context multipliers for the full request.
 
 At run start the Manager derives required capabilities from the stored agent
 profile, freezes one route for that run attempt before compiling model-specific
@@ -41,13 +55,20 @@ JSON array of same-provider model records (`id`, `capabilities`,
 between more than one model. Catalog records reference the Manager-owned
 credential profile; they never contain credentials.
 
-Because every run has a dollar ceiling, direct routes require both
+Because every run has a dollar ceiling, direct routes require a complete price
+record: either the exact official snapshot above or both
 `LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION` and
 `LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION`. Unknown pricing fails before
 credential resolution or provider I/O. Adapter usage without cost is priced
 locally from the frozen model rates; if the provider reports a higher cost, the
 higher value is enforced. A zero rate is valid only for an operator-confirmed
 zero-marginal-cost local or subscription proxy.
+
+The durable usage ledger stores provider input/output, cached-read,
+cache-write, and image token categories plus the exact USD price snapshot used
+for local enforcement. If an adapter omits a category, Lite-Harness records no
+invented count. Image tokens are never charged twice: they are a categorized
+subset of total provider input tokens.
 
 Direct adapters parse true SSE incrementally, bound response sizes and idle
 time, normalize usage, and reject endpoints outside their configured origins.

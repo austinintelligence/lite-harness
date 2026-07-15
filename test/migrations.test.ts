@@ -54,11 +54,16 @@ describe("ordered SQLite migrations", () => {
     const migrated = new DatabaseSync(path, { readOnly: true });
     const versions = migrated.prepare("SELECT version FROM schema_migrations ORDER BY version").all()
       .map((row) => (row as { version: number }).version);
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(11);
+    expect(versions).toEqual(Array.from({ length: 13 }, (_, index) => index + 1));
+    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(13);
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM runtime_containers").get()).toEqual({ count: 0 });
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM run_route_plans").get()).toEqual({ count: 0 });
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM run_model_usage").get()).toEqual({ count: 0 });
+    const usageColumns = migrated.prepare("PRAGMA table_info(run_model_usage)").all()
+      .map((row) => (row as { name: string }).name);
+    expect(usageColumns).toEqual(expect.arrayContaining([
+      "cached_input_tokens", "cache_write_input_tokens", "image_input_tokens", "price_snapshot_json",
+    ]));
     const approvalColumns = migrated.prepare("PRAGMA table_info(approvals)").all()
       .map((row) => (row as { name: string }).name);
     expect(approvalColumns).toEqual(expect.arrayContaining([

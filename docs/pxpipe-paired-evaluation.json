@@ -8,7 +8,19 @@
     "route": "local-hermes-openai-compatible",
     "baseUrl": "http://127.0.0.1:8645/v1",
     "model": "gpt-5.6-luna",
-    "credential": "non-empty-placeholder-only"
+    "credential": "non-empty-placeholder-only",
+    "standardApiPricing": {
+      "contextWindow": 1050000,
+      "inputUsdPerMillion": 1,
+      "cachedInputUsdPerMillion": 0.1,
+      "cacheWriteInputUsdPerMillion": 1.25,
+      "imageInputUsdPerMillion": 1,
+      "outputUsdPerMillion": 6,
+      "longContextThresholdTokens": 272000,
+      "longContextInputMultiplier": 2,
+      "longContextOutputMultiplier": 1.5,
+      "pricingSource": "openai-standard-2026-07-09"
+    }
   },
   "pxpipe": {
     "version": "0.8.0",

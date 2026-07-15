@@ -13,7 +13,10 @@ export interface ModelMessage {
 export type ModelEvent =
   | { type: "text.delta"; delta: string }
   | { type: "tool.call"; call: ToolCall }
-  | { type: "usage"; inputTokens: number; outputTokens: number; cachedInputTokens?: number; costUsd?: number }
+  | {
+      type: "usage"; inputTokens: number; outputTokens: number;
+      cachedInputTokens?: number; cacheWriteInputTokens?: number; imageInputTokens?: number; costUsd?: number;
+    }
   | { type: "completed"; finishReason: "stop" | "tool_calls" };
 
 export type ProviderAdapterEvent = ModelEvent | { type: "request.accepted" };
@@ -62,8 +65,40 @@ export interface ModelDescriptor {
   contextWindow: number;
   inputUsdPerMillion?: number;
   outputUsdPerMillion?: number;
+  cachedInputUsdPerMillion?: number;
+  cacheWriteInputUsdPerMillion?: number;
+  imageInputUsdPerMillion?: number;
+  longContextThresholdTokens?: number;
+  longContextInputMultiplier?: number;
+  longContextOutputMultiplier?: number;
+  pricingSource?: string;
   provenance: "static" | "discovered" | "operator";
   enabled: boolean;
+}
+
+export interface OfficialOpenAiModelProfile {
+  contextWindow: number;
+  inputUsdPerMillion: number;
+  cachedInputUsdPerMillion: number;
+  cacheWriteInputUsdPerMillion: number;
+  imageInputUsdPerMillion: number;
+  outputUsdPerMillion: number;
+  longContextThresholdTokens: number;
+  longContextInputMultiplier: number;
+  longContextOutputMultiplier: number;
+  pricingSource: string;
+}
+
+/** Standard-processing snapshot published by OpenAI on 2026-07-09. */
+export const OFFICIAL_OPENAI_MODEL_PROFILES: Readonly<Record<string, OfficialOpenAiModelProfile>> = Object.freeze({
+  "gpt-5.6-sol": officialOpenAiProfile(5, 30),
+  "gpt-5.6-terra": officialOpenAiProfile(2.5, 15),
+  "gpt-5.6-luna": officialOpenAiProfile(1, 6),
+});
+
+export function officialOpenAiModelProfile(modelId: string): OfficialOpenAiModelProfile | undefined {
+  const profile = OFFICIAL_OPENAI_MODEL_PROFILES[modelId.toLowerCase()];
+  return profile ? { ...profile } : undefined;
 }
 
 export interface RouteRequest {
@@ -542,10 +577,22 @@ function validateModel(model: ModelDescriptor): void {
   for (const [name, value] of [
     ["inputUsdPerMillion", model.inputUsdPerMillion],
     ["outputUsdPerMillion", model.outputUsdPerMillion],
+    ["cachedInputUsdPerMillion", model.cachedInputUsdPerMillion],
+    ["cacheWriteInputUsdPerMillion", model.cacheWriteInputUsdPerMillion],
+    ["imageInputUsdPerMillion", model.imageInputUsdPerMillion],
   ] as const) {
     if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
       throw new Error(`Model ${name} must be a finite non-negative number`);
     }
+  }
+  for (const [name, value] of [
+    ["longContextInputMultiplier", model.longContextInputMultiplier],
+    ["longContextOutputMultiplier", model.longContextOutputMultiplier],
+  ] as const) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 1)) throw new Error(`Model ${name} must be at least one`);
+  }
+  if (model.longContextThresholdTokens !== undefined && (!Number.isSafeInteger(model.longContextThresholdTokens) || model.longContextThresholdTokens < 1)) {
+    throw new Error("Model longContextThresholdTokens must be a positive integer");
   }
 }
 
@@ -566,9 +613,23 @@ function withAuthoritativeCost(
     throw new ProviderError("invalid_usage", "Provider returned invalid cost usage", false);
   }
   if (!hasKnownModelPricing(model)) return event;
+  const cached = event.cachedInputTokens ?? 0;
+  const cacheWrite = event.cacheWriteInputTokens ?? 0;
+  const image = event.imageInputTokens ?? 0;
+  if (![cached, cacheWrite, image].every((value) => Number.isSafeInteger(value) && value >= 0) || cached + cacheWrite + image > event.inputTokens) {
+    throw new ProviderError("invalid_usage", "Provider returned invalid input-token category usage", false);
+  }
+  const ordinary = event.inputTokens - cached - cacheWrite - image;
+  const long = model.longContextThresholdTokens !== undefined && event.inputTokens > model.longContextThresholdTokens;
+  const inputMultiplier = long ? model.longContextInputMultiplier ?? 1 : 1;
+  const outputMultiplier = long ? model.longContextOutputMultiplier ?? 1 : 1;
   const calculated = (
-    event.inputTokens * (model.inputUsdPerMillion as number) +
-    event.outputTokens * (model.outputUsdPerMillion as number)
+    inputMultiplier * (
+      ordinary * (model.inputUsdPerMillion as number) +
+      cached * (model.cachedInputUsdPerMillion ?? model.inputUsdPerMillion as number) +
+      cacheWrite * (model.cacheWriteInputUsdPerMillion ?? model.inputUsdPerMillion as number) +
+      image * (model.imageInputUsdPerMillion ?? model.inputUsdPerMillion as number)
+    ) + outputMultiplier * event.outputTokens * (model.outputUsdPerMillion as number)
   ) / 1_000_000;
   return { ...event, costUsd: Math.max(reported ?? 0, calculated) };
 }
@@ -583,4 +644,19 @@ function score(model: ModelDescriptor, request: RouteRequest): number {
   const preferredPenalty = request.preferredModel === model.id ? -1_000_000 : 0;
   const transportPenalty = model.transport === "delegated" ? 10_000 : 0;
   return preferredPenalty + transportPenalty + (model.inputUsdPerMillion ?? 1_000) + (model.outputUsdPerMillion ?? 1_000);
+}
+
+function officialOpenAiProfile(input: number, output: number): OfficialOpenAiModelProfile {
+  return Object.freeze({
+    contextWindow: 1_050_000,
+    inputUsdPerMillion: input,
+    cachedInputUsdPerMillion: input * 0.1,
+    cacheWriteInputUsdPerMillion: input * 1.25,
+    imageInputUsdPerMillion: input,
+    outputUsdPerMillion: output,
+    longContextThresholdTokens: 272_000,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 1.5,
+    pricingSource: "openai-standard-2026-07-09",
+  });
 }

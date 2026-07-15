@@ -4,6 +4,7 @@ import { CodexAppServerGateway } from "@lite-harness/delegated-runtime";
 import {
   InMemoryCredentialBroker,
   ModelRegistry,
+  officialOpenAiModelProfile,
   ProviderError,
   RoutedModelGateway,
   type ModelDescriptor,
@@ -45,6 +46,32 @@ async function collect(stream: AsyncIterable<ModelEvent>): Promise<ModelEvent[]>
 }
 
 describe("provider cost accounting", () => {
+  it("applies the official Luna, Terra, and Sol text, image, cache, and output price snapshot", async () => {
+    expect(officialOpenAiModelProfile("gpt-5.6-luna")).toMatchObject({
+      inputUsdPerMillion: 1, imageInputUsdPerMillion: 1, cachedInputUsdPerMillion: 0.1,
+      cacheWriteInputUsdPerMillion: 1.25, outputUsdPerMillion: 6,
+    });
+    expect(officialOpenAiModelProfile("gpt-5.6-terra")).toMatchObject({ inputUsdPerMillion: 2.5, outputUsdPerMillion: 15 });
+    expect(officialOpenAiModelProfile("gpt-5.6-sol")).toMatchObject({ inputUsdPerMillion: 5, outputUsdPerMillion: 30 });
+    const descriptor: ModelDescriptor = {
+      ...model("gpt-5.6-luna", "priced", false), ...officialOpenAiModelProfile("gpt-5.6-luna"),
+    };
+    const broker = new InMemoryCredentialBroker();
+    broker.set("priced-credential", { authorizationHeader: "Bearer test-credential" });
+    const adapter: ProviderAdapter = {
+      providerId: "priced",
+      async *stream() {
+        yield {
+          type: "usage", inputTokens: 200_000, outputTokens: 10_000,
+          cachedInputTokens: 20_000, cacheWriteInputTokens: 10_000, imageInputTokens: 40_000,
+        };
+      },
+    };
+    const events = await collect(new RoutedModelGateway(
+      new ModelRegistry([descriptor]).plan({ requiredCapabilities: ["text"] }), [adapter], broker,
+    ).streamTurn({ messages: [{ role: "user", content: "priced" }], context: context(5) }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", costUsd: 0.2445 }));
+  });
   it("BD-030-REGRESSION rejects unknown model prices under a route or run cost ceiling", async () => {
     const registry = new ModelRegistry([model("unknown-price", "unknown", false)]);
     expect(() => registry.plan({ requiredCapabilities: ["text"], maxInputUsdPerMillion: 10 }))

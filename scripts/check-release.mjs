@@ -80,6 +80,8 @@ if (existsSync(resolve(root, "docs/pxpipe-paired-evaluation.json"))) {
   const paired = JSON.parse(readFileSync(resolve(root, "docs/pxpipe-paired-evaluation.json"), "utf8"));
   if (paired.evaluationType !== "paired-model-quality-cost" || paired.testId !== "BD-050-REGRESSION" ||
       paired.provider?.route !== "local-hermes-openai-compatible" || paired.provider?.model !== "gpt-5.6-luna" ||
+      paired.provider?.standardApiPricing?.pricingSource !== "openai-standard-2026-07-09" ||
+      paired.provider?.standardApiPricing?.inputUsdPerMillion !== 1 || paired.provider?.standardApiPricing?.outputUsdPerMillion !== 6 ||
       !Array.isArray(paired.evaluations) || paired.evaluations.length < 2 ||
       !paired.evaluations.every((item) => item.exactRecoveryVerified === true && item.text?.score !== undefined && item.optical?.score !== undefined) ||
       paired.aggregate?.promotionEligible !== false || paired.policy !== "measurement-only-disabled-by-default") {

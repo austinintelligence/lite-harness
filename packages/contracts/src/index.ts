@@ -241,7 +241,22 @@ export interface RunModelUsageRecord {
   providerId: string;
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  imageInputTokens?: number;
   costUsd?: number;
+  priceSnapshot?: {
+    currency: "USD";
+    source: string;
+    inputUsdPerMillion: number;
+    outputUsdPerMillion: number;
+    cachedInputUsdPerMillion?: number;
+    cacheWriteInputUsdPerMillion?: number;
+    imageInputUsdPerMillion?: number;
+    longContextThresholdTokens?: number;
+    longContextInputMultiplier?: number;
+    longContextOutputMultiplier?: number;
+  };
   recordedAt: string;
 }
 

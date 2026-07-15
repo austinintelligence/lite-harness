@@ -160,6 +160,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       yield {
         type: "usage", inputTokens: body.usage.prompt_tokens, outputTokens: body.usage.completion_tokens,
         ...(body.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
+        ...(body.usage.prompt_tokens_details?.image_tokens !== undefined ? { imageInputTokens: body.usage.prompt_tokens_details.image_tokens } : {}),
       };
     }
     yield { type: "completed", finishReason: choice.message.tool_calls?.length ? "tool_calls" : "stop" };
@@ -178,6 +179,7 @@ async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIte
     if (chunk.usage) yield {
       type: "usage", inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens,
       ...(chunk.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: chunk.usage.prompt_tokens_details.cached_tokens } : {}),
+      ...(chunk.usage.prompt_tokens_details?.image_tokens !== undefined ? { imageInputTokens: chunk.usage.prompt_tokens_details.image_tokens } : {}),
     };
     for (const choice of chunk.choices ?? []) {
       if (choice.delta?.content) yield { type: "text.delta", delta: choice.delta.content };
@@ -276,7 +278,7 @@ interface OpenAIResponsesBody {
   error?: { code?: string; message?: string } | null;
   incomplete_details?: { reason?: string } | null;
   output?: OpenAIResponseOutputItem[];
-  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } } | null;
+  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; image_tokens?: number } } | null;
 }
 
 interface OpenAIResponseOutputItem {
@@ -443,6 +445,7 @@ async function* emitResponsesUsage(usage: OpenAIResponsesBody["usage"]): AsyncIt
   yield {
     type: "usage", inputTokens: usage.input_tokens as number, outputTokens: usage.output_tokens as number,
     ...(usage.input_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: usage.input_tokens_details.cached_tokens } : {}),
+    ...(usage.input_tokens_details?.image_tokens !== undefined ? { imageInputTokens: usage.input_tokens_details.image_tokens } : {}),
   };
 }
 
@@ -458,7 +461,7 @@ interface OpenAIResponse {
       tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
     };
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } };
+  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number; image_tokens?: number } };
 }
 
 interface OpenAIStreamChunk {
@@ -469,7 +472,7 @@ interface OpenAIStreamChunk {
     };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } } | null;
+  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number; image_tokens?: number } } | null;
   error?: unknown;
 }
 

@@ -10,7 +10,7 @@ import {
   evaluateContextRenderer,
   type ContextBlock,
 } from "@lite-harness/context";
-import type { ModelDescriptor, ModelEvent, ModelMessage } from "@lite-harness/provider-core";
+import { officialOpenAiModelProfile, type ModelDescriptor, type ModelEvent, type ModelMessage } from "@lite-harness/provider-core";
 import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
 
 const root = process.cwd();
@@ -61,6 +61,8 @@ export async function pairedHermesModelEvaluation(): Promise<Record<string, unkn
     throw new Error("Paired pxpipe evaluation must use the configured local Hermes gpt-5.6-luna route");
   }
   assertEvaluatedPxpipeVersion();
+  const standardApiPricing = officialOpenAiModelProfile(modelId);
+  if (!standardApiPricing) throw new Error(`No official pricing snapshot exists for ${modelId}`);
   const adapter = new OpenAICompatibleProvider({
     providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin], stream: false,
   });
@@ -104,7 +106,10 @@ export async function pairedHermesModelEvaluation(): Promise<Record<string, unkn
   return {
     schemaVersion: 2, generatedAt: new Date().toISOString(), sourceCommit: currentCommit(),
     evaluationType: "paired-model-quality-cost", testId: "BD-050-REGRESSION",
-    provider: { route: "local-hermes-openai-compatible", baseUrl, model: modelId, credential: "non-empty-placeholder-only" },
+    provider: {
+      route: "local-hermes-openai-compatible", baseUrl, model: modelId, credential: "non-empty-placeholder-only",
+      standardApiPricing,
+    },
     pxpipe: { version: PXPIPE_EVALUATED_VERSION, commit: PXPIPE_EVALUATED_COMMIT },
     policy: "measurement-only-disabled-by-default",
     evaluations,

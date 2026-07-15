@@ -22,6 +22,7 @@ import {
   CapabilityBoundModelGateway,
   InMemoryCredentialBroker,
   ModelRegistry,
+  officialOpenAiModelProfile,
   ProviderError,
   RoutedModelGateway,
   SingleFlightCredentialBroker,
@@ -448,7 +449,7 @@ async function providerReadiness(provider: string, mode: "development" | "produc
   if (provider === "codex" || provider === "claude") {
     if (provider === "codex") {
       try {
-        const pricing = configuredModelPricing();
+        const pricing = configuredModelPricing(process.env.LITE_HARNESS_MODEL);
         if (pricing.inputUsdPerMillion === undefined || pricing.outputUsdPerMillion === undefined) {
           return { ok: false, reason: "model-pricing-missing" };
         }
@@ -462,7 +463,7 @@ async function providerReadiness(provider: string, mode: "development" | "produc
     return await executableReadiness(command);
   }
   try {
-    const pricing = configuredModelPricing();
+    const pricing = configuredModelPricing(process.env.LITE_HARNESS_MODEL);
     if (pricing.inputUsdPerMillion === undefined || pricing.outputUsdPerMillion === undefined) {
       return { ok: false, reason: "model-pricing-missing" };
     }
@@ -600,9 +601,10 @@ function resolveModelGateway(
 
   if (provider === "codex") {
     const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "codex-delegated";
-    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "codex", configuredModelPricing()), new CodexAppServerGateway({
+    const pricing = configuredModelPricing(modelId);
+    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "codex", pricing), new CodexAppServerGateway({
       workspacePathForRun,
-      ...configuredModelPricing(),
+      ...pricing,
       ...(process.env.LITE_HARNESS_CODEX_COMMAND ? { command: process.env.LITE_HARNESS_CODEX_COMMAND } : {}),
       ...(process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
@@ -612,9 +614,10 @@ function resolveModelGateway(
   if (provider === "claude") {
     const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
     const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "claude-delegated";
-    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "claude", configuredModelPricing()), new ClaudeCodeGateway({
+    const pricing = configuredModelPricing(modelId);
+    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "claude", pricing), new ClaudeCodeGateway({
       workspacePathForRun,
-      ...configuredModelPricing(),
+      ...pricing,
       ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
       allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
@@ -682,9 +685,14 @@ function configuredDirectModels(defaults: {
   capabilities: readonly ModelCapability[];
   contextWindow: number;
 }): ModelDescriptor[] {
-  const pricing = configuredModelPricing();
+  const officialDefault = officialOpenAiModelProfile(defaults.id);
+  const pricing = configuredModelPricing(defaults.id);
+  const defaultCapabilities = officialDefault
+    ? [...new Set([...defaults.capabilities, "vision" as const])]
+    : [...defaults.capabilities];
+  const defaultContextWindow = officialDefault?.contextWindow ?? defaults.contextWindow;
   const raw = process.env.LITE_HARNESS_MODEL_CATALOG?.trim();
-  if (!raw) return [{ ...defaults, capabilities: [...defaults.capabilities], transport: "direct", ...pricing, provenance: "operator", enabled: true }];
+  if (!raw) return [{ ...defaults, capabilities: defaultCapabilities, contextWindow: defaultContextWindow, transport: "direct", ...pricing, provenance: "operator", enabled: true }];
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Error("LITE_HARNESS_MODEL_CATALOG must be valid JSON"); }
   if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 256) throw new Error("LITE_HARNESS_MODEL_CATALOG must be a non-empty bounded array");
@@ -710,7 +718,7 @@ function configuredDirectModels(defaults: {
       id, providerId: defaults.providerId, transport: "direct" as const,
       credentialProfileId: defaults.credentialProfileId, capabilities,
       contextWindow: contextWindow as number,
-      ...(input === undefined ? pricing : { inputUsdPerMillion: input as number, outputUsdPerMillion: output as number }),
+      ...(input === undefined ? configuredModelPricing(id) : { inputUsdPerMillion: input as number, outputUsdPerMillion: output as number }),
       provenance: "operator" as const, enabled: record.enabled === undefined ? true : record.enabled === true,
     };
   });
@@ -735,13 +743,30 @@ function persistRunModelUsage(
   context: ModelRunContext,
   plan: RoutePlan,
   model: ModelDescriptor,
-  usage: { inputTokens: number; outputTokens: number; costUsd?: number },
+  usage: {
+    inputTokens: number; outputTokens: number; cachedInputTokens?: number;
+    cacheWriteInputTokens?: number; imageInputTokens?: number; costUsd?: number;
+  },
 ): void {
+  const priceSnapshot = model.inputUsdPerMillion !== undefined && model.outputUsdPerMillion !== undefined ? {
+    currency: "USD" as const, source: model.pricingSource ?? "operator",
+    inputUsdPerMillion: model.inputUsdPerMillion, outputUsdPerMillion: model.outputUsdPerMillion,
+    ...(model.cachedInputUsdPerMillion === undefined ? {} : { cachedInputUsdPerMillion: model.cachedInputUsdPerMillion }),
+    ...(model.cacheWriteInputUsdPerMillion === undefined ? {} : { cacheWriteInputUsdPerMillion: model.cacheWriteInputUsdPerMillion }),
+    ...(model.imageInputUsdPerMillion === undefined ? {} : { imageInputUsdPerMillion: model.imageInputUsdPerMillion }),
+    ...(model.longContextThresholdTokens === undefined ? {} : { longContextThresholdTokens: model.longContextThresholdTokens }),
+    ...(model.longContextInputMultiplier === undefined ? {} : { longContextInputMultiplier: model.longContextInputMultiplier }),
+    ...(model.longContextOutputMultiplier === undefined ? {} : { longContextOutputMultiplier: model.longContextOutputMultiplier }),
+  } : undefined;
   store.persistRunModelUsage({
     runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
     modelId: model.id, providerId: model.providerId,
     inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+    ...(usage.cachedInputTokens === undefined ? {} : { cachedInputTokens: usage.cachedInputTokens }),
+    ...(usage.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: usage.cacheWriteInputTokens }),
+    ...(usage.imageInputTokens === undefined ? {} : { imageInputTokens: usage.imageInputTokens }),
     ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
+    ...(priceSnapshot ? { priceSnapshot } : {}),
     recordedAt: new Date().toISOString(),
   });
 }
@@ -777,13 +802,14 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function configuredModelPricing(): {
-  inputUsdPerMillion?: number;
-  outputUsdPerMillion?: number;
-} {
+function configuredModelPricing(modelId?: string): Pick<ModelDescriptor,
+  "inputUsdPerMillion" | "outputUsdPerMillion" | "cachedInputUsdPerMillion" |
+  "cacheWriteInputUsdPerMillion" | "imageInputUsdPerMillion" | "longContextThresholdTokens" |
+  "longContextInputMultiplier" | "longContextOutputMultiplier" | "pricingSource"
+> {
   const input = process.env.LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION?.trim();
   const output = process.env.LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION?.trim();
-  if (!input && !output) return {};
+  if (!input && !output) return modelId ? officialOpenAiModelProfile(modelId) ?? {} : {};
   if (!input || !output) throw new Error("Both model input and output prices are required when either is configured");
   const inputUsdPerMillion = Number(input);
   const outputUsdPerMillion = Number(output);
@@ -791,7 +817,13 @@ function configuredModelPricing(): {
       !Number.isFinite(outputUsdPerMillion) || outputUsdPerMillion < 0) {
     throw new Error("Model prices must be finite non-negative USD-per-million-token values");
   }
-  return { inputUsdPerMillion, outputUsdPerMillion };
+  if (inputUsdPerMillion === 0 && outputUsdPerMillion === 0) {
+    return {
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0, cachedInputUsdPerMillion: 0,
+      cacheWriteInputUsdPerMillion: 0, imageInputUsdPerMillion: 0, pricingSource: "operator-zero-rate",
+    };
+  }
+  return { inputUsdPerMillion, outputUsdPerMillion, pricingSource: "operator" };
 }
 
 function installShutdownHandlers(server: { close(): Promise<void> }): void {

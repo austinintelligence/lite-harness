@@ -119,7 +119,11 @@ interface ModelUsageRow {
   provider_id: string;
   input_tokens: number;
   output_tokens: number;
+  cached_input_tokens: number;
+  cache_write_input_tokens: number;
+  image_input_tokens: number;
   cost_usd: number | null;
+  price_snapshot_json: string | null;
   recorded_at: string;
 }
 
@@ -283,7 +287,12 @@ function toModelUsage(row: ModelUsageRow): RunModelUsageRecord {
   return {
     id: row.id, runId: row.run_id, attemptId: row.attempt_id, routePlanId: row.route_plan_id,
     modelId: row.model_id, providerId: row.provider_id, inputTokens: row.input_tokens,
-    outputTokens: row.output_tokens, ...(row.cost_usd === null ? {} : { costUsd: row.cost_usd }),
+    outputTokens: row.output_tokens,
+    ...(row.cached_input_tokens ? { cachedInputTokens: row.cached_input_tokens } : {}),
+    ...(row.cache_write_input_tokens ? { cacheWriteInputTokens: row.cache_write_input_tokens } : {}),
+    ...(row.image_input_tokens ? { imageInputTokens: row.image_input_tokens } : {}),
+    ...(row.cost_usd === null ? {} : { costUsd: row.cost_usd }),
+    ...(row.price_snapshot_json ? { priceSnapshot: JSON.parse(row.price_snapshot_json) as NonNullable<RunModelUsageRecord["priceSnapshot"]> } : {}),
     recordedAt: row.recorded_at,
   };
 }
@@ -735,6 +744,12 @@ export class SqliteRunStore implements RunStore {
           UNIQUE(digest)
         ) STRICT;
       `),
+      () => {
+        this.#ensureColumn("run_model_usage", "cached_input_tokens", "INTEGER NOT NULL DEFAULT 0 CHECK(cached_input_tokens >= 0)");
+        this.#ensureColumn("run_model_usage", "cache_write_input_tokens", "INTEGER NOT NULL DEFAULT 0 CHECK(cache_write_input_tokens >= 0)");
+        this.#ensureColumn("run_model_usage", "image_input_tokens", "INTEGER NOT NULL DEFAULT 0 CHECK(image_input_tokens >= 0)");
+        this.#ensureColumn("run_model_usage", "price_snapshot_json", "TEXT");
+      },
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -1354,11 +1369,14 @@ export class SqliteRunStore implements RunStore {
     const result = this.#database.prepare(`
       INSERT INTO run_model_usage(
         run_id, attempt_id, route_plan_id, model_id, provider_id,
-        input_tokens, output_tokens, cost_usd, recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        input_tokens, output_tokens, cached_input_tokens, cache_write_input_tokens,
+        image_input_tokens, cost_usd, price_snapshot_json, recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.runId, record.attemptId, record.routePlanId, record.modelId, record.providerId,
-      record.inputTokens, record.outputTokens, record.costUsd ?? null, record.recordedAt,
+      record.inputTokens, record.outputTokens, record.cachedInputTokens ?? 0, record.cacheWriteInputTokens ?? 0,
+      record.imageInputTokens ?? 0, record.costUsd ?? null,
+      record.priceSnapshot ? JSON.stringify(record.priceSnapshot) : null, record.recordedAt,
     );
     const row = this.#database.prepare("SELECT * FROM run_model_usage WHERE id = ?")
       .get(Number(result.lastInsertRowid)) as unknown as ModelUsageRow;

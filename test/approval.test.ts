@@ -48,7 +48,7 @@ describe("tool approvals and steering", () => {
       });
       const run = service.steerRun(created.runId, "also explain the result");
       expect(service.listEvents(run.id).map((event) => event.type)).toContain("run.steered");
-      expect(service.listSessionMessages(run.sessionId as string)).toContainEqual(
+      expect(service.listSessionMessages(run.sessionId as string, run)).toContainEqual(
         expect.objectContaining({ role: "user", content: "also explain the result", metadata: { steering: true } }),
       );
     } finally {

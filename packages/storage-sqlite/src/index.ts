@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -21,7 +21,7 @@ import type {
   WorkspaceLease,
 } from "@lite-harness/contracts";
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
-import type { AppendRunEvent, RunStore } from "@lite-harness/domain";
+import type { AppendRunEvent, ResourceOwner, RunStore } from "@lite-harness/domain";
 
 interface RunRow {
   id: string;
@@ -33,6 +33,9 @@ interface RunRow {
   agent_id: string;
   workspace_id: string;
   session_id: string | null;
+  agent_internal_id: string | null;
+  workspace_internal_id: string | null;
+  session_internal_id: string | null;
   parent_run_id: string | null;
   depth: number;
   delivery_allowed: number;
@@ -51,6 +54,7 @@ interface RunRow {
 }
 
 interface AgentRow {
+  internal_id: string;
   id: string;
   version: number;
   app_id: string;
@@ -65,6 +69,7 @@ interface AgentRow {
 }
 
 interface WorkspaceRow {
+  internal_id: string;
   id: string;
   app_id: string;
   tenant_id: string;
@@ -94,11 +99,13 @@ interface EventRow {
 }
 
 interface SessionRow {
+  internal_id: string;
   id: string;
   app_id: string;
   tenant_id: string;
   user_id: string;
   agent_id: string;
+  agent_internal_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -111,6 +118,10 @@ interface MessageRow {
   content: string;
   metadata_json: string;
   created_at: string;
+}
+
+function internalId(prefix: "agt" | "wsp" | "ses"): string {
+  return `${prefix}_${randomUUID().replaceAll("-", "")}`;
 }
 
 interface LeaseRow {
@@ -410,6 +421,163 @@ export class SqliteRunStore implements RunStore {
         UPDATE runs
         SET idempotency_key = length(user_id) || ':' || user_id || ':' || idempotency_key;
       `),
+      () => {
+        this.#database.exec(`
+          CREATE TABLE agent_profiles_v7 (
+            internal_id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            app_id TEXT NOT NULL,
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            instructions TEXT NOT NULL,
+            model_capabilities_json TEXT NOT NULL,
+            allowed_tools_json TEXT NOT NULL,
+            default_budget_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(app_id, tenant_id, user_id, id)
+          );
+          INSERT INTO agent_profiles_v7
+          SELECT 'agt_' || lower(hex(randomblob(16))), id, version, app_id, tenant_id, user_id,
+            name, instructions, model_capabilities_json, allowed_tools_json, default_budget_json, created_at
+          FROM agent_profiles;
+          INSERT INTO agent_profiles_v7
+          SELECT 'agt_' || lower(hex(randomblob(16))), r.agent_id, 1, r.app_id, r.tenant_id, r.user_id,
+            r.agent_id, '', '["text","tools"]', '["read_file","write_file"]', '{}', MIN(r.created_at)
+          FROM runs r
+          WHERE NOT EXISTS (
+            SELECT 1 FROM agent_profiles_v7 a
+            WHERE a.app_id = r.app_id AND a.tenant_id = r.tenant_id
+              AND a.user_id = r.user_id AND a.id = r.agent_id
+          )
+          GROUP BY r.app_id, r.tenant_id, r.user_id, r.agent_id;
+
+          CREATE TABLE workspaces_v7 (
+            internal_id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            state TEXT NOT NULL,
+            registered_path TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(app_id, tenant_id, user_id, id)
+          );
+          INSERT INTO workspaces_v7
+          SELECT 'wsp_' || lower(hex(randomblob(16))), id, app_id, tenant_id, user_id, mode, state,
+            registered_path, created_at, updated_at
+          FROM workspaces;
+          INSERT INTO workspaces_v7
+          SELECT 'wsp_' || lower(hex(randomblob(16))), r.workspace_id, r.app_id, r.tenant_id, r.user_id,
+            'managed', 'WARM', NULL, MIN(r.created_at), MAX(r.updated_at)
+          FROM runs r
+          WHERE NOT EXISTS (
+            SELECT 1 FROM workspaces_v7 w
+            WHERE w.app_id = r.app_id AND w.tenant_id = r.tenant_id
+              AND w.user_id = r.user_id AND w.id = r.workspace_id
+          )
+          GROUP BY r.app_id, r.tenant_id, r.user_id, r.workspace_id;
+
+          CREATE TABLE sessions_v7 (
+            internal_id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            agent_internal_id TEXT NOT NULL REFERENCES agent_profiles_v7(internal_id),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(app_id, tenant_id, user_id, id)
+          );
+          INSERT INTO sessions_v7
+          SELECT 'ses_' || lower(hex(randomblob(16))), s.id, s.app_id, s.tenant_id, s.user_id,
+            s.agent_id, a.internal_id, s.created_at, s.updated_at
+          FROM sessions s
+          JOIN agent_profiles_v7 a ON a.app_id = s.app_id AND a.tenant_id = s.tenant_id
+            AND a.user_id = s.user_id AND a.id = s.agent_id;
+          INSERT INTO sessions_v7
+          SELECT 'ses_' || lower(hex(randomblob(16))), r.session_id, r.app_id, r.tenant_id, r.user_id,
+            MIN(r.agent_id), MIN(a.internal_id), MIN(r.created_at), MAX(r.updated_at)
+          FROM runs r
+          JOIN agent_profiles_v7 a ON a.app_id = r.app_id AND a.tenant_id = r.tenant_id
+            AND a.user_id = r.user_id AND a.id = r.agent_id
+          WHERE r.session_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM sessions_v7 s
+            WHERE s.app_id = r.app_id AND s.tenant_id = r.tenant_id
+              AND s.user_id = r.user_id AND s.id = r.session_id
+          )
+          GROUP BY r.app_id, r.tenant_id, r.user_id, r.session_id;
+
+          CREATE TABLE session_messages_v7 (
+            id TEXT PRIMARY KEY,
+            session_internal_id TEXT NOT NULL REFERENCES sessions_v7(internal_id) ON DELETE CASCADE,
+            run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+          );
+          INSERT INTO session_messages_v7
+          SELECT m.id, scoped.internal_id, m.run_id, m.role, m.content, m.metadata_json, m.created_at
+          FROM session_messages m
+          JOIN sessions legacy ON legacy.id = m.session_id
+          JOIN sessions_v7 scoped ON scoped.app_id = legacy.app_id AND scoped.tenant_id = legacy.tenant_id
+            AND scoped.user_id = legacy.user_id AND scoped.id = legacy.id;
+
+          CREATE TABLE workspace_leases_v7 (
+            workspace_internal_id TEXT PRIMARY KEY REFERENCES workspaces_v7(internal_id) ON DELETE CASCADE,
+            owner_run_id TEXT,
+            fencing_token INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO workspace_leases_v7
+          SELECT w.internal_id, l.owner_run_id, l.fencing_token, l.expires_at, l.updated_at
+          FROM workspace_leases l
+          JOIN workspaces_v7 w ON w.id = l.workspace_id;
+
+          DROP TABLE session_messages;
+          DROP TABLE sessions;
+          DROP TABLE workspace_leases;
+          DROP TABLE agent_profiles;
+          DROP TABLE workspaces;
+          ALTER TABLE agent_profiles_v7 RENAME TO agent_profiles;
+          ALTER TABLE workspaces_v7 RENAME TO workspaces;
+          ALTER TABLE sessions_v7 RENAME TO sessions;
+          ALTER TABLE session_messages_v7 RENAME TO session_messages;
+          ALTER TABLE workspace_leases_v7 RENAME TO workspace_leases;
+          CREATE INDEX session_messages_order ON session_messages(session_internal_id, created_at, id);
+
+          ALTER TABLE runs ADD COLUMN agent_internal_id TEXT REFERENCES agent_profiles(internal_id);
+          ALTER TABLE runs ADD COLUMN workspace_internal_id TEXT REFERENCES workspaces(internal_id);
+          ALTER TABLE runs ADD COLUMN session_internal_id TEXT REFERENCES sessions(internal_id);
+          UPDATE runs SET agent_internal_id = (
+            SELECT internal_id FROM agent_profiles a
+            WHERE a.app_id = runs.app_id AND a.tenant_id = runs.tenant_id
+              AND a.user_id = runs.user_id AND a.id = runs.agent_id
+          );
+          UPDATE runs SET workspace_internal_id = (
+            SELECT internal_id FROM workspaces w
+            WHERE w.app_id = runs.app_id AND w.tenant_id = runs.tenant_id
+              AND w.user_id = runs.user_id AND w.id = runs.workspace_id
+          );
+          UPDATE runs SET session_internal_id = (
+            SELECT internal_id FROM sessions s
+            WHERE s.app_id = runs.app_id AND s.tenant_id = runs.tenant_id
+              AND s.user_id = runs.user_id AND s.id = runs.session_id
+          ) WHERE session_id IS NOT NULL;
+        `);
+        const missing = this.#database.prepare(`
+          SELECT COUNT(*) AS count FROM runs
+          WHERE agent_internal_id IS NULL OR workspace_internal_id IS NULL
+            OR (session_id IS NOT NULL AND session_internal_id IS NULL)
+        `).get() as { count: number };
+        if (missing.count !== 0) throw new Error("Owner-scoped identity migration left unresolved run references");
+      },
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -474,67 +642,89 @@ export class SqliteRunStore implements RunStore {
       } else if ((request.depth ?? 0) !== 0) {
         throw new Error("Root run depth must be zero");
       }
-      const agent = this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(request.agent) as AgentRow | undefined;
-      if (agent && !sameOwner(agent, request.principal)) throw new Error("Agent profile does not belong to the requesting principal");
+      const agent = this.#database.prepare(
+        "SELECT * FROM agent_profiles WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, request.agent,
+      ) as AgentRow | undefined;
       if (!agent) {
         this.#database.prepare(
-          `INSERT INTO agent_profiles(id, version, app_id, tenant_id, user_id, name, instructions,
+          `INSERT INTO agent_profiles(internal_id, id, version, app_id, tenant_id, user_id, name, instructions,
             model_capabilities_json, allowed_tools_json, default_budget_json, created_at)
-           VALUES (?, 1, ?, ?, ?, ?, '', '["text","tools"]', '["read_file","write_file"]', ?, ?)`,
+           VALUES (?, ?, 1, ?, ?, ?, ?, '', '["text","tools"]', '["read_file","write_file"]', ?, ?)`,
         ).run(
-          request.agent, request.principal.appId, request.principal.tenantId, request.principal.userId,
+          internalId("agt"), request.agent, request.principal.appId, request.principal.tenantId, request.principal.userId,
           request.agent, JSON.stringify(DEFAULT_RUN_BUDGET), now,
         );
       }
-      const workspace = this.#database.prepare("SELECT * FROM workspaces WHERE id = ?").get(request.workspace) as WorkspaceRow | undefined;
-      if (workspace && !sameOwner(workspace, request.principal)) throw new Error("Workspace does not belong to the requesting principal");
+      const workspace = this.#database.prepare(
+        "SELECT * FROM workspaces WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, request.workspace,
+      ) as WorkspaceRow | undefined;
       if (!workspace) {
         this.#database.prepare(
-          `INSERT INTO workspaces(id, app_id, tenant_id, user_id, mode, state, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'managed', 'WARM', ?, ?)`,
-        ).run(request.workspace, request.principal.appId, request.principal.tenantId, request.principal.userId, now, now);
+          `INSERT INTO workspaces(internal_id, id, app_id, tenant_id, user_id, mode, state, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'managed', 'WARM', ?, ?)`,
+        ).run(internalId("wsp"), request.workspace, request.principal.appId, request.principal.tenantId, request.principal.userId, now, now);
       }
-      const effectiveAgent = agent ?? this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(request.agent) as unknown as AgentRow;
+      const effectiveAgent = agent ?? this.#database.prepare(
+        "SELECT * FROM agent_profiles WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, request.agent,
+      ) as unknown as AgentRow;
+      const effectiveWorkspace = workspace ?? this.#database.prepare(
+        "SELECT * FROM workspaces WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, request.workspace,
+      ) as unknown as WorkspaceRow;
       const budget = normalizeBudget({
         ...JSON.parse(effectiveAgent.default_budget_json) as Partial<RunBudget>,
         ...(request.budget ?? {}),
       });
       const sessionId = request.session ?? `ses_${id.slice(4)}`;
-      const session = this.#database.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId) as
+      const session = this.#database.prepare(
+        "SELECT * FROM sessions WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, sessionId,
+      ) as
         | SessionRow
         | undefined;
       if (session) {
-        if (
-          session.app_id !== request.principal.appId ||
-          session.tenant_id !== request.principal.tenantId ||
-          session.user_id !== request.principal.userId ||
-          session.agent_id !== request.agent
-        ) {
+        if (session.agent_internal_id !== effectiveAgent.internal_id) {
           throw new Error("Session does not belong to the requesting principal and agent");
         }
       } else {
         this.#database
           .prepare(
-            `INSERT INTO sessions(id, app_id, tenant_id, user_id, agent_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO sessions(internal_id, id, app_id, tenant_id, user_id, agent_id, agent_internal_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
+            internalId("ses"),
             sessionId,
             request.principal.appId,
             request.principal.tenantId,
             request.principal.userId,
             request.agent,
+            effectiveAgent.internal_id,
             now,
             now,
           );
       }
+      const effectiveSession = session ?? this.#database.prepare(
+        "SELECT * FROM sessions WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+      ).get(
+        request.principal.appId, request.principal.tenantId, request.principal.userId, sessionId,
+      ) as unknown as SessionRow;
       this.#database
         .prepare(
           `INSERT INTO runs (
             id, idempotency_key, request_fingerprint, app_id, tenant_id, user_id, agent_id,
-            workspace_id, session_id, parent_run_id, depth, delivery_allowed, input, budget_json, status, last_sequence,
+            workspace_id, session_id, agent_internal_id, workspace_internal_id, session_internal_id,
+            parent_run_id, depth, delivery_allowed, input, budget_json, status, last_sequence,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
         )
         .run(
           id,
@@ -546,6 +736,9 @@ export class SqliteRunStore implements RunStore {
           request.agent,
           request.workspace,
           sessionId,
+          effectiveAgent.internal_id,
+          effectiveWorkspace.internal_id,
+          effectiveSession.internal_id,
           request.parentRunId ?? null,
           request.depth ?? 0,
           request.deliveryAllowed === false ? 0 : 1,
@@ -562,10 +755,10 @@ export class SqliteRunStore implements RunStore {
         .run(id, JSON.stringify({ status: "ACCEPTED" }), now);
       this.#database
         .prepare(
-          `INSERT INTO session_messages(id, session_id, run_id, role, content, metadata_json, created_at)
+          `INSERT INTO session_messages(id, session_internal_id, run_id, role, content, metadata_json, created_at)
            VALUES (?, ?, ?, 'user', ?, '{}', ?)`,
         )
-        .run(`msg_${id.slice(4)}_user`, sessionId, id, request.input, now);
+        .run(`msg_${id.slice(4)}_user`, effectiveSession.internal_id, id, request.input, now);
       const row = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(id) as unknown as RunRow;
       this.#database.exec("COMMIT");
       return { run: toRunRecord(row), created: true };
@@ -654,8 +847,10 @@ export class SqliteRunStore implements RunStore {
     return rows.map(toRunRecord);
   }
 
-  getSession(id: string): SessionRecord | undefined {
-    const row = this.#database.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as
+  getSession(id: string, owner: ResourceOwner): SessionRecord | undefined {
+    const row = this.#database.prepare(
+      "SELECT * FROM sessions WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+    ).get(owner.appId, owner.tenantId, owner.userId, id) as
       | SessionRow
       | undefined;
     return row ? toSession(row) : undefined;
@@ -664,37 +859,46 @@ export class SqliteRunStore implements RunStore {
   appendSessionMessage(params: {
     id: string;
     sessionId: string;
-    runId?: string;
+    runId: string;
     role: SessionMessageRole;
     content: string;
     metadata?: Record<string, unknown>;
   }): SessionMessageRecord {
     const createdAt = new Date().toISOString();
+    const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as RunRow | undefined;
+    if (!run || !run.session_internal_id || run.session_id !== params.sessionId) {
+      throw new Error("Session message does not belong to the supplied run");
+    }
     this.#database
       .prepare(
-        `INSERT INTO session_messages(id, session_id, run_id, role, content, metadata_json, created_at)
+        `INSERT INTO session_messages(id, session_internal_id, run_id, role, content, metadata_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         params.id,
-        params.sessionId,
-        params.runId ?? null,
+        run.session_internal_id,
+        params.runId,
         params.role,
         params.content,
         JSON.stringify(params.metadata ?? {}),
         createdAt,
       );
-    const row = this.#database.prepare("SELECT * FROM session_messages WHERE id = ?").get(params.id) as unknown as MessageRow;
+    const row = this.#database.prepare(
+      `SELECT m.*, s.id AS session_id FROM session_messages m
+       JOIN sessions s ON s.internal_id = m.session_internal_id WHERE m.id = ?`,
+    ).get(params.id) as unknown as MessageRow;
     return toMessage(row);
   }
 
-  listSessionMessages(sessionId: string, limit = 1_000): SessionMessageRecord[] {
+  listSessionMessages(sessionId: string, owner: ResourceOwner, limit = 1_000): SessionMessageRecord[] {
     const rows = this.#database
       .prepare(
-        `SELECT * FROM session_messages WHERE session_id = ?
-         ORDER BY created_at ASC, id ASC LIMIT ?`,
+        `SELECT m.*, s.id AS session_id FROM session_messages m
+         JOIN sessions s ON s.internal_id = m.session_internal_id
+         WHERE s.app_id = ? AND s.tenant_id = ? AND s.user_id = ? AND s.id = ?
+         ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
       )
-      .all(sessionId, limit) as unknown as MessageRow[];
+      .all(owner.appId, owner.tenantId, owner.userId, sessionId, limit) as unknown as MessageRow[];
     return rows.map(toMessage);
   }
 
@@ -707,9 +911,13 @@ export class SqliteRunStore implements RunStore {
     const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
     this.#database.exec("BEGIN IMMEDIATE");
     try {
+      const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRow | undefined;
+      if (!run?.workspace_internal_id || run.workspace_id !== workspaceId) {
+        throw new Error("Workspace lease does not belong to the supplied run");
+      }
       const row = this.#database
-        .prepare("SELECT * FROM workspace_leases WHERE workspace_id = ?")
-        .get(workspaceId) as LeaseRow | undefined;
+        .prepare("SELECT workspace_internal_id AS workspace_id, owner_run_id, fencing_token, expires_at FROM workspace_leases WHERE workspace_internal_id = ?")
+        .get(run.workspace_internal_id) as LeaseRow | undefined;
       if (row?.owner_run_id && row.owner_run_id !== runId && row.expires_at && row.expires_at > now.toISOString()) {
         this.#database.exec("COMMIT");
         return undefined;
@@ -717,15 +925,15 @@ export class SqliteRunStore implements RunStore {
       const token = row?.owner_run_id === runId ? row.fencing_token : (row?.fencing_token ?? 0) + 1;
       this.#database
         .prepare(
-          `INSERT INTO workspace_leases(workspace_id, owner_run_id, fencing_token, expires_at, updated_at)
+          `INSERT INTO workspace_leases(workspace_internal_id, owner_run_id, fencing_token, expires_at, updated_at)
            VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(workspace_id) DO UPDATE SET
+           ON CONFLICT(workspace_internal_id) DO UPDATE SET
              owner_run_id = excluded.owner_run_id,
              fencing_token = excluded.fencing_token,
              expires_at = excluded.expires_at,
              updated_at = excluded.updated_at`,
         )
-        .run(workspaceId, runId, token, expiresAt, now.toISOString());
+        .run(run.workspace_internal_id, runId, token, expiresAt, now.toISOString());
       this.#database.exec("COMMIT");
       return { workspaceId, ownerRunId: runId, fencingToken: token, expiresAt };
     } catch (error) {
@@ -736,8 +944,10 @@ export class SqliteRunStore implements RunStore {
 
   validateWorkspaceLease(lease: WorkspaceLease): boolean {
     const row = this.#database
-      .prepare("SELECT * FROM workspace_leases WHERE workspace_id = ?")
-      .get(lease.workspaceId) as LeaseRow | undefined;
+      .prepare(`SELECT l.workspace_internal_id AS workspace_id, l.owner_run_id, l.fencing_token, l.expires_at
+        FROM workspace_leases l JOIN runs r ON r.workspace_internal_id = l.workspace_internal_id
+        WHERE r.id = ? AND r.workspace_id = ?`)
+      .get(lease.ownerRunId, lease.workspaceId) as LeaseRow | undefined;
     return Boolean(
       row &&
         row.owner_run_id === lease.ownerRunId &&
@@ -751,9 +961,10 @@ export class SqliteRunStore implements RunStore {
     const result = this.#database
       .prepare(
         `UPDATE workspace_leases SET owner_run_id = NULL, expires_at = NULL, updated_at = ?
-         WHERE workspace_id = ? AND owner_run_id = ? AND fencing_token = ?`,
+         WHERE workspace_internal_id = (SELECT workspace_internal_id FROM runs WHERE id = ? AND workspace_id = ?)
+           AND owner_run_id = ? AND fencing_token = ?`,
       )
-      .run(new Date().toISOString(), lease.workspaceId, lease.ownerRunId, lease.fencingToken);
+      .run(new Date().toISOString(), lease.ownerRunId, lease.workspaceId, lease.ownerRunId, lease.fencingToken);
     return result.changes === 1;
   }
 
@@ -783,19 +994,21 @@ export class SqliteRunStore implements RunStore {
 
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord {
     this.#database.prepare(
-      `INSERT INTO agent_profiles(id, version, app_id, tenant_id, user_id, name, instructions,
+      `INSERT INTO agent_profiles(internal_id, id, version, app_id, tenant_id, user_id, name, instructions,
         model_capabilities_json, allowed_tools_json, default_budget_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      record.id, record.version, record.appId, record.tenantId, record.userId, record.name,
+      internalId("agt"), record.id, record.version, record.appId, record.tenantId, record.userId, record.name,
       record.instructions, JSON.stringify(record.modelCapabilities), JSON.stringify(record.allowedTools),
       JSON.stringify(normalizeBudget(record.defaultBudget)), record.createdAt,
     );
-    return this.getAgentProfile(record.id) as AgentProfileRecord;
+    return this.getAgentProfile(record.id, record) as AgentProfileRecord;
   }
 
-  getAgentProfile(id: string): AgentProfileRecord | undefined {
-    const row = this.#database.prepare("SELECT * FROM agent_profiles WHERE id = ?").get(id) as AgentRow | undefined;
+  getAgentProfile(id: string, owner: ResourceOwner): AgentProfileRecord | undefined {
+    const row = this.#database.prepare(
+      "SELECT * FROM agent_profiles WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+    ).get(owner.appId, owner.tenantId, owner.userId, id) as AgentRow | undefined;
     return row ? toAgentProfile(row) : undefined;
   }
 
@@ -807,17 +1020,19 @@ export class SqliteRunStore implements RunStore {
 
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord {
     this.#database.prepare(
-      `INSERT INTO workspaces(id, app_id, tenant_id, user_id, mode, state, registered_path, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workspaces(internal_id, id, app_id, tenant_id, user_id, mode, state, registered_path, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      record.id, record.appId, record.tenantId, record.userId, record.mode, record.state,
+      internalId("wsp"), record.id, record.appId, record.tenantId, record.userId, record.mode, record.state,
       record.registeredPath ?? null, record.createdAt, record.updatedAt,
     );
-    return this.getWorkspace(record.id) as WorkspaceRecord;
+    return this.getWorkspace(record.id, record) as WorkspaceRecord;
   }
 
-  getWorkspace(id: string): WorkspaceRecord | undefined {
-    const row = this.#database.prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as WorkspaceRow | undefined;
+  getWorkspace(id: string, owner: ResourceOwner): WorkspaceRecord | undefined {
+    const row = this.#database.prepare(
+      "SELECT * FROM workspaces WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?",
+    ).get(owner.appId, owner.tenantId, owner.userId, id) as WorkspaceRow | undefined;
     return row ? toWorkspace(row) : undefined;
   }
 

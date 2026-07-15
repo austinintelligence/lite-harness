@@ -98,14 +98,18 @@ export class ManagerClient {
     )).runs;
   }
 
-  getSession(sessionId: string): Promise<SessionRecord> {
-    return this.#request<SessionRecord>("GET", `/internal/sessions/${encodeURIComponent(sessionId)}`);
+  getSession(sessionId: string, principal: InternalPrincipal): Promise<SessionRecord> {
+    return this.#request<SessionRecord>(
+      "GET", `/internal/sessions/${encodeURIComponent(sessionId)}`, undefined, principalHeaders(principal),
+    );
   }
 
-  async getSessionMessages(sessionId: string): Promise<SessionMessageRecord[]> {
+  async getSessionMessages(sessionId: string, principal: InternalPrincipal): Promise<SessionMessageRecord[]> {
     const result = await this.#request<{ messages: SessionMessageRecord[] }>(
       "GET",
       `/internal/sessions/${encodeURIComponent(sessionId)}/messages`,
+      undefined,
+      principalHeaders(principal),
     );
     return result.messages;
   }

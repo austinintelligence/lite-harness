@@ -286,8 +286,9 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
   return new DockerToolRuntime({
     image,
     workspaceQuotaBytes: Number.parseInt(process.env.LITE_HARNESS_WORKSPACE_QUOTA_BYTES ?? String(1024 * 1024 * 1024), 10),
-    resolveRegisteredWorkspace: (workspaceId) => {
-      const workspace = runStore.getWorkspace(workspaceId);
+    resolveRegisteredWorkspace: (workspaceId, principal) => {
+      if (!principal) return undefined;
+      const workspace = runStore.getWorkspace(workspaceId, principal);
       return workspace?.mode === "registered-bind" ? workspace.registeredPath : undefined;
     },
   });

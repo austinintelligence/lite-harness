@@ -127,12 +127,12 @@ describe("Gateway to Manager vertical slice", () => {
       getEvents: (runId, after, waitMs) => service.waitForEvents(runId, after, waitMs),
       getRunAttempts: async (runId) => service.listRunAttempts(runId),
       getChildRuns: async (runId) => service.listChildRuns(runId),
-      getSession: async (sessionId) => {
-        const session = service.getSession(sessionId);
+      getSession: async (sessionId, principal) => {
+        const session = service.getSession(sessionId, principal);
         if (!session) throw new Error("Session not found");
         return session;
       },
-      getSessionMessages: async (sessionId) => service.listSessionMessages(sessionId),
+      getSessionMessages: async (sessionId, principal) => service.listSessionMessages(sessionId, principal),
       publishArtifact: async (runId, request, principal) => {
         const run = service.getRun(runId);
         if (!run) throw new Error("Run not found");
@@ -167,8 +167,8 @@ describe("Gateway to Manager vertical slice", () => {
         },
         createdAt: new Date().toISOString(),
       }),
-      getAgent: async (agentId) => {
-        const agent = service.getAgentProfile(agentId);
+      getAgent: async (agentId, principal) => {
+        const agent = service.getAgentProfile(agentId, principal);
         if (!agent) throw new Error("Agent not found");
         return agent;
       },
@@ -180,8 +180,8 @@ describe("Gateway to Manager vertical slice", () => {
           userId: principal.userId, mode: "managed", state: "WARM", createdAt: now, updatedAt: now,
         });
       },
-      getWorkspace: async (workspaceId) => {
-        const workspace = service.getWorkspace(workspaceId);
+      getWorkspace: async (workspaceId, principal) => {
+        const workspace = service.getWorkspace(workspaceId, principal);
         if (!workspace) throw new Error("Workspace not found");
         return workspace;
       },
@@ -232,7 +232,9 @@ describe("Gateway to Manager vertical slice", () => {
     const firstBody = first.json<{ runId: string; idempotentReplay: boolean }>();
     const terminal = await service.waitForTerminal(firstBody.runId);
     expect(terminal.status).toBe("SUCCEEDED");
-    expect(runtime.readFile("workspace-a", "hello.txt")).toContain("first vertical slice");
+    expect(runtime.readFile("workspace-a", "hello.txt", {
+      appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [],
+    })).toContain("first vertical slice");
     expect((await managerTransport.getRunAttempts(firstBody.runId))).toMatchObject([
       { attempt: 1, status: "SUCCEEDED" },
     ]);

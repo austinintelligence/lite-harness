@@ -56,8 +56,9 @@ export class InMemoryToolRuntime implements ToolRuntime {
 
   async execute(params: ToolExecutionContext): Promise<ToolResult> {
     params.signal?.throwIfAborted();
-    const files = this.#workspaces.get(params.workspaceId) ?? new Map<string, string>();
-    this.#workspaces.set(params.workspaceId, files);
+    const identity = workspaceIdentity(params.workspaceId, params.principal);
+    const files = this.#workspaces.get(identity) ?? new Map<string, string>();
+    this.#workspaces.set(identity, files);
 
     if (params.call.name === "write_file") {
       const path = requireString(params.call.arguments.path, "path");
@@ -88,9 +89,15 @@ export class InMemoryToolRuntime implements ToolRuntime {
     };
   }
 
-  readFile(workspaceId: string, path: string): string | undefined {
-    return this.#workspaces.get(workspaceId)?.get(path);
+  readFile(workspaceId: string, path: string, principal?: InternalPrincipal): string | undefined {
+    return this.#workspaces.get(workspaceIdentity(workspaceId, principal))?.get(path);
   }
+}
+
+function workspaceIdentity(workspaceId: string, principal?: InternalPrincipal): string {
+  return principal
+    ? `${principal.appId.length}:${principal.appId}:${principal.tenantId.length}:${principal.tenantId}:${principal.userId.length}:${principal.userId}:${workspaceId}`
+    : workspaceId;
 }
 
 export interface ArtifactPublisher {

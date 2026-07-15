@@ -81,8 +81,14 @@ if (command === "doctor") {
 } else if (command === "workspace" && ["snapshot", "restore", "delete"].includes(subcommand ?? "")) {
   if (!argument) throw new Error("A workspace id is required");
   const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
+  const principal = {
+    appId: requiredEnvironment("LITE_HARNESS_APP_ID"),
+    tenantId: requiredEnvironment("LITE_HARNESS_TENANT_ID"),
+    userId: requiredEnvironment("LITE_HARNESS_USER_ID"),
+    scopes: [],
+  };
   if (subcommand === "delete") {
-    const removed = await runtime.removeWorkspace(argument);
+    const removed = await runtime.removeWorkspace(argument, principal);
     process.stdout.write(`${JSON.stringify({ workspaceId: argument, removed })}\n`);
   } else {
     const snapshots = new LocalWorkspaceSnapshotStore(
@@ -90,11 +96,11 @@ if (command === "doctor") {
       new StaticSnapshotKeyProvider(await snapshotKey()),
     );
     if (subcommand === "snapshot") {
-      const record = await snapshots.create(argument, await runtime.exportWorkspace(argument));
+      const record = await snapshots.create(argument, await runtime.exportWorkspace(argument, principal));
       process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
     } else {
       const restored = await snapshots.restore(argument);
-      await runtime.importWorkspace(argument, restored.archive);
+      await runtime.importWorkspace(argument, restored.archive, principal);
       process.stdout.write(`${JSON.stringify({ workspaceId: argument, recoveredFromPrevious: restored.recoveredFromPrevious })}\n`);
     }
   }

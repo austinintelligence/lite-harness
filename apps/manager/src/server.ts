@@ -200,7 +200,10 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId",
     async (request, reply) => {
-      const session = options.runService.getSession(request.params.sessionId);
+      const session = options.runService.getSession(
+        request.params.sessionId,
+        principalFromInternalHeaders(request.headers),
+      );
       return session
         ? reply.send(session)
         : reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
@@ -272,8 +275,11 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   }));
 
   app.get<{ Params: { agentId: string } }>("/internal/agents/:agentId", async (request, reply) => {
-    const agent = options.runService.getAgentProfile(request.params.agentId);
-    return agent && samePrincipal(agent, principalFromInternalHeaders(request.headers))
+    const agent = options.runService.getAgentProfile(
+      request.params.agentId,
+      principalFromInternalHeaders(request.headers),
+    );
+    return agent
       ? agent
       : reply.code(404).send({ error: { code: "not_found", message: "Agent not found" } });
   });
@@ -301,8 +307,11 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   }));
 
   app.get<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId", async (request, reply) => {
-    const workspace = options.runService.getWorkspace(request.params.workspaceId);
-    return workspace && samePrincipal(workspace, principalFromInternalHeaders(request.headers))
+    const workspace = options.runService.getWorkspace(
+      request.params.workspaceId,
+      principalFromInternalHeaders(request.headers),
+    );
+    return workspace
       ? workspace
       : reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } });
   });
@@ -310,9 +319,10 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId/messages",
     async (request, reply) => {
-      const session = options.runService.getSession(request.params.sessionId);
+      const principal = principalFromInternalHeaders(request.headers);
+      const session = options.runService.getSession(request.params.sessionId, principal);
       return session
-        ? reply.send({ messages: options.runService.listSessionMessages(request.params.sessionId) })
+        ? reply.send({ messages: options.runService.listSessionMessages(request.params.sessionId, principal) })
         : reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
     },
   );

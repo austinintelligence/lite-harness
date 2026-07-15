@@ -27,6 +27,12 @@ export interface AppendRunEvent {
   errorMessage?: string;
 }
 
+export interface ResourceOwner {
+  appId: string;
+  tenantId: string;
+  userId: string;
+}
+
 export interface RunStore {
   createOrGetRun(
     id: string,
@@ -37,16 +43,16 @@ export interface RunStore {
   appendEvent(params: AppendRunEvent): RunEvent;
   listEvents(runId: string, after?: number, limit?: number): RunEvent[];
   listNonTerminalRuns(): RunRecord[];
-  getSession(id: string): SessionRecord | undefined;
+  getSession(id: string, owner: ResourceOwner): SessionRecord | undefined;
   appendSessionMessage(params: {
     id: string;
     sessionId: string;
-    runId?: string;
+    runId: string;
     role: SessionMessageRole;
     content: string;
     metadata?: Record<string, unknown>;
   }): SessionMessageRecord;
-  listSessionMessages(sessionId: string, limit?: number): SessionMessageRecord[];
+  listSessionMessages(sessionId: string, owner: ResourceOwner, limit?: number): SessionMessageRecord[];
   acquireWorkspaceLease(workspaceId: string, runId: string, ttlMs: number): WorkspaceLease | undefined;
   validateWorkspaceLease(lease: WorkspaceLease): boolean;
   releaseWorkspaceLease(lease: WorkspaceLease): boolean;
@@ -54,11 +60,11 @@ export interface RunStore {
   getApproval(id: string): ApprovalRecord | undefined;
   resolveApproval(id: string, status: Exclude<ApprovalStatus, "PENDING">): ApprovalRecord | undefined;
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord;
-  getAgentProfile(id: string): AgentProfileRecord | undefined;
-  listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[];
+  getAgentProfile(id: string, owner: ResourceOwner): AgentProfileRecord | undefined;
+  listAgentProfiles(principal: ResourceOwner): AgentProfileRecord[];
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord;
-  getWorkspace(id: string): WorkspaceRecord | undefined;
-  listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[];
+  getWorkspace(id: string, owner: ResourceOwner): WorkspaceRecord | undefined;
+  listWorkspaces(principal: ResourceOwner): WorkspaceRecord[];
   createRunAttempt(runId: string, id: string): RunAttemptRecord;
   completeRunAttempt(id: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): RunAttemptRecord;
   completeRunningAttempts(runId: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): number;

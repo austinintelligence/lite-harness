@@ -129,8 +129,8 @@ export class RunService {
     return this.store.createAgentProfile(record);
   }
 
-  getAgentProfile(agentId: string): AgentProfileRecord | undefined {
-    return this.store.getAgentProfile(agentId);
+  getAgentProfile(agentId: string, owner: { appId: string; tenantId: string; userId: string }): AgentProfileRecord | undefined {
+    return this.store.getAgentProfile(agentId, owner);
   }
 
   listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[] {
@@ -141,20 +141,20 @@ export class RunService {
     return this.store.createWorkspace(record);
   }
 
-  getWorkspace(workspaceId: string): WorkspaceRecord | undefined {
-    return this.store.getWorkspace(workspaceId);
+  getWorkspace(workspaceId: string, owner: { appId: string; tenantId: string; userId: string }): WorkspaceRecord | undefined {
+    return this.store.getWorkspace(workspaceId, owner);
   }
 
   listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[] {
     return this.store.listWorkspaces(principal);
   }
 
-  getSession(sessionId: string): SessionRecord | undefined {
-    return this.store.getSession(sessionId);
+  getSession(sessionId: string, owner: { appId: string; tenantId: string; userId: string }): SessionRecord | undefined {
+    return this.store.getSession(sessionId, owner);
   }
 
-  listSessionMessages(sessionId: string): SessionMessageRecord[] {
-    return this.store.listSessionMessages(sessionId);
+  listSessionMessages(sessionId: string, owner: { appId: string; tenantId: string; userId: string }): SessionMessageRecord[] {
+    return this.store.listSessionMessages(sessionId, owner);
   }
 
   steerRun(runId: string, instruction: string): RunRecord {
@@ -318,9 +318,9 @@ export class RunService {
       if (!this.#transitionIfActive(runId, "RUNNING", "run.started")) return;
 
       const history = run.sessionId
-        ? this.store.listSessionMessages(run.sessionId).map(toModelMessage)
+        ? this.store.listSessionMessages(run.sessionId, run).map(toModelMessage)
         : undefined;
-      const profile = this.store.getAgentProfile(run.agentId);
+      const profile = this.store.getAgentProfile(run.agentId, run);
       if (!profile) throw new Error(`Agent profile is unavailable: ${run.agentId}`);
 
       await this.agent.run({
@@ -436,7 +436,7 @@ export class RunService {
   }
 
   async #authorizeTool(run: RunRecord, call: ToolCall, signal: AbortSignal): Promise<void> {
-    const profile = this.store.getAgentProfile(run.agentId);
+    const profile = this.store.getAgentProfile(run.agentId, run);
     if (!profile || !profile.allowedTools.includes(call.name)) {
       throw new Error(`Tool is not allowed by agent policy: ${call.name}`);
     }

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
+import type { InternalPrincipal, ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
 import type { ToolExecutionContext, ToolRuntime } from "@lite-harness/runtime";
 import { validateWorkspacePath, WORKSPACE_TOOL_DEFINITIONS } from "@lite-harness/runtime";
 
@@ -15,7 +15,7 @@ export interface DockerRuntimeConfig {
   maxOutputBytes?: number;
   workspaceQuotaBytes?: number;
   /** Trusted Manager-owned lookup. Arbitrary run input never becomes a bind source. */
-  resolveRegisteredWorkspace?: (workspaceId: string) => string | undefined;
+  resolveRegisteredWorkspace?: (workspaceId: string, principal?: InternalPrincipal) => string | undefined;
 }
 
 export interface DockerDoctorResult {
@@ -70,7 +70,7 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async execute(params: ToolExecutionContext): Promise<ToolResult> {
     params.signal?.throwIfAborted();
-    const mount = await this.#workspaceMount(params.workspaceId, params.signal);
+    const mount = await this.#workspaceMount(params.workspaceId, params.signal, params.principal);
 
     if (params.call.name === "write_file") {
       const path = stringArgument(params.call, "path");
@@ -112,8 +112,8 @@ export class DockerToolRuntime implements ToolRuntime {
     return { callId: params.call.id, ok: false, content: `Unsupported tool: ${params.call.name}` };
   }
 
-  async exportWorkspace(workspaceId: string, signal?: AbortSignal): Promise<Buffer> {
-    const mount = await this.#workspaceMount(workspaceId, signal);
+  async exportWorkspace(workspaceId: string, principal?: InternalPrincipal, signal?: AbortSignal): Promise<Buffer> {
+    const mount = await this.#workspaceMount(workspaceId, signal, principal);
     const result = await runCommandBytes(
       this.#docker,
       [
@@ -129,9 +129,9 @@ export class DockerToolRuntime implements ToolRuntime {
     return result.stdout;
   }
 
-  async importWorkspace(workspaceId: string, archive: Buffer, signal?: AbortSignal): Promise<void> {
-    if (this.#registeredPath(workspaceId)) throw new Error("Registered bind workspaces cannot be replaced by snapshot restore");
-    const target = volumeName(workspaceId);
+  async importWorkspace(workspaceId: string, archive: Buffer, principal?: InternalPrincipal, signal?: AbortSignal): Promise<void> {
+    if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be replaced by snapshot restore");
+    const target = volumeName(workspaceIdentity(workspaceId, principal));
     await this.#ensureVolume(target, signal);
     const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
     const staging = `${target}-staging-${suffix}`;
@@ -164,9 +164,9 @@ export class DockerToolRuntime implements ToolRuntime {
     }
   }
 
-  async removeWorkspace(workspaceId: string): Promise<boolean> {
-    if (this.#registeredPath(workspaceId)) throw new Error("Registered bind workspaces cannot be deleted by Lite-Harness");
-    const volume = volumeName(workspaceId);
+  async removeWorkspace(workspaceId: string, principal?: InternalPrincipal): Promise<boolean> {
+    if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be deleted by Lite-Harness");
+    const volume = volumeName(workspaceIdentity(workspaceId, principal));
     const result = await runCommand(this.#docker, ["volume", "rm", volume], undefined, undefined);
     this.#readyVolumes.delete(volume);
     return result.code === 0;
@@ -249,10 +249,10 @@ export class DockerToolRuntime implements ToolRuntime {
     if (result.code !== 0) throw new Error(`Could not replace workspace volume: ${result.stderr}`);
   }
 
-  async #workspaceMount(workspaceId: string, signal?: AbortSignal): Promise<WorkspaceMount> {
-    const registered = this.#registeredPath(workspaceId);
+  async #workspaceMount(workspaceId: string, signal?: AbortSignal, principal?: InternalPrincipal): Promise<WorkspaceMount> {
+    const registered = this.#registeredPath(workspaceId, principal);
     if (registered) return { kind: "bind", source: registered };
-    const volume = volumeName(workspaceId);
+    const volume = volumeName(workspaceIdentity(workspaceId, principal));
     await this.#ensureVolume(volume, signal);
     return { kind: "volume", source: volume };
   }
@@ -270,8 +270,8 @@ export class DockerToolRuntime implements ToolRuntime {
     return { totalBytes: kilobytes * 1024, existingBytes };
   }
 
-  #registeredPath(workspaceId: string): string | undefined {
-    const configured = this.config.resolveRegisteredWorkspace?.(workspaceId);
+  #registeredPath(workspaceId: string, principal?: InternalPrincipal): string | undefined {
+    const configured = this.config.resolveRegisteredWorkspace?.(workspaceId, principal);
     if (!configured) return undefined;
     if (!isAbsolute(configured)) throw new Error(`Registered workspace path must be absolute: ${workspaceId}`);
     const path = realpathSync(configured);
@@ -440,8 +440,14 @@ function volumeName(workspaceId: string): string {
   return `lite-harness-ws-${digest}`;
 }
 
-export function dockerWorkspaceVolumeName(workspaceId: string): string {
-  return volumeName(workspaceId);
+function workspaceIdentity(workspaceId: string, principal?: InternalPrincipal): string {
+  return principal
+    ? `${principal.appId.length}:${principal.appId}:${principal.tenantId.length}:${principal.tenantId}:${principal.userId.length}:${principal.userId}:${workspaceId}`
+    : workspaceId;
+}
+
+export function dockerWorkspaceVolumeName(workspaceId: string, principal?: InternalPrincipal): string {
+  return volumeName(workspaceIdentity(workspaceId, principal));
 }
 
 function commandResult(

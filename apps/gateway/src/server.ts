@@ -44,8 +44,8 @@ export interface ManagerTransport {
   getEvents(runId: string, after: number, waitMs: number): Promise<RunEvent[]>;
   getRunAttempts(runId: string): Promise<RunAttemptRecord[]>;
   getChildRuns(runId: string): Promise<RunRecord[]>;
-  getSession(sessionId: string): Promise<SessionRecord>;
-  getSessionMessages(sessionId: string): Promise<SessionMessageRecord[]>;
+  getSession(sessionId: string, principal: InternalPrincipal): Promise<SessionRecord>;
+  getSessionMessages(sessionId: string, principal: InternalPrincipal): Promise<SessionMessageRecord[]>;
   publishArtifact(runId: string, request: PublishArtifactRequest, principal: InternalPrincipal): Promise<ArtifactRecord>;
   getArtifact(artifactId: string, principal: InternalPrincipal): Promise<ArtifactPayloadResponse>;
   createAgent(request: CreateAgentProfileRequest, principal: InternalPrincipal): Promise<AgentProfileRecord>;
@@ -383,10 +383,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     "/v1/sessions/:sessionId",
     async (request, reply) => {
       try {
-        const session = await options.manager.getSession(request.params.sessionId);
-        return ownsRun(session, principalFromRequest(request))
-          ? session
-          : reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
+        return await options.manager.getSession(request.params.sessionId, principalFromRequest(request));
       } catch {
         return reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
       }
@@ -461,11 +458,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     "/v1/sessions/:sessionId/messages",
     async (request, reply) => {
       try {
-        const session = await options.manager.getSession(request.params.sessionId);
-        if (!ownsRun(session, principalFromRequest(request))) {
-          return reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
-        }
-        return { messages: await options.manager.getSessionMessages(request.params.sessionId) };
+        const principal = principalFromRequest(request);
+        await options.manager.getSession(request.params.sessionId, principal);
+        return { messages: await options.manager.getSessionMessages(request.params.sessionId, principal) };
       } catch {
         return reply.code(404).send({ error: { code: "not_found", message: "Session not found" } });
       }

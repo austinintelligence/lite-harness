@@ -54,9 +54,10 @@ describe("ordered SQLite migrations", () => {
     const migrated = new DatabaseSync(path, { readOnly: true });
     const versions = migrated.prepare("SELECT version FROM schema_migrations ORDER BY version").all()
       .map((row) => (row as { version: number }).version);
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6]);
-    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(6);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(7);
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM runs").get()).toEqual({ count: 1 });
+    expect(migrated.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     migrated.close();
   });
 

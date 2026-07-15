@@ -63,33 +63,38 @@ describe("SqliteRunStore", () => {
     expect(store.getRun("run-first")).toMatchObject({ status: "QUEUED", lastSequence: 2 });
   });
 
-  it("persists implicit sessions and rejects cross-owner session reuse", () => {
+  it("persists implicit sessions and scopes an explicit session slug by owner", () => {
     const store = new SqliteRunStore(":memory:");
     stores.push(store);
     const created = store.createOrGetRun("run-first", request());
     expect(created.run.sessionId).toBe("ses_first");
-    expect(store.getSession("ses_first")).toMatchObject({
+    expect(store.getSession("ses_first", request().principal)).toMatchObject({
       tenantId: "tenant-1",
       userId: "user-1",
       agentId: "coder",
     });
-    expect(store.listSessionMessages("ses_first")).toMatchObject([
+    expect(store.listSessionMessages("ses_first", request().principal)).toMatchObject([
       { role: "user", content: "Create a file", runId: "run-first" },
     ]);
 
-    expect(() =>
-      store.createOrGetRun("run-second", {
-        ...request("second"),
-        idempotencyKey: "request-2",
-        session: "ses_first",
-        principal: { ...request().principal, tenantId: "tenant-other" },
-      }),
-    ).toThrow(/does not belong/);
+    const other = { ...request().principal, tenantId: "tenant-other" };
+    store.createOrGetRun("run-second", {
+      ...request("second"),
+      idempotencyKey: "request-2",
+      session: "ses_first",
+      principal: other,
+    });
+    expect(store.listSessionMessages("ses_first", other)).toMatchObject([{ content: "second" }]);
+    expect(store.listSessionMessages("ses_first", request().principal)).toMatchObject([{ content: "Create a file" }]);
   });
 
   it("uses monotonically increasing fencing tokens to reject stale workspace writers", () => {
     const store = new SqliteRunStore(":memory:");
     stores.push(store);
+    store.createOrGetRun("run-first", request());
+    store.createOrGetRun("run-second", {
+      ...request("second"), idempotencyKey: "request-2",
+    });
     const first = store.acquireWorkspaceLease("workspace-1", "run-first", 10_000);
     expect(first).toMatchObject({ ownerRunId: "run-first", fencingToken: 1 });
     expect(store.acquireWorkspaceLease("workspace-1", "run-second", 10_000)).toBeUndefined();

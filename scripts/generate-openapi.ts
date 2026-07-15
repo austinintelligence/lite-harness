@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { discoverPublicRoutes } from "./openapi-route-discovery";
 import {
   AgentListResponseSchema,
   AgentModelCapabilitySchema,
@@ -236,18 +237,11 @@ document.paths["/readyz"].get.responses["503"] = {
 };
 
 const gateway = readFileSync(resolve(root, "apps", "gateway", "src", "server.ts"), "utf8");
-const publicPathLiterals = new Set(
-  [...gateway.matchAll(/["`](\/(?:healthz|readyz|hooks|v1)[^"`]*)["`]/g)]
-    .map((match) => String(match[1]).replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}"))
-    .filter((route) => !route.includes("${") && route !== "/hooks/" && route !== "/v1/"),
-);
+const routeInventory = discoverPublicRoutes(gateway, "apps/gateway/src/server.ts");
+const publicPathLiterals = routeInventory.routes;
 const uncontractedPaths = [...publicPathLiterals].filter((route) => !Object.keys(routeContracts).some((operation) => operation.endsWith(` ${route}`)));
 if (uncontractedPaths.length) throw new Error(`OpenAPI has public Gateway paths without contracts: ${uncontractedPaths.join(", ")}`);
-const publicOperations = new Set(
-  [...gateway.matchAll(/\bapp\.(get|post|put|patch|delete)(?:<[\s\S]*?>)?\s*\(\s*["`](\/(?:healthz|readyz|hooks|v1)[^"`]*)["`]/g)]
-    .map((match) => `${String(match[1]).toUpperCase()} ${String(match[2]).replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}")}`)
-    .filter((operation) => !operation.includes("${") && !operation.endsWith(" /hooks/") && !operation.endsWith(" /v1/")),
-);
+const publicOperations = routeInventory.operations;
 const publicRoutes = new Set([...publicOperations].map((operation) => operation.slice(operation.indexOf(" ") + 1)));
 const missing = [...publicRoutes].filter((route) => !(route in document.paths));
 if (missing.length) throw new Error(`OpenAPI is missing public Gateway routes: ${missing.join(", ")}`);

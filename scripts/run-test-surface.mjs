@@ -16,7 +16,7 @@ const surfaces = Object.freeze({
     "test/session-history.test.ts", "test/storage.test.ts", "test/transactional-projections.test.ts",
     "test/workspace.test.ts", "test/runtime.test.ts",
   ],
-  contracts: ["test/internal-boundary-schemas.test.ts", "test/sdk-contracts.test.ts", "test/capabilities.test.ts", "test/config.test.ts"],
+  contracts: ["test/internal-boundary-schemas.test.ts", "test/sdk-contracts.test.ts", "test/openapi-route-discovery.test.ts", "test/capabilities.test.ts", "test/config.test.ts"],
   ipc: ["test/ipc.test.ts", "test/process-rpc-safety.test.ts"],
   sdk: ["test/sdk-contracts.test.ts", "test/sdk-reconnect.test.ts"],
   skills: ["test/skill-lifecycle.test.ts"],

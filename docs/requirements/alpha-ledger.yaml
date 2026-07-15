@@ -2298,14 +2298,19 @@
         "lineStart": 530,
         "lineEnd": 530
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": ["BD-039-REGRESSION"],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [{
+        "path": "evidence/m5/provider-conformance.json",
+        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+      }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0531",
@@ -2320,14 +2325,19 @@
         "lineStart": 531,
         "lineEnd": 531
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": ["BD-039-REGRESSION"],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [{
+        "path": "evidence/m5/provider-conformance.json",
+        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+      }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0532",
@@ -7617,14 +7627,19 @@
         "lineStart": 1242,
         "lineEnd": 1242
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/storage-sqlite/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": ["BD-039-REGRESSION"],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [{
+        "path": "evidence/m5/provider-conformance.json",
+        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+      }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R14-1243",
@@ -7639,14 +7654,19 @@
         "lineStart": 1243,
         "lineEnd": 1243
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": ["BD-039-REGRESSION"],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [{
+        "path": "evidence/m5/provider-conformance.json",
+        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+      }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R14-1244",

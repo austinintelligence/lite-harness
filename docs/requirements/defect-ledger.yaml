@@ -1382,7 +1382,7 @@
         "section": "Known baseline defects / 39",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-039-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1396,14 +1396,17 @@
       },
       "regression": {
         "testId": "BD-039-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/model-routing-persistence.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m5/provider-conformance.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "2a4c733a670aa1b114d54ffee1e01bf18e8fee69",
+        "46e066010ee76a9ca032449c55bf4f44dc91a278"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-040",

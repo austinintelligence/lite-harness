@@ -1,6 +1,6 @@
 import type { InternalPrincipal, RunEventType, ToolCall, ToolResult } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
-import type { ModelEvent, ModelGateway, ModelMessage } from "@lite-harness/provider-core";
+import { ProviderError, type ModelEvent, type ModelGateway, type ModelMessage } from "@lite-harness/provider-core";
 import type { ToolRuntime } from "@lite-harness/runtime";
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
@@ -44,6 +44,7 @@ export class AgentRunner {
     runId?: string;
     attemptId?: string;
     fencingToken?: number;
+    maxCostUsd?: number;
     principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
@@ -87,6 +88,7 @@ export class AgentRunner {
               workspaceId: params.workspaceId,
               principal: params.principal,
               fencingToken: params.fencingToken,
+              ...(params.maxCostUsd !== undefined ? { maxCostUsd: params.maxCostUsd } : {}),
             } }
           : {}),
         ...(params.signal ? { signal: params.signal } : {}),
@@ -109,6 +111,13 @@ export class AgentRunner {
           } else if (event.type === "tool.call") {
             toolCalls.push(event.call);
           } else if (event.type === "usage") {
+            if (params.maxCostUsd !== undefined && event.costUsd === undefined) {
+              throw new ProviderError(
+                "unknown_model_price",
+                "Model usage omitted cost while the run has an enforced cost ceiling",
+                false,
+              );
+            }
             params.onEvent({ type: "usage.updated", payload: event });
           } else {
             finishReason = event.finishReason;
@@ -256,13 +265,13 @@ export class FakeModelGateway implements ModelGateway {
           },
         },
       };
-      yield { type: "usage", inputTokens: 12, outputTokens: 8 };
+      yield { type: "usage", inputTokens: 12, outputTokens: 8, costUsd: 0 };
       yield { type: "completed", finishReason: "tool_calls" };
       return;
     }
 
     yield { type: "text.delta", delta: "Created hello.txt successfully." };
-    yield { type: "usage", inputTokens: 24, outputTokens: 6 };
+    yield { type: "usage", inputTokens: 24, outputTokens: 6, costUsd: 0 };
     yield { type: "completed", finishReason: "stop" };
   }
 }

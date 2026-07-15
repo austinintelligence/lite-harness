@@ -364,10 +364,28 @@ function diskReadiness(path: string): ReadinessDependency {
 async function providerReadiness(provider: string, mode: "development" | "production"): Promise<ReadinessDependency> {
   if (provider === "fake") return mode === "development" ? { ok: true } : { ok: false, reason: "fake-provider-forbidden" };
   if (provider === "codex" || provider === "claude") {
+    if (provider === "codex") {
+      try {
+        const pricing = configuredModelPricing();
+        if (pricing.inputUsdPerMillion === undefined || pricing.outputUsdPerMillion === undefined) {
+          return { ok: false, reason: "model-pricing-missing" };
+        }
+      } catch {
+        return { ok: false, reason: "model-pricing-invalid" };
+      }
+    }
     const command = provider === "codex"
       ? process.env.LITE_HARNESS_CODEX_COMMAND ?? "codex"
       : process.env.LITE_HARNESS_CLAUDE_COMMAND ?? "claude";
     return await executableReadiness(command);
+  }
+  try {
+    const pricing = configuredModelPricing();
+    if (pricing.inputUsdPerMillion === undefined || pricing.outputUsdPerMillion === undefined) {
+      return { ok: false, reason: "model-pricing-missing" };
+    }
+  } catch {
+    return { ok: false, reason: "model-pricing-invalid" };
   }
   const kind = process.env.LITE_HARNESS_CREDENTIAL_STORE ?? "environment";
   if (kind === "environment") return process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()
@@ -458,6 +476,7 @@ function resolveModelGateway(
   if (provider === "codex") {
     return new CodexAppServerGateway({
       workspacePathForRun,
+      ...configuredModelPricing(),
       ...(process.env.LITE_HARNESS_CODEX_COMMAND ? { command: process.env.LITE_HARNESS_CODEX_COMMAND } : {}),
       ...(process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
@@ -468,6 +487,7 @@ function resolveModelGateway(
     const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
     return new ClaudeCodeGateway({
       workspacePathForRun,
+      ...configuredModelPricing(),
       ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
       allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
@@ -492,6 +512,7 @@ function resolveModelGateway(
         credentialProfileId,
         capabilities: ["text", "tools", "json"],
         contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "128000", 10),
+        ...configuredModelPricing(),
         provenance: "operator",
         enabled: true,
       },
@@ -514,6 +535,7 @@ function resolveModelGateway(
         credentialProfileId,
         capabilities: ["text", "tools", "vision"],
         contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "200000", 10),
+        ...configuredModelPricing(),
         provenance: "operator",
         enabled: true,
       },
@@ -557,6 +579,23 @@ function requiredEnvironment(name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function configuredModelPricing(): {
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
+} {
+  const input = process.env.LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION?.trim();
+  const output = process.env.LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION?.trim();
+  if (!input && !output) return {};
+  if (!input || !output) throw new Error("Both model input and output prices are required when either is configured");
+  const inputUsdPerMillion = Number(input);
+  const outputUsdPerMillion = Number(output);
+  if (!Number.isFinite(inputUsdPerMillion) || inputUsdPerMillion < 0 ||
+      !Number.isFinite(outputUsdPerMillion) || outputUsdPerMillion < 0) {
+    throw new Error("Model prices must be finite non-negative USD-per-million-token values");
+  }
+  return { inputUsdPerMillion, outputUsdPerMillion };
 }
 
 function installShutdownHandlers(server: { close(): Promise<void> }): void {

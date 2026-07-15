@@ -432,6 +432,7 @@ export class RunService {
         runId: run.id,
         attemptId: attempt.id,
         fencingToken: lease.fencingToken,
+        maxCostUsd: run.budget.maxCostUsd,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
         ...(history?.length ? { history } : {}),
         signal: controller.signal,

@@ -161,6 +161,8 @@ Provider credentials remain in Manager. They are never forwarded to Docker.
 ```powershell
 $env:LITE_HARNESS_PROVIDER = 'openai'
 $env:LITE_HARNESS_MODEL = 'your-supported-model-id'
+$env:LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION = 'set-current-input-rate'
+$env:LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION = 'set-current-output-rate'
 $env:LITE_HARNESS_PROVIDER_API_KEY = 'set-in-your-secret-manager-or-shell'
 ```
 

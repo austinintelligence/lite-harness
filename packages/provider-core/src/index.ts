@@ -20,6 +20,7 @@ export interface ModelRunContext {
   workspaceId: string;
   principal: InternalPrincipal;
   fencingToken: number;
+  maxCostUsd?: number;
 }
 
 export interface ModelGateway {
@@ -95,21 +96,31 @@ export class ModelRegistry {
   }
 
   plan(request: RouteRequest): RoutePlan {
+    let unknownModelPrice = false;
     const candidates = this.list().filter((model) => {
       if (!model.enabled) return false;
       if (!request.requiredCapabilities.every((capability) => model.capabilities.includes(capability))) return false;
       if (request.allowedProviders && !request.allowedProviders.includes(model.providerId)) return false;
       if (request.allowedModels && !request.allowedModels.includes(model.id)) return false;
-      if (
-        request.maxInputUsdPerMillion !== undefined &&
-        model.inputUsdPerMillion !== undefined &&
-        model.inputUsdPerMillion > request.maxInputUsdPerMillion
-      ) return false;
+      if (request.maxInputUsdPerMillion !== undefined) {
+        if (model.inputUsdPerMillion === undefined) {
+          unknownModelPrice = true;
+          return false;
+        }
+        if (model.inputUsdPerMillion > request.maxInputUsdPerMillion) return false;
+      }
       return true;
     });
     candidates.sort((left, right) => score(left, request) - score(right, request));
     const selected = candidates[0];
     if (!selected) {
+      if (unknownModelPrice) {
+        throw new ProviderError(
+          "unknown_model_price",
+          "A compatible model has unknown pricing under the requested cost ceiling",
+          false,
+        );
+      }
       throw new ProviderError("no_compatible_model", "No enabled model satisfies the required capabilities and policy", false);
     }
     return Object.freeze({
@@ -295,6 +306,14 @@ export class RoutedModelGateway implements ModelGateway {
     let externallyVisible = false;
 
     for (const model of routes) {
+      if (params.context?.maxCostUsd !== undefined && !hasKnownModelPricing(model)) {
+        lastError = new ProviderError(
+          "unknown_model_price",
+          `Model pricing is required by the run cost ceiling: ${model.id}`,
+          false,
+        );
+        continue;
+      }
       const adapter = this.#adapters.get(model.providerId);
       if (!adapter) {
         lastError = new ProviderError("adapter_missing", `Provider adapter is unavailable: ${model.providerId}`, false);
@@ -310,7 +329,7 @@ export class RoutedModelGateway implements ModelGateway {
           ...(params.signal ? { signal: params.signal } : {}),
         })) {
           if (event.type === "tool.call" || event.type === "text.delta") externallyVisible = true;
-          yield event;
+          yield event.type === "usage" ? withAuthoritativeCost(event, model) : event;
         }
         return;
       } catch (error) {
@@ -381,6 +400,41 @@ function validateModel(model: ModelDescriptor): void {
   if (!model.id || !model.providerId || !model.credentialProfileId) throw new Error("Model identity fields are required");
   if (!Number.isSafeInteger(model.contextWindow) || model.contextWindow <= 0) throw new Error("Model contextWindow must be positive");
   if (!model.capabilities.includes("text")) throw new Error("Every Lite model must declare text capability");
+  if ((model.inputUsdPerMillion === undefined) !== (model.outputUsdPerMillion === undefined)) {
+    throw new Error("Model pricing must provide both input and output rates or neither");
+  }
+  for (const [name, value] of [
+    ["inputUsdPerMillion", model.inputUsdPerMillion],
+    ["outputUsdPerMillion", model.outputUsdPerMillion],
+  ] as const) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+      throw new Error(`Model ${name} must be a finite non-negative number`);
+    }
+  }
+}
+
+function hasKnownModelPricing(model: ModelDescriptor): boolean {
+  return model.inputUsdPerMillion !== undefined && model.outputUsdPerMillion !== undefined;
+}
+
+function withAuthoritativeCost(
+  event: Extract<ModelEvent, { type: "usage" }>,
+  model: ModelDescriptor,
+): Extract<ModelEvent, { type: "usage" }> {
+  if (!Number.isFinite(event.inputTokens) || event.inputTokens < 0 ||
+      !Number.isFinite(event.outputTokens) || event.outputTokens < 0) {
+    throw new ProviderError("invalid_usage", "Provider returned invalid token usage", false);
+  }
+  const reported = event.costUsd;
+  if (reported !== undefined && (!Number.isFinite(reported) || reported < 0)) {
+    throw new ProviderError("invalid_usage", "Provider returned invalid cost usage", false);
+  }
+  if (!hasKnownModelPricing(model)) return event;
+  const calculated = (
+    event.inputTokens * (model.inputUsdPerMillion as number) +
+    event.outputTokens * (model.outputUsdPerMillion as number)
+  ) / 1_000_000;
+  return { ...event, costUsd: Math.max(reported ?? 0, calculated) };
 }
 
 function expiresSoon(material: CredentialMaterial, skewMs: number): boolean {

@@ -10,6 +10,11 @@ run through the gitignored `.env.hermes.local` policy using:
 - `LITE_HARNESS_PROVIDER=openai-compatible`
 - `LITE_HARNESS_PROVIDER_BASE_URL=http://127.0.0.1:8645/v1`
 - `LITE_HARNESS_MODEL=gpt-5.6-luna`
+
+The Hermes wrapper sets both model price rates to zero for these localhost-only
+OAuth-backed test runs because they have no per-token API charge. This exception
+is scoped to the local test wrapper; normal direct-provider runs must configure
+their current non-negative input and output rates explicitly.
 - a non-empty local placeholder in `LITE_HARNESS_PROVIDER_API_KEY`
 
 Hermes owns upstream OAuth. Lite-Harness must not discover, export, modify, or

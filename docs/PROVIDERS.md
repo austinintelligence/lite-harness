@@ -22,6 +22,14 @@ Fallback occurs only for typed retryable failures and only before a tool call
 becomes externally visible. Model IDs, prices, capabilities, and context limits
 are operator/discovery data, not hard-coded aliases disguised as compatibility.
 
+Because every run has a dollar ceiling, direct routes require both
+`LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION` and
+`LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION`. Unknown pricing fails before
+credential resolution or provider I/O. Adapter usage without cost is priced
+locally from the frozen model rates; if the provider reports a higher cost, the
+higher value is enforced. A zero rate is valid only for an operator-confirmed
+zero-marginal-cost local or subscription proxy.
+
 Direct adapters parse true SSE incrementally, bound response sizes and idle
 time, normalize usage, and reject endpoints outside their configured origins.
 `codex` and `claude` are separate delegated process routes; subscription login

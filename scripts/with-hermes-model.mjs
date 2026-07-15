@@ -22,6 +22,10 @@ const child = spawn(command, args, {
     LITE_HARNESS_MODE: process.env.LITE_HARNESS_MODE ?? "development",
     LITE_HARNESS_RUNTIME: process.env.LITE_HARNESS_RUNTIME ?? "fake",
     ...configured,
+    LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION:
+      configured.LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION ?? "0",
+    LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION:
+      configured.LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION ?? "0",
   },
   stdio: "inherit", shell: false, windowsHide: true,
 });
@@ -36,6 +40,7 @@ function parseEnvironment(text) {
   const allowed = new Set([
     "LITE_HARNESS_PROVIDER", "LITE_HARNESS_PROVIDER_BASE_URL", "LITE_HARNESS_PROVIDER_API_KEY",
     "LITE_HARNESS_CREDENTIAL_PROFILE", "LITE_HARNESS_MODEL", "LITE_HARNESS_LIVE_MODEL_TEST",
+    "LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION", "LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION",
   ]);
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();

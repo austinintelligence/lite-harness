@@ -21,6 +21,8 @@ export interface CodexAppServerOptions {
   workspacePathForRun: (context: ModelRunContext) => string;
   codexHome?: string;
   model?: string;
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
   timeoutMs?: number;
   processFactory?: (
     handler: (request: RpcServerRequest) => Promise<unknown>,
@@ -38,6 +40,12 @@ export class CodexAppServerGateway implements ModelGateway {
     context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent> {
+    if (params.context?.maxCostUsd !== undefined && !hasDelegatedPricing(this.options)) {
+      throw new DelegatedRuntimeError(
+        "unknown_model_price",
+        "Codex delegated pricing is required by the run cost ceiling",
+      );
+    }
     const cwd = workspacePathForRun(this.options.workspacePathForRun, params.context);
     const processSpec: ProcessSpec = {
       command: this.options.command ?? "codex",
@@ -99,7 +107,7 @@ export class CodexAppServerGateway implements ModelGateway {
           }
         } else if (/tokenUsage|usage/i.test(notification.method)) {
           const usage = normalizeUsage(notification.params);
-          if (usage) yield usage;
+          if (usage) yield withDelegatedCost(usage, this.options);
         } else if (notification.method === "turn/completed") {
           const status = stringAt(notification.params, "turn", "status") ?? stringAt(notification.params, "status") ?? "completed";
           if (!["completed", "success", "succeeded"].includes(status)) {
@@ -137,6 +145,8 @@ export interface ClaudeCodeOptions {
   model?: string;
   allowedTools?: readonly string[];
   maxBudgetUsd?: number;
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
   timeoutMs?: number;
   env?: Readonly<Record<string, string>>;
   processRunner?: typeof runJsonLineProcess;
@@ -155,6 +165,7 @@ export class ClaudeCodeGateway implements ModelGateway {
     const queue = new AsyncQueue<ModelEvent>();
     let sawDelta = false;
     let sawUsage = false;
+    const effectiveBudgetUsd = minimumDefined(this.options.maxBudgetUsd, params.context?.maxCostUsd);
     const args = [
       ...(this.options.commandArgsPrefix ?? []),
       "--print",
@@ -164,7 +175,7 @@ export class ClaudeCodeGateway implements ModelGateway {
       "--permission-mode", "dontAsk",
       "--tools", this.options.allowedTools?.join(",") ?? "",
       ...(this.options.model ? ["--model", this.options.model] : []),
-      ...(this.options.maxBudgetUsd !== undefined ? ["--max-budget-usd", String(this.options.maxBudgetUsd)] : []),
+      ...(effectiveBudgetUsd !== undefined ? ["--max-budget-usd", String(effectiveBudgetUsd)] : []),
     ];
     const claudePromptStdin = renderTranscript(params.messages);
     const execution = (this.options.processRunner ?? runJsonLineProcess)(
@@ -192,7 +203,7 @@ export class ClaudeCodeGateway implements ModelGateway {
             const usage = normalizeUsage(event.usage, numberAt(event, "total_cost_usd"));
             if (usage) {
               sawUsage = true;
-              queue.push(usage);
+              queue.push(withDelegatedCost(usage, this.options));
             }
             if (event.is_error === true) {
               queue.fail(new DelegatedRuntimeError("delegated_turn_failed", String(event.result ?? "Claude delegated turn failed")));
@@ -202,7 +213,16 @@ export class ClaudeCodeGateway implements ModelGateway {
       },
     ).then(
       () => {
-        if (!sawUsage) queue.push({ type: "usage", inputTokens: 0, outputTokens: 0 });
+        if (!sawUsage) {
+          if (params.context?.maxCostUsd !== undefined) {
+            queue.fail(new DelegatedRuntimeError(
+              "unknown_model_price",
+              "Claude delegated run completed without enforceable cost usage",
+            ));
+            return;
+          }
+          queue.push({ type: "usage", inputTokens: 0, outputTokens: 0 });
+        }
         queue.push({ type: "completed", finishReason: "stop" });
         queue.close();
       },
@@ -276,6 +296,33 @@ function normalizeUsage(value: unknown, costUsd?: number): Extract<ModelEvent, {
     outputTokens: outputTokens ?? 0,
     ...(costUsd !== undefined ? { costUsd } : {}),
   };
+}
+
+function hasDelegatedPricing(options: {
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
+}): boolean {
+  return options.inputUsdPerMillion !== undefined && Number.isFinite(options.inputUsdPerMillion) &&
+    options.inputUsdPerMillion >= 0 && options.outputUsdPerMillion !== undefined &&
+    Number.isFinite(options.outputUsdPerMillion) && options.outputUsdPerMillion >= 0;
+}
+
+function withDelegatedCost(
+  usage: Extract<ModelEvent, { type: "usage" }>,
+  options: { inputUsdPerMillion?: number; outputUsdPerMillion?: number },
+): Extract<ModelEvent, { type: "usage" }> {
+  if (!hasDelegatedPricing(options)) return usage;
+  const calculated = (
+    usage.inputTokens * (options.inputUsdPerMillion as number) +
+    usage.outputTokens * (options.outputUsdPerMillion as number)
+  ) / 1_000_000;
+  return { ...usage, costUsd: Math.max(usage.costUsd ?? 0, calculated) };
+}
+
+function minimumDefined(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return Math.min(left, right);
 }
 
 function stringAt(value: unknown, ...path: string[]): string | undefined {

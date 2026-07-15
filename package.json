@@ -65,6 +65,7 @@
     "test:docker": "node scripts/check-docker.mjs",
     "test:migrations": "node scripts/check-migrations.mjs",
     "test:plugins": "node scripts/check-plugins.mjs",
+    "test:providers": "node scripts/check-providers.mjs",
     "test:readiness": "node scripts/check-readiness.mjs",
     "test:replay": "node scripts/check-replay.mjs",
     "test:recovery": "node scripts/check-recovery.mjs",

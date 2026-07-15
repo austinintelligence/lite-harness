@@ -52,8 +52,11 @@ function writeEvidence(output, report) {
       sandboxCapabilitiesDropped: true,
       sandboxResourceBounded: true,
       sandboxHostEnvironmentNotForwarded: true,
+      delegatedWorkspaceOwnedAndFenced: true,
+      delegatedManagedVolumesFailClosed: true,
+      claudePromptUsesStdinNotArgv: true,
     },
-    testIds: ["BD-007-REGRESSION", "BD-008-REGRESSION"],
+    testIds: ["BD-007-REGRESSION", "BD-008-REGRESSION", "BD-025-REGRESSION", "BD-026-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

@@ -424,6 +424,7 @@ export class RunService {
         workspaceId: run.workspaceId,
         runId: run.id,
         attemptId: attempt.id,
+        fencingToken: lease.fencingToken,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
         ...(history?.length ? { history } : {}),
         signal: controller.signal,

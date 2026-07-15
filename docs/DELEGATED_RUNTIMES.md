@@ -6,6 +6,12 @@ as an API token. The delegated process owns its inner loop; Manager still owns
 the outer run, timeout, durable usage/events, cancellation, workspace queue,
 and agent tool policy.
 
+Delegated host CLIs are allowed only for an explicitly registered bind
+workspace owned by the run. Manager validates the current workspace lease and
+fencing token before every delegated process start, then passes that exact
+canonical directory as both process and protocol cwd. Managed Docker-volume
+workspaces fail closed because they do not expose a trustworthy host cwd.
+
 ## Codex app-server
 
 Set `LITE_HARNESS_PROVIDER=codex`. The adapter launches `codex app-server` on
@@ -25,6 +31,8 @@ Set `LITE_HARNESS_PROVIDER=claude`. The adapter launches the official CLI in
 non-interactive `stream-json` mode. `LITE_HARNESS_DELEGATED_TOOLS` is empty by
 default; explicitly list approved built-in Claude tools to enable inner-loop
 actions. `LITE_HARNESS_DELEGATED_MAX_BUDGET_USD` adds the CLI-native cost cap.
+Conversation content is written through stdin and is never added to the
+process argument vector.
 
 Both adapters use direct process spawning without a shell, bounded JSONL lines,
 bounded diagnostics, a minimal inherited environment, deadlines, abort

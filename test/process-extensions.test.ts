@@ -14,10 +14,20 @@ import {
   createOpenClawCompatibilityWorker,
   inspectPluginManifest,
 } from "@lite-harness/plugin-core";
-import { JsonLineRpcClient } from "@lite-harness/process-rpc";
+import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
+import type { ModelRunContext } from "@lite-harness/provider-core";
+import { SqliteRunStore } from "@lite-harness/storage-sqlite";
+import { createDelegatedWorkspaceResolver } from "../apps/manager/src/delegated-workspace.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/process-peer.mjs", import.meta.url));
 const cleanup: string[] = [];
+const delegatedContext: ModelRunContext = {
+  runId: "run-delegated",
+  attemptId: "attempt-delegated",
+  workspaceId: "workspace-delegated",
+  principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+  fencingToken: 1,
+};
 
 afterEach(() => {
   for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -26,14 +36,16 @@ afterEach(() => {
 describe("process-backed extensions", () => {
   it("normalizes the official Codex app-server JSONL lifecycle", async () => {
     const gateway = new CodexAppServerGateway({
-      cwd: process.cwd(),
+      workspacePathForRun: () => process.cwd(),
       processFactory: (handler) => new JsonLineRpcClient(
         { command: process.execPath, args: [fixture, "codex"] },
         { onServerRequest: handler },
       ),
     });
     const events = [];
-    for await (const event of gateway.streamTurn({ messages: [{ role: "user", content: "work" }] })) events.push(event);
+    for await (const event of gateway.streamTurn({
+      messages: [{ role: "user", content: "work" }], context: delegatedContext,
+    })) events.push(event);
     expect(events).toMatchObject([
       { type: "text.delta", delta: "delegated codex" },
       { type: "usage", inputTokens: 3, outputTokens: 2 },
@@ -45,15 +57,97 @@ describe("process-backed extensions", () => {
     const gateway = new ClaudeCodeGateway({
       command: process.execPath,
       commandArgsPrefix: [fixture, "claude"],
-      cwd: process.cwd(),
+      workspacePathForRun: () => process.cwd(),
     });
     const events = [];
-    for await (const event of gateway.streamTurn({ messages: [{ role: "user", content: "work" }] })) events.push(event);
+    for await (const event of gateway.streamTurn({
+      messages: [{ role: "user", content: "work" }], context: delegatedContext,
+    })) events.push(event);
     expect(events).toMatchObject([
       { type: "text.delta", delta: "delegated claude" },
       { type: "usage", inputTokens: 4, outputTokens: 2, costUsd: 0.01 },
       { type: "completed", finishReason: "stop" },
     ]);
+  });
+
+  it("BD-025-REGRESSION resolves the exact leased workspace for every delegated process", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "lite-delegated-workspace-"));
+    cleanup.push(workspace);
+    let resolvedContext: ModelRunContext | undefined;
+    let processSpec: ProcessSpec | undefined;
+    const gateway = new CodexAppServerGateway({
+      workspacePathForRun: (context) => { resolvedContext = context; return workspace; },
+      processFactory: (handler, spec) => {
+        processSpec = spec;
+        return new JsonLineRpcClient(
+          { command: process.execPath, args: [fixture, "codex"], cwd: spec.cwd },
+          { onServerRequest: handler },
+        );
+      },
+    });
+    for await (const _event of gateway.streamTurn({
+      messages: [{ role: "user", content: "work in the leased directory" }], context: delegatedContext,
+    })) { /* consume delegated lifecycle */ }
+    expect(resolvedContext).toEqual(delegatedContext);
+    expect(processSpec?.cwd).toBe(workspace);
+  });
+
+  it("rejects delegated ownership, fencing, or non-bind workspace mismatches", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "lite-delegated-owned-"));
+    cleanup.push(workspace);
+    const store = new SqliteRunStore(":memory:");
+    try {
+      const now = new Date().toISOString();
+      store.createWorkspace({
+        id: delegatedContext.workspaceId,
+        appId: delegatedContext.principal.appId,
+        tenantId: delegatedContext.principal.tenantId,
+        userId: delegatedContext.principal.userId,
+        mode: "registered-bind",
+        state: "WARM",
+        registeredPath: workspace,
+        createdAt: now,
+        updatedAt: now,
+      });
+      store.createOrGetRun(delegatedContext.runId, {
+        agent: "coder", workspace: delegatedContext.workspaceId, input: "delegated",
+        idempotencyKey: "delegated-key", principal: delegatedContext.principal,
+      });
+      const lease = store.acquireWorkspaceLease(delegatedContext.workspaceId, delegatedContext.runId, 60_000)!;
+      const resolver = createDelegatedWorkspaceResolver(store);
+      const context = { ...delegatedContext, fencingToken: lease.fencingToken };
+      expect(resolver(context)).toBe(workspace);
+      expect(() => resolver({ ...context, principal: { ...context.principal, userId: "other" } }))
+        .toThrow(/ownership is invalid/);
+      store.releaseWorkspaceLease(lease);
+      expect(() => resolver(context)).toThrow(/lease is invalid or expired/);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("BD-026-REGRESSION sends the Claude transcript over stdin and never places it in argv", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "lite-claude-workspace-"));
+    cleanup.push(workspace);
+    const secretPrompt = "prompt-sentinel-that-must-not-appear-in-process-listings";
+    let capturedSpec: ProcessSpec | undefined;
+    let capturedInput: string | undefined;
+    const gateway = new ClaudeCodeGateway({
+      command: "claude-fixture",
+      workspacePathForRun: () => workspace,
+      processRunner: async (spec, options) => {
+        capturedSpec = spec;
+        capturedInput = options.input;
+        options.onMessage({ type: "result", result: "done", usage: { input_tokens: 1, output_tokens: 1 } });
+        return { code: 0, stderr: "" };
+      },
+    });
+    for await (const _event of gateway.streamTurn({
+      messages: [{ role: "user", content: secretPrompt }], context: delegatedContext,
+    })) { /* consume delegated lifecycle */ }
+    expect(capturedSpec?.cwd).toBe(workspace);
+    expect(capturedSpec?.args?.join(" ")).not.toContain(secretPrompt);
+    expect(capturedInput).toContain(secretPrompt);
   });
 
   it("supervises a filtered MCP stdio worker", async () => {

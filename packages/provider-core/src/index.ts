@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ToolCall, ToolDefinition } from "@lite-harness/contracts";
+import type { InternalPrincipal, ToolCall, ToolDefinition } from "@lite-harness/contracts";
 
 export interface ModelMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -14,10 +14,19 @@ export type ModelEvent =
   | { type: "usage"; inputTokens: number; outputTokens: number; costUsd?: number }
   | { type: "completed"; finishReason: "stop" | "tool_calls" };
 
+export interface ModelRunContext {
+  runId: string;
+  attemptId: string;
+  workspaceId: string;
+  principal: InternalPrincipal;
+  fencingToken: number;
+}
+
 export interface ModelGateway {
   streamTurn(params: {
     messages: readonly ModelMessage[];
     tools?: readonly ToolDefinition[];
+    context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent>;
 }
@@ -278,6 +287,7 @@ export class RoutedModelGateway implements ModelGateway {
   async *streamTurn(params: {
     messages: readonly ModelMessage[];
     tools?: readonly ToolDefinition[];
+    context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent> {
     const routes = [this.plan.selected, ...this.plan.fallbacks];

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { ModelEvent, ModelGateway, ModelMessage } from "@lite-harness/provider-core";
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
+import type { ModelEvent, ModelGateway, ModelMessage, ModelRunContext } from "@lite-harness/provider-core";
 import {
   JsonLineRpcClient,
   ProcessRpcError,
@@ -16,11 +18,14 @@ export interface DelegatedApprovalRequest {
 
 export interface CodexAppServerOptions {
   command?: string;
-  cwd: string;
+  workspacePathForRun: (context: ModelRunContext) => string;
   codexHome?: string;
   model?: string;
   timeoutMs?: number;
-  processFactory?: (handler: (request: RpcServerRequest) => Promise<unknown>) => JsonLineRpcClient;
+  processFactory?: (
+    handler: (request: RpcServerRequest) => Promise<unknown>,
+    spec: ProcessSpec,
+  ) => JsonLineRpcClient;
   approve?: (request: DelegatedApprovalRequest) => Promise<"accept" | "decline">;
 }
 
@@ -28,17 +33,24 @@ export interface CodexAppServerOptions {
 export class CodexAppServerGateway implements ModelGateway {
   constructor(private readonly options: CodexAppServerOptions) {}
 
-  async *streamTurn(params: { messages: readonly ModelMessage[]; signal?: AbortSignal }): AsyncIterable<ModelEvent> {
-    const rpc = this.options.processFactory?.((request) => this.#answerRequest(request)) ?? new JsonLineRpcClient(
-      {
-        command: this.options.command ?? "codex",
-        args: ["app-server", "--listen", "stdio://"],
-        cwd: this.options.cwd,
-        ...(this.options.codexHome ? { env: { CODEX_HOME: this.options.codexHome } } : {}),
-      },
+  async *streamTurn(params: {
+    messages: readonly ModelMessage[];
+    context?: ModelRunContext;
+    signal?: AbortSignal;
+  }): AsyncIterable<ModelEvent> {
+    const cwd = workspacePathForRun(this.options.workspacePathForRun, params.context);
+    const processSpec: ProcessSpec = {
+      command: this.options.command ?? "codex",
+      args: ["app-server", "--listen", "stdio://"],
+      cwd,
+      ...(this.options.codexHome ? { env: { CODEX_HOME: this.options.codexHome } } : {}),
+    };
+    const handler = (request: RpcServerRequest) => this.#answerRequest(request);
+    const rpc = this.options.processFactory?.(handler, processSpec) ?? new JsonLineRpcClient(
+      processSpec,
       {
         requestTimeoutMs: this.options.timeoutMs ?? 30_000,
-        onServerRequest: (request) => this.#answerRequest(request),
+        onServerRequest: handler,
       },
     );
     const notifications = new AsyncQueue<RpcNotification>();
@@ -54,7 +66,7 @@ export class CodexAppServerGateway implements ModelGateway {
         "thread/start",
         {
           ...(this.options.model ? { model: this.options.model } : {}),
-          cwd: this.options.cwd,
+          cwd,
           sandbox: "workspace-write",
           approvalPolicy: "on-request",
           ephemeral: true,
@@ -65,7 +77,7 @@ export class CodexAppServerGateway implements ModelGateway {
       if (!threadId) throw new DelegatedRuntimeError("protocol_error", "Codex app-server did not return a thread id");
       const turn = await rpc.request<{ turn?: { id?: string } }>("turn/start", {
         threadId,
-        cwd: this.options.cwd,
+        cwd,
         input: [{ type: "text", text: renderTranscript(params.messages) }],
       }, { signal: params.signal });
       turnId = turn.turn?.id;
@@ -121,19 +133,25 @@ export class CodexAppServerGateway implements ModelGateway {
 export interface ClaudeCodeOptions {
   command?: string;
   commandArgsPrefix?: readonly string[];
-  cwd: string;
+  workspacePathForRun: (context: ModelRunContext) => string;
   model?: string;
   allowedTools?: readonly string[];
   maxBudgetUsd?: number;
   timeoutMs?: number;
   env?: Readonly<Record<string, string>>;
+  processRunner?: typeof runJsonLineProcess;
 }
 
 /** Optional official Claude Code CLI adapter using print-mode stream-json. */
 export class ClaudeCodeGateway implements ModelGateway {
   constructor(private readonly options: ClaudeCodeOptions) {}
 
-  async *streamTurn(params: { messages: readonly ModelMessage[]; signal?: AbortSignal }): AsyncIterable<ModelEvent> {
+  async *streamTurn(params: {
+    messages: readonly ModelMessage[];
+    context?: ModelRunContext;
+    signal?: AbortSignal;
+  }): AsyncIterable<ModelEvent> {
+    const cwd = workspacePathForRun(this.options.workspacePathForRun, params.context);
     const queue = new AsyncQueue<ModelEvent>();
     let sawDelta = false;
     let sawUsage = false;
@@ -147,17 +165,18 @@ export class ClaudeCodeGateway implements ModelGateway {
       "--tools", this.options.allowedTools?.join(",") ?? "",
       ...(this.options.model ? ["--model", this.options.model] : []),
       ...(this.options.maxBudgetUsd !== undefined ? ["--max-budget-usd", String(this.options.maxBudgetUsd)] : []),
-      renderTranscript(params.messages),
     ];
-    const execution = runJsonLineProcess(
+    const claudePromptStdin = renderTranscript(params.messages);
+    const execution = (this.options.processRunner ?? runJsonLineProcess)(
       {
         command: this.options.command ?? "claude",
         args,
-        cwd: this.options.cwd,
+        cwd,
         ...(this.options.env ? { env: this.options.env } : {}),
       },
       {
         signal: params.signal,
+        input: claudePromptStdin,
         timeoutMs: this.options.timeoutMs,
         onMessage: (message) => {
           const event = message as Record<string, unknown>;
@@ -199,6 +218,24 @@ export class ClaudeCodeGateway implements ModelGateway {
       await execution.catch(() => undefined);
     }
   }
+}
+
+function workspacePathForRun(
+  resolvePath: (context: ModelRunContext) => string,
+  context: ModelRunContext | undefined,
+): string {
+  if (!context) {
+    throw new DelegatedRuntimeError("workspace_context_missing", "Delegated runtime requires an owned leased workspace context");
+  }
+  const configured = resolvePath(context);
+  if (!isAbsolute(configured)) {
+    throw new DelegatedRuntimeError("workspace_path_invalid", "Delegated workspace path must be absolute");
+  }
+  const path = realpathSync(configured);
+  if (!statSync(path).isDirectory()) {
+    throw new DelegatedRuntimeError("workspace_path_invalid", "Delegated workspace path is not a directory");
+  }
+  return path;
 }
 
 export class DelegatedRuntimeError extends Error {

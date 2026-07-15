@@ -37,6 +37,7 @@ import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore } from "@lite-harness/workspace";
 import { ManagerInstanceLock } from "@lite-harness/operations";
 import { buildManagerServer } from "./server.js";
+import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
 
 const configuration = loadManagerConfiguration();
 const { dataDir, socketPath, internalToken } = configuration;
@@ -58,7 +59,7 @@ if (baseRuntime instanceof DockerToolRuntime) {
 }
 const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
-const modelGateway = resolveModelGateway(configuration.provider);
+const modelGateway = resolveModelGateway(configuration.provider, createDelegatedWorkspaceResolver(store));
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
   : undefined;
@@ -423,12 +424,15 @@ function validBase64Key(value: string): boolean {
   }
 }
 
-function resolveModelGateway(provider: string): ModelGateway {
+function resolveModelGateway(
+  provider: string,
+  workspacePathForRun: ReturnType<typeof createDelegatedWorkspaceResolver>,
+): ModelGateway {
   if (provider === "fake") return new FakeModelGateway();
 
   if (provider === "codex") {
     return new CodexAppServerGateway({
-      cwd: process.env.LITE_HARNESS_DELEGATED_CWD ?? process.cwd(),
+      workspacePathForRun,
       ...(process.env.LITE_HARNESS_CODEX_COMMAND ? { command: process.env.LITE_HARNESS_CODEX_COMMAND } : {}),
       ...(process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
@@ -438,7 +442,7 @@ function resolveModelGateway(provider: string): ModelGateway {
   if (provider === "claude") {
     const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
     return new ClaudeCodeGateway({
-      cwd: process.env.LITE_HARNESS_DELEGATED_CWD ?? process.cwd(),
+      workspacePathForRun,
       ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
       allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),

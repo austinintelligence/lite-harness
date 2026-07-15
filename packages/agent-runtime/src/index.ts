@@ -22,6 +22,7 @@ export class AgentRunner {
     workspaceId: string;
     runId?: string;
     attemptId?: string;
+    fencingToken?: number;
     principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
@@ -53,6 +54,15 @@ export class AgentRunner {
       const stream = this.model.streamTurn({
         messages,
         ...(advertisedTools.length ? { tools: advertisedTools } : {}),
+        ...(params.runId && params.attemptId && params.principal && params.fencingToken !== undefined
+          ? { context: {
+              runId: params.runId,
+              attemptId: params.attemptId,
+              workspaceId: params.workspaceId,
+              principal: params.principal,
+              fencingToken: params.fencingToken,
+            } }
+          : {}),
         ...(params.signal ? { signal: params.signal } : {}),
       })[Symbol.asyncIterator]();
       try {

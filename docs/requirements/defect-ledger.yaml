@@ -878,7 +878,7 @@
         "section": "Known baseline defects / 25",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-025-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -892,14 +892,16 @@
       },
       "regression": {
         "testId": "BD-025-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/process-extensions.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m6/plugin-security.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "6cef2b4063927351ed62b727f834a5c2dc5670d9"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-026",
@@ -912,7 +914,7 @@
         "section": "Known baseline defects / 26",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-026-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -926,14 +928,16 @@
       },
       "regression": {
         "testId": "BD-026-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/process-extensions.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m6/plugin-security.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "6cef2b4063927351ed62b727f834a5c2dc5670d9"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-027",

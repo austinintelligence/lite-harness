@@ -4,17 +4,12 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
-import { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence, type IntervalTrigger } from "@lite-harness/automation";
-import {
-  DockerBrowserDriver, DurableBrowserSessionStore, EncryptedBrowserProfileStore, ManagedBrowserBroker, reconcileBrowserResources,
-  type BrowserAction, type BrowserOwner,
-} from "@lite-harness/browser";
+import type { IntervalTrigger } from "@lite-harness/automation";
+import type { BrowserAction, BrowserOwner } from "@lite-harness/browser";
 import { RunService } from "@lite-harness/control-plane";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegated-runtime";
-import {
-  DeliveryCoordinator, InboundRunRouter, SignedAppCallbackClient, SqliteIntegrationStore, WebhookCallbackConnector, composeInboundPrompt,
-} from "@lite-harness/integrations";
+import type { SqliteIntegrationStore } from "@lite-harness/integrations";
 import {
   LITE_IPC_PROTOCOL_VERSION,
   isTerminalRunStatus,
@@ -79,7 +74,7 @@ const modelGateway = resolveModelGateway(
 );
 // ContextOptimizationGate, skills, MCP, plugins, snapshots, and caches are
 // composed here so they share the production run/tool lifecycle.
-const optionalSystems = configureProductionOptionalSystems({
+const optionalSystems = await configureProductionOptionalSystems({
   dataDir,
   modelId: process.env.LITE_HARNESS_MODEL?.trim() || configuration.provider,
   runtime: brokeredRuntime,
@@ -108,9 +103,8 @@ const runSnapshotConfiguration = {
   plugins: optionalSystems.plugins,
   credentialProfileIds: ["snapshot.root", "browser.profile-root"],
 };
-const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
-  ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
-  : undefined;
+const integrationModule = process.env.LITE_HARNESS_WEBHOOK_SECRET ? await import("@lite-harness/integrations") : undefined;
+const integrationStore = integrationModule ? new integrationModule.SqliteIntegrationStore(join(dataDir, "integrations.db")) : undefined;
 const memoryStore = process.env.LITE_HARNESS_ENABLE_MEMORY === "true"
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
@@ -124,12 +118,12 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
   runSnapshot: runSnapshotConfiguration,
 });
-const integrationRouter = integrationStore ? new InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
+const integrationRouter = integrationStore && integrationModule ? new integrationModule.InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({
     agent: binding.agentId,
     workspace: binding.workspaceId,
     session: sessionId,
-    input: composeInboundPrompt(envelope),
+    input: integrationModule.composeInboundPrompt(envelope),
     idempotencyKey: `webhook:${envelope.accountId}:${envelope.deliveryId}`,
     principal: {
       appId: binding.appId, tenantId: binding.tenantId, userId: binding.userId,
@@ -154,8 +148,8 @@ const app = buildManagerServer({
   } } : {}),
   logger: true,
 });
-const automation = configureAutomation(service, dataDir);
-const integrationDelivery = integrationStore ? configureIntegrationDelivery(service, integrationStore) : undefined;
+const automation = await configureAutomation(service, dataDir);
+const integrationDelivery = integrationStore ? await configureIntegrationDelivery(service, integrationStore) : undefined;
 app.addHook("onClose", async () => {
   automation?.stop();
   integrationDelivery?.stop();
@@ -235,6 +229,7 @@ async function configureBrokeredTools(
   const callbackUrl = process.env.LITE_HARNESS_APP_CALLBACK_URL;
   const callbackSecret = process.env.LITE_HARNESS_APP_CALLBACK_SECRET;
   if (callbackUrl && callbackSecret) {
+    const { SignedAppCallbackClient } = await import("@lite-harness/integrations");
     const callbacks = new SignedAppCallbackClient(callbackUrl, async () => callbackSecret);
     runtime.register("app_callback", async (params) => {
       const principal = requireToolPrincipal(params.runId, params.principal);
@@ -247,6 +242,7 @@ async function configureBrokeredTools(
   }
   const browserImage = process.env.LITE_HARNESS_BROWSER_IMAGE;
   if (!browserImage) return { stop: async () => undefined };
+  const { DockerBrowserDriver, DurableBrowserSessionStore, EncryptedBrowserProfileStore, ManagedBrowserBroker, reconcileBrowserResources } = await import("@lite-harness/browser");
   const allowedOrigins = (process.env.LITE_HARNESS_BROWSER_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   const remoteCdpEndpoint = process.env.LITE_HARNESS_BROWSER_REMOTE_CDP;
   const profileId = process.env.LITE_HARNESS_BROWSER_PROFILE_ID;
@@ -828,10 +824,11 @@ function configureWebhookBinding(integrations: SqliteIntegrationStore): void {
   });
 }
 
-function configureIntegrationDelivery(runs: RunService, integrations: SqliteIntegrationStore): { stop(): void } | undefined {
+async function configureIntegrationDelivery(runs: RunService, integrations: SqliteIntegrationStore): Promise<{ stop(): void } | undefined> {
   const callbackUrl = process.env.LITE_HARNESS_WEBHOOK_REPLY_URL;
   const callbackSecret = process.env.LITE_HARNESS_WEBHOOK_REPLY_SECRET ?? process.env.LITE_HARNESS_WEBHOOK_SECRET;
   if (!callbackUrl || !callbackSecret) return undefined;
+  const { DeliveryCoordinator, WebhookCallbackConnector } = await import("@lite-harness/integrations");
   const account = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
   const adapter = new WebhookCallbackConnector(async (accountId) => {
     if (accountId !== account) throw new Error("Webhook callback account is not configured");
@@ -875,9 +872,10 @@ interface ConfiguredSchedule extends Record<string, unknown> {
   localTime?: string;
 }
 
-function configureAutomation(runService: RunService, root: string): { stop(): void } | undefined {
+async function configureAutomation(runService: RunService, root: string): Promise<{ stop(): void } | undefined> {
   const raw = process.env.LITE_HARNESS_SCHEDULES_JSON;
   if (!raw) return undefined;
+  const { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence } = await import("@lite-harness/automation");
   const parsed = JSON.parse(raw) as unknown;
   if (!Array.isArray(parsed)) throw new Error("LITE_HARNESS_SCHEDULES_JSON must be an array");
   const schedules = parsed.map(validateSchedule);

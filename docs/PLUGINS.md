@@ -64,6 +64,12 @@ Optional systems are disabled by default. The Manager composes them before a
 run freezes its advertised tools and stops every active supervisor during
 shutdown:
 
+When every optional setting is absent, Manager does not import optional pack
+runtime modules, register their schemas, create their storage roots, or start
+workers, timers, sockets, processes, or containers. Type-only imports are
+erased at build time. `pxpipe-proxy` remains an optional root dependency and is
+loaded only after the explicit context-renderer gate is enabled.
+
 - `LITE_HARNESS_SKILL_ROOTS` is a JSON array of `{root, precedence, source,
   sourceVersion, visibilityScope}` entries. Non-public app, user, workspace,
   run, and OpenClaw-import roots require an explicit scope such as

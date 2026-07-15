@@ -14,7 +14,7 @@ describe("production optional-system composition", () => {
   it("creates no optional tools or resources when every pack is disabled", async () => {
     const root = temporaryRoot();
     const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
-    const systems = configureProductionOptionalSystems({ dataDir: root, modelId: "model", runtime, environment: {} });
+    const systems = await configureProductionOptionalSystems({ dataDir: root, modelId: "model", runtime, environment: {} });
     expect(runtime.listTools().map((tool) => tool.name)).toEqual(["read_file", "write_file"]);
     expect(systems.context).toBeUndefined();
     await systems.stop();
@@ -28,7 +28,7 @@ describe("production optional-system composition", () => {
     mkdirSync(join(skillRoot, "review"), { recursive: true });
     writeFileSync(join(skillRoot, "review", "SKILL.md"), "---\nname: review\ndescription: Review carefully\ntools: read_file\n---\nExact review steps.\n");
     const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
-    const systems = configureProductionOptionalSystems({
+    const systems = await configureProductionOptionalSystems({
       dataDir: root, modelId: "model-a", runtime,
       environment: {
         LITE_HARNESS_CONTEXT_FILE: contextPath,

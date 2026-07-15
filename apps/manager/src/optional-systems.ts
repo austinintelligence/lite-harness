@@ -2,28 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { AgentContextCompiler } from "@lite-harness/agent-runtime";
-import {
-  ConservativeContextCompiler,
-  ContextOptimizationGate,
-  ContextStore,
-  OptionalPxpipeRenderer,
-  TenantContextRenderCache,
-} from "@lite-harness/context";
 import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
-import { DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } from "@lite-harness/mcp";
-import {
-  createOpenClawCompatibilityWorker,
-  DockerPluginExecutionSandbox,
-  inspectPluginManifest,
-  LazyPluginSupervisor,
-  PluginInstallLock,
-  pluginPackageDigest,
-} from "@lite-harness/plugin-core";
+import type { McpSupervisor } from "@lite-harness/mcp";
+import type { LazyPluginSupervisor } from "@lite-harness/plugin-core";
 import type { BrokeredToolRuntime } from "@lite-harness/runtime";
 import type { DockerToolRuntime } from "@lite-harness/runtime-docker";
-import {
-  DurableSkillRunSnapshotStore, ImmutableSkillCatalog, type ImmutableSkillSnapshot, type SkillSource,
-} from "@lite-harness/skills";
+import type { ImmutableSkillSnapshot, SkillSource } from "@lite-harness/skills";
 import {
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
@@ -50,17 +34,17 @@ export interface ProductionOptionalSystems {
 }
 
 /** Composes optional packs without starting a worker, timer, socket, or Docker job. */
-export function configureProductionOptionalSystems(options: OptionalSystemsOptions): ProductionOptionalSystems {
+export async function configureProductionOptionalSystems(options: OptionalSystemsOptions): Promise<ProductionOptionalSystems> {
   const environment = options.environment ?? process.env;
   const stops: Array<() => Promise<void>> = [];
   const contextCompilers: AgentContextCompiler[] = [];
-  const operatorContext = configureContext(options.dataDir, options.modelId, environment);
+  const operatorContext = await configureContext(options.dataDir, options.modelId, environment);
   if (operatorContext) contextCompilers.push(operatorContext);
-  const skills = configureSkills(options.runtime, options.dataDir, environment);
+  const skills = await configureSkills(options.runtime, options.dataDir, environment);
   if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
-  const mcp = configureMcp(options.runtime, environment);
+  const mcp = await configureMcp(options.runtime, environment);
   if (mcp) stops.push(() => mcp.stopAll());
-  const plugins = configurePlugins(options.runtime, options.dataDir, environment);
+  const plugins = await configurePlugins(options.runtime, options.dataDir, environment);
   if (plugins.supervisors.length) stops.push(() => Promise.all(plugins.supervisors.map((plugin) => plugin.stop())).then(() => undefined));
   const workspaceLifecycle = configureSnapshots(options);
   configureCacheCatalog(options.runtime, options.dataDir, environment);
@@ -73,9 +57,10 @@ export function configureProductionOptionalSystems(options: OptionalSystemsOptio
   };
 }
 
-function configureContext(dataDir: string, modelId: string, environment: NodeJS.ProcessEnv): AgentContextCompiler | undefined {
+async function configureContext(dataDir: string, modelId: string, environment: NodeJS.ProcessEnv): Promise<AgentContextCompiler | undefined> {
   const contextFile = environment.LITE_HARNESS_CONTEXT_FILE?.trim();
   if (!contextFile) return undefined;
+  const { ConservativeContextCompiler, ContextOptimizationGate, ContextStore, OptionalPxpipeRenderer, TenantContextRenderCache } = await import("@lite-harness/context");
   const path = resolve(contextFile);
   const metadata = statSync(path);
   if (!metadata.isFile() || metadata.size > 1024 * 1024) throw new Error("LITE_HARNESS_CONTEXT_FILE must be a file no larger than 1 MiB");
@@ -109,12 +94,13 @@ function configureContext(dataDir: string, modelId: string, environment: NodeJS.
   };
 }
 
-function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): {
+async function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): Promise<{
   context: AgentContextCompiler;
   stop(): Promise<void>;
-} | undefined {
+} | undefined> {
   const raw = environment.LITE_HARNESS_SKILL_ROOTS?.trim();
   if (!raw) return undefined;
+  const { DurableSkillRunSnapshotStore, ImmutableSkillCatalog } = await import("@lite-harness/skills");
   const sources = parseJson(raw, "LITE_HARNESS_SKILL_ROOTS") as unknown;
   if (!Array.isArray(sources)) throw new Error("LITE_HARNESS_SKILL_ROOTS must be a JSON array");
   const normalized = sources.map(validateSkillSource);
@@ -183,9 +169,10 @@ function composeContextCompilers(compilers: readonly AgentContextCompiler[]): Ag
   };
 }
 
-function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): McpSupervisor | undefined {
+async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): Promise<McpSupervisor | undefined> {
   const raw = environment.LITE_HARNESS_MCP_SERVERS?.trim();
   if (!raw) return undefined;
+  const { DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } = await import("@lite-harness/mcp");
   const entries = parseJson(raw, "LITE_HARNESS_MCP_SERVERS") as unknown;
   if (!Array.isArray(entries)) throw new Error("LITE_HARNESS_MCP_SERVERS must be a JSON array");
   const supervisor = new McpSupervisor();
@@ -234,11 +221,12 @@ function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessE
   return supervisor;
 }
 
-function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): {
+async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): Promise<{
   supervisors: LazyPluginSupervisor[];
   snapshots: Array<{ id: string; version: string; digest: string }>;
-} {
+}> {
   if (environment.LITE_HARNESS_ENABLE_PLUGINS !== "true") return { supervisors: [], snapshots: [] };
+  const { createOpenClawCompatibilityWorker, DockerPluginExecutionSandbox, inspectPluginManifest, LazyPluginSupervisor, PluginInstallLock, pluginPackageDigest } = await import("@lite-harness/plugin-core");
   const image = requiredString(environment.LITE_HARNESS_PLUGIN_IMAGE, "LITE_HARNESS_PLUGIN_IMAGE");
   const pluginRoot = join(dataDir, "plugins");
   const lock = new PluginInstallLock(join(dataDir, "plugins.lock.json"));

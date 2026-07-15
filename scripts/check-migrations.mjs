@@ -16,6 +16,7 @@ try {
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
     "run",
     "test/migrations.test.ts",
+    "test/idempotency.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -47,8 +48,10 @@ function writeEvidence(output, report) {
       orderedTransactions: true,
       dataPreserved: true,
       gapAndFutureVersionFailClosed: true,
+      userScopedIdempotency: true,
+      canonicalRequestFingerprint: true,
     },
-    testIds: ["BD-024-REGRESSION", "R29-2320"],
+    testIds: ["BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

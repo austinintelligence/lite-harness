@@ -131,10 +131,24 @@ interface ApprovalRow {
   resolved_at: string | null;
 }
 
+function scopedIdempotencyKey(userId: string, key: string): string {
+  return `${userId.length}:${userId}:${key}`;
+}
+
+function publicIdempotencyKey(value: string): string {
+  const delimiter = value.indexOf(":");
+  if (delimiter < 1) return value;
+  const userLength = Number.parseInt(value.slice(0, delimiter), 10);
+  if (!Number.isSafeInteger(userLength) || userLength < 0) return value;
+  const keyDelimiter = delimiter + 1 + userLength;
+  if (value[keyDelimiter] !== ":") return value;
+  return value.slice(keyDelimiter + 1);
+}
+
 function toRunRecord(row: RunRow): RunRecord {
   return {
     id: row.id,
-    idempotencyKey: row.idempotency_key,
+    idempotencyKey: publicIdempotencyKey(row.idempotency_key),
     appId: row.app_id,
     tenantId: row.tenant_id,
     userId: row.user_id,
@@ -392,6 +406,10 @@ export class SqliteRunStore implements RunStore {
         this.#ensureColumn("runs", "depth", "INTEGER NOT NULL DEFAULT 0");
         this.#ensureColumn("runs", "delivery_allowed", "INTEGER NOT NULL DEFAULT 1");
       },
+      () => this.#database.exec(`
+        UPDATE runs
+        SET idempotency_key = length(user_id) || ':' || user_id || ':' || idempotency_key;
+      `),
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -425,6 +443,10 @@ export class SqliteRunStore implements RunStore {
     request: InternalStartRunRequest,
   ): { run: RunRecord; created: boolean } {
     const fingerprint = requestFingerprint(request);
+    const storedIdempotencyKey = scopedIdempotencyKey(
+      request.principal.userId,
+      request.idempotencyKey,
+    );
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       const existing = this.#database
@@ -432,7 +454,7 @@ export class SqliteRunStore implements RunStore {
           `SELECT * FROM runs
            WHERE app_id = ? AND tenant_id = ? AND idempotency_key = ?`,
         )
-        .get(request.principal.appId, request.principal.tenantId, request.idempotencyKey) as
+        .get(request.principal.appId, request.principal.tenantId, storedIdempotencyKey) as
         | RunRow
         | undefined;
 
@@ -516,7 +538,7 @@ export class SqliteRunStore implements RunStore {
         )
         .run(
           id,
-          request.idempotencyKey,
+          storedIdempotencyKey,
           fingerprint,
           request.principal.appId,
           request.principal.tenantId,
@@ -861,7 +883,7 @@ export class SqliteRunStore implements RunStore {
 function requestFingerprint(request: InternalStartRunRequest): string {
   return createHash("sha256")
     .update(
-      JSON.stringify({
+      JSON.stringify(canonicalize({
         appId: request.principal.appId,
         tenantId: request.principal.tenantId,
         userId: request.principal.userId,
@@ -873,9 +895,21 @@ function requestFingerprint(request: InternalStartRunRequest): string {
         parentRunId: request.parentRunId ?? null,
         depth: request.depth ?? 0,
         deliveryAllowed: request.deliveryAllowed ?? true,
-      }),
+      })),
     )
     .digest("hex");
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
 }
 
 function normalizeBudget(value: Partial<RunBudget>): RunBudget {

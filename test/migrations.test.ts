@@ -47,14 +47,15 @@ describe("ordered SQLite migrations", () => {
     const store = new SqliteRunStore(path);
     expect(store.getRun("run_fixture")).toMatchObject({
       id: "run_fixture", input: "preserve me", agentId: "coder", workspaceId: "workspace",
+      idempotencyKey: "fixture-key",
     });
     store.close();
 
     const migrated = new DatabaseSync(path, { readOnly: true });
     const versions = migrated.prepare("SELECT version FROM schema_migrations ORDER BY version").all()
       .map((row) => (row as { version: number }).version);
-    expect(versions).toEqual([1, 2, 3, 4, 5]);
-    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(5);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6]);
+    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(6);
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM runs").get()).toEqual({ count: 1 });
     migrated.close();
   });

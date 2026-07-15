@@ -189,9 +189,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       });
     }
     const idempotencyKey = stringHeader(request.headers["idempotency-key"]) ?? randomUUID();
-    if (idempotencyKey.length > 200) {
+    if (idempotencyKey.length === 0 || idempotencyKey.length > 200 || /[\0\r\n]/u.test(idempotencyKey)) {
       return reply.code(400).send({
-        error: { code: "invalid_idempotency_key", message: "Idempotency key is too long" },
+        error: { code: "invalid_idempotency_key", message: "Idempotency key is empty, too long, or contains a forbidden control character" },
       });
     }
     const principal = principalFromRequest(request);

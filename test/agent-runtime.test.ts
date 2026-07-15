@@ -42,4 +42,36 @@ describe("AgentRunner", () => {
     });
     expect(observed).toEqual([{ roles: ["system", "user"], tools: ["read_file"] }]);
   });
+
+  it("BD-003-REGRESSION does not let non-cooperative iterator cleanup defeat the model deadline", async () => {
+    const never = new Promise<never>(() => undefined);
+    let cleanupStarted = false;
+    const model: ModelGateway = {
+      streamTurn() {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => never,
+              return: () => {
+                cleanupStarted = true;
+                return never;
+              },
+            };
+          },
+        };
+      },
+    };
+    const run = new AgentRunner(model, new InMemoryToolRuntime()).run({
+      input: "hang",
+      workspaceId: "workspace-deadline",
+      modelIdleTimeoutMs: 10,
+      onEvent: () => undefined,
+    });
+
+    await expect(Promise.race([
+      run.then(() => "resolved", () => "rejected"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 100)),
+    ])).resolves.toBe("rejected");
+    expect(cleanupStarted).toBe(true);
+  });
 });

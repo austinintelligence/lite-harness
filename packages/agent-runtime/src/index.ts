@@ -78,7 +78,7 @@ export class AgentRunner {
           }
         }
       } finally {
-        await stream.return?.();
+        startBestEffortIteratorCleanup(stream);
       }
 
       messages.push({ role: "assistant", content: assistantText, toolCalls });
@@ -124,6 +124,15 @@ export class AgentRunner {
     }
 
     throw new Error(`Agent exceeded the ${turnLimit}-turn limit`);
+  }
+}
+
+function startBestEffortIteratorCleanup<T>(iterator: AsyncIterator<T>): void {
+  if (!iterator.return) return;
+  try {
+    void Promise.resolve(iterator.return()).catch(() => undefined);
+  } catch {
+    // A provider cleanup failure must not replace the turn result or defeat its deadline.
   }
 }
 

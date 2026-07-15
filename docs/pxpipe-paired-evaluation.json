@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-15T22:00:18.214Z",
-  "sourceCommit": "6706b61432a38de322c7f3f84906c32271d83cb5",
+  "generatedAt": "2026-07-15T22:24:29.917Z",
+  "sourceCommit": "585fc86a1c233646af248cb344b6b12bceabe7ff",
   "evaluationType": "paired-model-quality-cost",
   "testId": "BD-050-REGRESSION",
   "provider": {
@@ -35,11 +35,11 @@
       "render": {
         "pages": 1,
         "imageBytes": 12781,
-        "milliseconds": 354.8223
+        "milliseconds": 337.21029999999996
       },
       "text": {
         "answer": "LH-RECOVER-7Q4M",
-        "latencyMilliseconds": 1482.6947000000002,
+        "latencyMilliseconds": 1447.9609,
         "fullBill": {
           "usageReported": false,
           "requestBytes": 8559,
@@ -53,7 +53,7 @@
       },
       "optical": {
         "answer": "recovery-token",
-        "latencyMilliseconds": 2618.1479000000004,
+        "latencyMilliseconds": 3209.2092000000002,
         "fullBill": {
           "usageReported": false,
           "requestBytes": 17421,
@@ -73,11 +73,11 @@
       "render": {
         "pages": 1,
         "imageBytes": 12811,
-        "milliseconds": 22.892499999999927
+        "milliseconds": 22.67779999999948
       },
       "text": {
         "answer": "FENCE-2049-ZETA",
-        "latencyMilliseconds": 1100.7878,
+        "latencyMilliseconds": 1464.4622,
         "fullBill": {
           "usageReported": false,
           "requestBytes": 8584,
@@ -90,8 +90,8 @@
         "score": 1
       },
       "optical": {
-        "answer": "fencing-token",
-        "latencyMilliseconds": 5202.035,
+        "answer": "Optical context fencing-token",
+        "latencyMilliseconds": 5962.3791,
         "fullBill": {
           "usageReported": false,
           "requestBytes": 17457,

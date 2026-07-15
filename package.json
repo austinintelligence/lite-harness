@@ -63,6 +63,7 @@
     "test:migrations": "node scripts/check-migrations.mjs",
     "test:plugins": "node scripts/check-plugins.mjs",
     "test:replay": "node scripts/check-replay.mjs",
+    "test:recovery": "node scripts/check-recovery.mjs",
     "test:watch": "vitest",
     "dev:manager": "tsx apps/manager/src/main.ts",
     "dev:gateway": "tsx apps/gateway/src/main.ts",

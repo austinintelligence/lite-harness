@@ -518,7 +518,7 @@
         "section": "Known baseline defects / 15",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-015-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -532,14 +532,16 @@
       },
       "regression": {
         "testId": "BD-015-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/workspace.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m4/workspace-recovery.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-016",
@@ -552,7 +554,7 @@
         "section": "Known baseline defects / 16",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-016-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -566,14 +568,16 @@
       },
       "regression": {
         "testId": "BD-016-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/workspace.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m4/workspace-recovery.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-017",
@@ -586,7 +590,7 @@
         "section": "Known baseline defects / 17",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-017-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -600,14 +604,16 @@
       },
       "regression": {
         "testId": "BD-017-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/workspace.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m4/workspace-recovery.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-018",

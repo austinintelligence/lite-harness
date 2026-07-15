@@ -5483,14 +5483,12 @@
         "lineStart": 894,
         "lineEnd": 894
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0895",
@@ -5505,14 +5503,12 @@
         "lineStart": 895,
         "lineEnd": 895
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0896",
@@ -5527,14 +5523,12 @@
         "lineStart": 896,
         "lineEnd": 896
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0897",
@@ -5549,14 +5543,12 @@
         "lineStart": 897,
         "lineEnd": 897
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts", "packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0909",
@@ -5571,14 +5563,12 @@
         "lineStart": 909,
         "lineEnd": 919
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0921",
@@ -5593,14 +5583,12 @@
         "lineStart": 921,
         "lineEnd": 923
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0925",
@@ -5637,14 +5625,12 @@
         "lineStart": 928,
         "lineEnd": 932
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0934",
@@ -5747,14 +5733,12 @@
         "lineStart": 940,
         "lineEnd": 942
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts", "packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-044-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R13-0946",

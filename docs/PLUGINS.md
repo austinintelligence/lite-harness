@@ -79,8 +79,8 @@ shutdown:
 - `LITE_HARNESS_ENABLE_PLUGINS=true` activates enabled entries from
   `plugins.lock.json`. `LITE_HARNESS_PLUGIN_IMAGE` must be a digest-pinned
   sandbox image; workers remain lazy and receive only intersected grants.
-- `LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION=true` registers owned encrypted
-  Docker-workspace snapshots through the bounded compactor queue.
+- Managed Docker workspaces checkpoint and restore through Manager's fenced
+  lifecycle automatically. Snapshot paths and publication are not model tools.
 - `LITE_HARNESS_ENABLE_CACHE_CATALOG=true` registers owner-derived cache
   generation resolution without returning host paths to a model or container.
 

@@ -71,6 +71,7 @@ export interface RunStore {
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord;
   getWorkspace(id: string, owner: ResourceOwner): WorkspaceRecord | undefined;
   listWorkspaces(principal: ResourceOwner): WorkspaceRecord[];
+  updateWorkspaceState(id: string, owner: ResourceOwner, expected: WorkspaceRecord["state"], state: WorkspaceRecord["state"]): WorkspaceRecord | undefined;
   createRunAttempt(runId: string, id: string): RunAttemptRecord;
   completeRunAttempt(id: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): RunAttemptRecord;
   completeRunningAttempts(runId: string, status: Exclude<RunAttemptRecord["status"], "RUNNING">): number;

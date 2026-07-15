@@ -301,7 +301,7 @@ export interface WorkspaceRecord {
   tenantId: string;
   userId: string;
   mode: "managed" | "registered-bind";
-  state: "WARM" | "COLD" | "RESTORING" | "ERROR";
+  state: "WARM" | "COLD" | "RESTORING" | "IN_USE" | "SNAPSHOTTING" | "CORRUPT" | "ERROR";
   registeredPath?: string;
   createdAt: string;
   updatedAt: string;
@@ -438,6 +438,7 @@ export type RunEventType =
   | "run.queued"
   | "run.preparing"
   | "run.started"
+  | "run.checkpointing"
   | "run.timed_out"
   | "run.steered"
   | "agent.message.delta"
@@ -447,6 +448,10 @@ export type RunEventType =
   | "usage.updated"
   | "workspace.lease.acquired"
   | "workspace.lease.released"
+  | "workspace.restore.started"
+  | "workspace.restore.completed"
+  | "workspace.checkpoint.completed"
+  | "workspace.checkpoint.failed"
   | "approval.requested"
   | "approval.resolved"
   | "artifact.created"

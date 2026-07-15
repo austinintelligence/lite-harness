@@ -1248,6 +1248,15 @@ export class SqliteRunStore implements RunStore {
     ).all(principal.appId, principal.tenantId, principal.userId) as unknown as WorkspaceRow[]).map(toWorkspace);
   }
 
+  updateWorkspaceState(id: string, owner: ResourceOwner, expected: WorkspaceRecord["state"], state: WorkspaceRecord["state"]): WorkspaceRecord | undefined {
+    const updatedAt = new Date().toISOString();
+    const result = this.#database.prepare(`
+      UPDATE workspaces SET state = ?, updated_at = ?
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ? AND state = ?
+    `).run(state, updatedAt, owner.appId, owner.tenantId, owner.userId, id, expected);
+    return result.changes === 1 ? this.getWorkspace(id, owner) : undefined;
+  }
+
   createRunAttempt(runId: string, id: string): RunAttemptRecord {
     const count = this.#database.prepare("SELECT COUNT(*) AS count FROM run_attempts WHERE run_id = ?").get(runId) as { count: number };
     const startedAt = new Date().toISOString();

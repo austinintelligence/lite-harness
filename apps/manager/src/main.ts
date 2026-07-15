@@ -84,8 +84,10 @@ const optionalSystems = configureProductionOptionalSystems({
   modelId: process.env.LITE_HARNESS_MODEL?.trim() || configuration.provider,
   runtime: brokeredRuntime,
   ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
+  workspaceStore: store,
   snapshotKey: snapshotRootKey,
 });
+const automaticWorkspaceCheckpoint = optionalSystems.workspaceLifecycle;
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
   : undefined;
@@ -98,6 +100,8 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
     : () => false,
   approvalTimeoutMs: Number.parseInt(process.env.LITE_HARNESS_APPROVAL_TIMEOUT_MS ?? "60000", 10),
   approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
+  ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
+  makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
 });
 const integrationRouter = integrationStore ? new InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({

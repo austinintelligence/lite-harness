@@ -6,7 +6,6 @@ import { configureProductionOptionalSystems } from "../apps/manager/src/optional
 import { AgentRunner } from "@lite-harness/agent-runtime";
 import type { ModelMessage } from "@lite-harness/provider-core";
 import { BrokeredToolRuntime, InMemoryToolRuntime } from "@lite-harness/runtime";
-import type { DockerToolRuntime } from "@lite-harness/runtime-docker";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -21,7 +20,7 @@ describe("production optional-system composition", () => {
     await systems.stop();
   });
 
-  it("freezes context and skills and composes lazy MCP, snapshots, and owner-scoped caches", async () => {
+  it("freezes context and skills and composes lazy MCP and owner-scoped caches", async () => {
     const root = temporaryRoot();
     const contextPath = join(root, "operator.md");
     writeFileSync(contextPath, "Keep responses exact.\n");
@@ -29,10 +28,8 @@ describe("production optional-system composition", () => {
     mkdirSync(join(skillRoot, "review"), { recursive: true });
     writeFileSync(join(skillRoot, "review", "SKILL.md"), "---\nname: review\ndescription: Review carefully\ntools: read_file\n---\nExact review steps.\n");
     const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
-    const archive = Buffer.alloc(1024, 0);
-    const dockerRuntime = { exportWorkspace: async () => archive } as unknown as DockerToolRuntime;
     const systems = configureProductionOptionalSystems({
-      dataDir: root, modelId: "model-a", runtime, dockerRuntime, snapshotKey: Buffer.alloc(32, 7),
+      dataDir: root, modelId: "model-a", runtime,
       environment: {
         LITE_HARNESS_CONTEXT_FILE: contextPath,
         LITE_HARNESS_CONTEXT_OPTIMIZATION: "false",
@@ -41,12 +38,11 @@ describe("production optional-system composition", () => {
           transport: "stdio", id: "demo", image: `sha256:${"d".repeat(64)}`, command: "does-not-start-during-configuration",
           tools: [{ name: "lookup", inputSchema: { type: "object", additionalProperties: false } }],
         }]),
-        LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION: "true",
         LITE_HARNESS_ENABLE_CACHE_CATALOG: "true",
       },
     });
     expect(runtime.listTools().map((tool) => tool.name)).toEqual(expect.arrayContaining([
-      "skill_list", "skill_view", "mcp_demo_lookup", "workspace_snapshot", "cache_resolve",
+      "skill_list", "skill_view", "mcp_demo_lookup", "cache_resolve",
     ]));
     await expect(runtime.execute({
       ...execution("mcp_demo_lookup", {}, { appId: "app", tenantId: "tenant-a", userId: "user", scopes: [] }),
@@ -84,9 +80,6 @@ describe("production optional-system composition", () => {
       ok: true, content: "Exact review steps.\n",
       metadata: { requestedTools: ["read_file"], contentDigest: expect.stringMatching(/^[a-f0-9]{64}$/), generation: expect.any(String) },
     });
-    const snapshot = await runtime.execute(execution("workspace_snapshot", {}, principal));
-    expect(snapshot.ok).toBe(true);
-    expect(JSON.parse(snapshot.content)).toMatchObject({ plaintextBytes: archive.length });
     const descriptor = {
       class: "workspace-private", kind: "package-store", logicalKey: "pnpm/store", sourceDigest: "c".repeat(64),
       imageDigest: `sha256:${"a".repeat(64)}`, lockDigest: "b".repeat(64), toolVersions: { node: "24.14.0" },

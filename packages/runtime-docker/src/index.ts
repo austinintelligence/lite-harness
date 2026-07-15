@@ -283,6 +283,14 @@ export class DockerToolRuntime implements ToolRuntime {
     return result.stdout;
   }
 
+  async workspaceExists(workspaceId: string, principal: InternalPrincipal, signal?: AbortSignal): Promise<boolean> {
+    if (this.#registeredPath(workspaceId, principal)) return true;
+    const result = await this.#run(["volume", "inspect", volumeName(workspaceIdentity(workspaceId, principal))], { signal });
+    if (result.code === 0) return true;
+    if (/no such volume/i.test(result.stderr)) return false;
+    throw new Error(`Could not inspect workspace volume: ${result.stderr}`);
+  }
+
   async importWorkspace(workspaceId: string, archive: Buffer, principal?: InternalPrincipal, signal?: AbortSignal): Promise<void> {
     if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be replaced by snapshot restore");
     validateArchiveEntries(archive, {

@@ -24,6 +24,11 @@ import {
 } from "@lite-harness/agent-runtime";
 import { assertRunTransition, createId, type RunStore } from "@lite-harness/domain";
 
+export interface WorkspaceRunLifecycle {
+  prepare(run: RunRecord, signal?: AbortSignal): Promise<{ restored: boolean; recoveredFromPrevious: boolean }>;
+  checkpoint(run: RunRecord, options?: { makeCold?: boolean; signal?: AbortSignal }): Promise<{ state: "WARM" | "COLD"; skipped: boolean; snapshot?: { sha256: string; plaintextBytes: number } }>;
+}
+
 export class RunService {
   readonly #events = new EventEmitter();
   readonly #active = new Map<string, AbortController>();
@@ -44,6 +49,9 @@ export class RunService {
       approvalRouteGeneration?: string | ((run: RunRecord) => string);
       maxSubagentDepth?: number;
       requiresApproval?: (tool: ToolCall, run: RunRecord) => boolean;
+      workspaceLifecycle?: WorkspaceRunLifecycle;
+      workspaceCheckpointTimeoutMs?: number;
+      makeWorkspaceColdAfterCheckpoint?: boolean | ((run: RunRecord) => boolean);
     } = {},
   ) {
     this.#events.setMaxListeners(0);
@@ -380,6 +388,7 @@ export class RunService {
     let attempt: RunAttemptRecord | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let renewal: ReturnType<typeof setInterval> | undefined;
+    let workspacePrepared = false;
     let terminal: { status: RunStatus; type: RunEventType; payload?: Record<string, unknown> } | undefined;
     try {
       const run = this.getRun(runId);
@@ -405,6 +414,17 @@ export class RunService {
         payload: { workspaceId: run.workspaceId, fencingToken: lease.fencingToken },
       });
       this.#notify(runId);
+      if (this.options.workspaceLifecycle) {
+        const prepared = await this.options.workspaceLifecycle.prepare(run, controller.signal);
+        workspacePrepared = true;
+        if (prepared.restored) {
+          this.store.appendEvent({
+            runId, type: "workspace.restore.completed",
+            payload: { workspaceId: run.workspaceId, recoveredFromPrevious: prepared.recoveredFromPrevious },
+          });
+          this.#notify(runId);
+        }
+      }
       if (!this.#transitionIfActive(runId, "RUNNING", "run.started")) return;
       const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
       renewal = setInterval(() => {
@@ -448,6 +468,7 @@ export class RunService {
         onEvent: (event) => this.#appendAgentEvent(run, event),
       });
 
+      if (this.options.workspaceLifecycle) this.#transition(runId, "CHECKPOINTING", "run.checkpointing");
       terminal = { status: "SUCCEEDED", type: "run.succeeded" };
     } catch (error) {
       const reason = controller.signal.reason;
@@ -494,6 +515,46 @@ export class RunService {
       }
     } finally {
       if (timeout) clearTimeout(timeout);
+      if (workspacePrepared && lease && this.options.workspaceLifecycle && terminal) {
+        const checkpointController = new AbortController();
+        const checkpointTimeoutMs = this.options.workspaceCheckpointTimeoutMs ?? 300_000;
+        const checkpointTimeout = setTimeout(
+          () => checkpointController.abort(new Error(`Workspace checkpoint exceeded ${checkpointTimeoutMs}ms`)),
+          checkpointTimeoutMs,
+        );
+        checkpointTimeout.unref?.();
+        try {
+          const currentRun = this.getRun(runId);
+          if (currentRun) {
+            if (!lease || !this.store.validateWorkspaceLease(lease)) throw new WorkspaceLeaseLostError();
+            const configured = this.options.makeWorkspaceColdAfterCheckpoint;
+            const makeCold = typeof configured === "function" ? configured(currentRun) : configured ?? false;
+            const checkpoint = await this.options.workspaceLifecycle.checkpoint(currentRun, { makeCold, signal: checkpointController.signal });
+            this.store.appendEvent({
+              runId, type: "workspace.checkpoint.completed",
+              payload: {
+                workspaceId: currentRun.workspaceId, state: checkpoint.state, skipped: checkpoint.skipped,
+                ...(checkpoint.snapshot ? { sha256: checkpoint.snapshot.sha256, plaintextBytes: checkpoint.snapshot.plaintextBytes } : {}),
+              },
+            });
+            this.#notify(runId);
+          }
+        } catch (error) {
+          this.store.appendEvent({
+            runId, type: "workspace.checkpoint.failed",
+            payload: { workspaceId: this.getRun(runId)?.workspaceId, message: error instanceof Error ? error.message : String(error) },
+          });
+          this.#notify(runId);
+          if (error instanceof WorkspaceLeaseLostError) terminal = {
+            status: "ORPHANED", type: "run.orphaned",
+            payload: { code: "workspace_lease_lost", message: error.message, retryable: true },
+          };
+          else if (terminal.status === "SUCCEEDED") terminal = {
+            status: "FAILED", type: "run.failed",
+            payload: { code: "workspace_checkpoint_failed", message: error instanceof Error ? error.message : String(error) },
+          };
+        } finally { clearTimeout(checkpointTimeout); }
+      }
       if (renewal) clearInterval(renewal);
       if (lease && this.store.releaseWorkspaceLease(lease)) {
         const latest = this.getRun(runId);

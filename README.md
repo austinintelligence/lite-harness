@@ -188,6 +188,10 @@ pnpm lite workspace snapshot demo
 pnpm lite workspace restore demo
 ```
 
+Docker-backed runs checkpoint automatically. Set
+`LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT=true` only when verified snapshots
+should replace warm volumes with cold storage after each run.
+
 See [`docs/RECOVERY.md`](docs/RECOVERY.md) before deleting a volume.
 Derived caches use fenced, immutable, owner-scoped generations; see
 [`docs/CACHES.md`](docs/CACHES.md).

@@ -27,8 +27,9 @@ import {
 import {
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
-  SnapshotCompactorQueue,
+  ManagedWorkspaceLifecycle,
   StaticSnapshotKeyProvider,
+  type WorkspaceLifecycleStore,
 } from "@lite-harness/workspace";
 
 interface OptionalSystemsOptions {
@@ -36,12 +37,14 @@ interface OptionalSystemsOptions {
   modelId: string;
   runtime: BrokeredToolRuntime;
   dockerRuntime?: DockerToolRuntime;
+  workspaceStore?: WorkspaceLifecycleStore;
   snapshotKey?: Buffer;
   environment?: NodeJS.ProcessEnv;
 }
 
 export interface ProductionOptionalSystems {
   context?: AgentContextCompiler;
+  workspaceLifecycle?: ManagedWorkspaceLifecycle;
   stop(): Promise<void>;
 }
 
@@ -58,11 +61,12 @@ export function configureProductionOptionalSystems(options: OptionalSystemsOptio
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = configurePlugins(options.runtime, options.dataDir, environment);
   if (plugins.length) stops.push(() => Promise.all(plugins.map((plugin) => plugin.stop())).then(() => undefined));
-  configureSnapshots(options, environment);
+  const workspaceLifecycle = configureSnapshots(options);
   configureCacheCatalog(options.runtime, options.dataDir, environment);
   const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
   return {
     ...(context ? { context } : {}),
+    ...(workspaceLifecycle ? { workspaceLifecycle } : {}),
     stop: async () => { for (const stop of stops.reverse()) await stop(); },
   };
 }
@@ -250,28 +254,13 @@ function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environ
   return supervisors;
 }
 
-function configureSnapshots(options: OptionalSystemsOptions, environment: NodeJS.ProcessEnv): void {
-  if (environment.LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION !== "true") return;
-  if (!options.dockerRuntime || !options.snapshotKey) throw new Error("Snapshot compaction requires Docker runtime and a snapshot key");
+function configureSnapshots(options: OptionalSystemsOptions): ManagedWorkspaceLifecycle | undefined {
+  if (!options.dockerRuntime) return undefined;
+  if (!options.snapshotKey || !options.workspaceStore) throw new Error("Managed Docker workspaces require a snapshot key and lifecycle store");
   const snapshotRoot = join(options.dataDir, "snapshots");
   mkdirSync(snapshotRoot, { recursive: true, mode: 0o700 });
-  const contexts = new Map<string, { workspaceId: string; principal: InternalPrincipal; signal?: AbortSignal }>();
   const store = new LocalWorkspaceSnapshotStore(snapshotRoot, new StaticSnapshotKeyProvider(options.snapshotKey));
-  const queue = new SnapshotCompactorQueue(snapshotRoot, async (identity) => {
-    const current = contexts.get(identity);
-    if (!current) throw new Error("Snapshot ownership context expired");
-    const archive = await options.dockerRuntime!.exportWorkspace(current.workspaceId, current.principal, current.signal);
-    return store.create(identity, archive);
-  });
-  options.runtime.register("workspace_snapshot", async (params) => {
-    const principal = requirePrincipal(params.principal);
-    const identity = ownedWorkspaceIdentity(params.workspaceId, principal);
-    contexts.set(identity, { workspaceId: params.workspaceId, principal, ...(params.signal ? { signal: params.signal } : {}) });
-    try {
-      const record = await queue.enqueue(identity);
-      return { callId: params.call.id, ok: true, content: JSON.stringify({ sha256: record.sha256, plaintextBytes: record.plaintextBytes, createdAt: record.createdAt }) };
-    } finally { contexts.delete(identity); }
-  }, toolDefinition("Create an authenticated encrypted snapshot of the current owned Docker workspace.", { type: "object", additionalProperties: false }));
+  return new ManagedWorkspaceLifecycle(options.workspaceStore, options.dockerRuntime, store);
 }
 
 function configureCacheCatalog(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): void {
@@ -374,4 +363,3 @@ function identifier(value: unknown, label: string): string { const text = requir
 function environmentName(value: unknown, label: string): string { const text = requiredString(value, label); if (!/^LITE_HARNESS_[A-Z0-9_]+$/.test(text)) throw new Error(`${label} must name a LITE_HARNESS_ variable`); return text; }
 function optionalStringArray(value: unknown, label: string): string[] | undefined { if (value === undefined) return undefined; if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0 && item.length < 4096 && !/[\0\r\n]/.test(item))) throw new Error(`${label} must be an array of bounded strings`); return [...value]; }
 function requirePrincipal(value: InternalPrincipal | undefined): InternalPrincipal { if (!value) throw new Error("Optional Manager capability requires an owned run principal"); return value; }
-function ownedWorkspaceIdentity(workspaceId: string, principal: InternalPrincipal): string { return `owned-${createHash("sha256").update(JSON.stringify([principal.appId, principal.tenantId, principal.userId, workspaceId])).digest("hex")}`; }

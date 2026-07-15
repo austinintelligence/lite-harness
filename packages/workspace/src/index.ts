@@ -35,7 +35,7 @@ import { once } from "node:events";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { DatabaseSync } from "node:sqlite";
-import type { ArtifactRecord, InternalPrincipal } from "@lite-harness/contracts";
+import type { ArtifactRecord, InternalPrincipal, WorkspaceRecord } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import { validateWorkspacePath } from "@lite-harness/runtime";
 
@@ -221,6 +221,11 @@ export class LocalWorkspaceSnapshotStore {
     }
   }
 
+  hasCandidates(workspaceId: string): boolean {
+    const paths = this.#paths(workspaceId);
+    return lstatExists(paths.current) || lstatExists(paths.previous) || lstatExists(paths.previousBackup);
+  }
+
   async #read(workspaceId: string, path: string): Promise<Buffer> {
     const descriptor = await readSnapshotDescriptor(path, this.maxArchiveBytes);
     const header = descriptor.header;
@@ -288,6 +293,127 @@ export class LocalWorkspaceSnapshotStore {
       staging: join(directory, `staging-${process.pid}-${randomBytes(6).toString("hex")}.lhs`),
     };
   }
+}
+
+export interface WorkspaceLifecycleOwner {
+  id: string;
+  workspaceId: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+}
+
+export interface WorkspaceLifecycleStore {
+  getWorkspace(id: string, owner: Pick<WorkspaceLifecycleOwner, "appId" | "tenantId" | "userId">): WorkspaceRecord | undefined;
+  updateWorkspaceState(
+    id: string,
+    owner: Pick<WorkspaceLifecycleOwner, "appId" | "tenantId" | "userId">,
+    expected: WorkspaceRecord["state"],
+    state: WorkspaceRecord["state"],
+  ): WorkspaceRecord | undefined;
+}
+
+export interface WorkspaceLifecycleRuntime {
+  workspaceExists(workspaceId: string, principal: InternalPrincipal, signal?: AbortSignal): Promise<boolean>;
+  exportWorkspace(workspaceId: string, principal?: InternalPrincipal, signal?: AbortSignal): Promise<Buffer>;
+  importWorkspace(workspaceId: string, archive: Buffer, principal?: InternalPrincipal, signal?: AbortSignal): Promise<void>;
+  removeWorkspace(workspaceId: string, principal?: InternalPrincipal): Promise<boolean>;
+}
+
+export interface WorkspaceCheckpointResult {
+  state: "WARM" | "COLD";
+  snapshot?: SnapshotRecord;
+  skipped: boolean;
+}
+
+/** Owns automatic cold restore and post-run checkpoint state transitions. */
+export class ManagedWorkspaceLifecycle {
+  constructor(
+    private readonly store: WorkspaceLifecycleStore,
+    private readonly runtime: WorkspaceLifecycleRuntime,
+    private readonly snapshots: LocalWorkspaceSnapshotStore,
+  ) {}
+
+  async prepare(run: WorkspaceLifecycleOwner, signal?: AbortSignal): Promise<{ restored: boolean; recoveredFromPrevious: boolean }> {
+    signal?.throwIfAborted();
+    let workspace = this.#workspace(run);
+    if (workspace.mode === "registered-bind") return { restored: false, recoveredFromPrevious: false };
+    const principal = lifecyclePrincipal(run);
+    if (workspace.state === "CORRUPT") throw new Error(`Workspace snapshot is corrupt: ${run.workspaceId}`);
+    if (workspace.state === "ERROR") {
+      if (await this.runtime.workspaceExists(run.workspaceId, principal, signal)) workspace = this.#transition(run, "ERROR", "WARM");
+      else if (this.snapshots.hasCandidates(workspaceSnapshotIdentity(run))) workspace = this.#transition(run, "ERROR", "RESTORING");
+      else throw new Error(`Workspace requires recovery: ${run.workspaceId}`);
+    }
+    if (workspace.state === "IN_USE" || workspace.state === "SNAPSHOTTING") {
+      workspace = this.#transition(run, workspace.state, "WARM");
+    }
+    let restored = false; let recoveredFromPrevious = false;
+    const missingWarmVolume = workspace.state === "WARM" && !await this.runtime.workspaceExists(run.workspaceId, principal, signal);
+    if (workspace.state === "COLD" || workspace.state === "RESTORING" || (missingWarmVolume && this.snapshots.hasCandidates(workspaceSnapshotIdentity(run)))) {
+      const restoreFallbackState: WorkspaceRecord["state"] = workspace.state === "COLD" ? "COLD" : "WARM";
+      if (workspace.state !== "RESTORING") workspace = this.#transition(run, workspace.state, "RESTORING");
+      try {
+        const recovered = await this.snapshots.restore(workspaceSnapshotIdentity(run));
+        signal?.throwIfAborted();
+        await this.runtime.importWorkspace(run.workspaceId, recovered.archive, principal, signal);
+        workspace = this.#transition(run, "RESTORING", "WARM");
+        restored = true; recoveredFromPrevious = recovered.recoveredFromPrevious;
+      } catch (error) {
+        if (signal?.aborted) {
+          this.#transition(run, "RESTORING", restoreFallbackState);
+          throw error;
+        }
+        const target = this.snapshots.hasCandidates(workspaceSnapshotIdentity(run)) ? "CORRUPT" : "ERROR";
+        this.#transition(run, "RESTORING", target);
+        throw error;
+      }
+    }
+    this.#transition(run, workspace.state, "IN_USE");
+    return { restored, recoveredFromPrevious };
+  }
+
+  async checkpoint(run: WorkspaceLifecycleOwner, options: { makeCold?: boolean; signal?: AbortSignal } = {}): Promise<WorkspaceCheckpointResult> {
+    options.signal?.throwIfAborted();
+    const workspace = this.#workspace(run);
+    if (workspace.mode === "registered-bind") return { state: "WARM", skipped: true };
+    this.#transition(run, "IN_USE", "SNAPSHOTTING");
+    const principal = lifecyclePrincipal(run);
+    try {
+      const archive = await this.runtime.exportWorkspace(run.workspaceId, principal, options.signal);
+      const snapshot = await this.snapshots.create(workspaceSnapshotIdentity(run), archive);
+      if (options.makeCold) {
+        await this.runtime.removeWorkspace(run.workspaceId, principal);
+        this.#transition(run, "SNAPSHOTTING", "COLD");
+        return { state: "COLD", snapshot, skipped: false };
+      }
+      this.#transition(run, "SNAPSHOTTING", "WARM");
+      return { state: "WARM", snapshot, skipped: false };
+    } catch (error) {
+      this.#transition(run, "SNAPSHOTTING", "ERROR");
+      throw error;
+    }
+  }
+
+  #workspace(run: WorkspaceLifecycleOwner): WorkspaceRecord {
+    const workspace = this.store.getWorkspace(run.workspaceId, run);
+    if (!workspace) throw new Error(`Workspace is unavailable: ${run.workspaceId}`);
+    return workspace;
+  }
+
+  #transition(run: WorkspaceLifecycleOwner, expected: WorkspaceRecord["state"], state: WorkspaceRecord["state"]): WorkspaceRecord {
+    const updated = this.store.updateWorkspaceState(run.workspaceId, run, expected, state);
+    if (!updated) throw new Error(`Workspace state changed while transitioning ${expected} to ${state}`);
+    return updated;
+  }
+}
+
+export function workspaceSnapshotIdentity(owner: Pick<WorkspaceLifecycleOwner, "workspaceId" | "appId" | "tenantId" | "userId">): string {
+  return `owned-${createHash("sha256").update(JSON.stringify([owner.appId, owner.tenantId, owner.userId, owner.workspaceId])).digest("hex")}`;
+}
+
+function lifecyclePrincipal(owner: WorkspaceLifecycleOwner): InternalPrincipal {
+  return { appId: owner.appId, tenantId: owner.tenantId, userId: owner.userId, scopes: [] };
 }
 
 export function snapshotAssociatedData(header: SnapshotHeader): Buffer {

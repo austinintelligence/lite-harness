@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DockerStdioMcpTransport } from "@lite-harness/mcp";
 
+const image = requiredImage("LITE_HARNESS_TEST_MCP_IMAGE");
+
 const SERVER = String.raw`
 const {createInterface}=require('node:readline');
 const input=createInterface({input:process.stdin});
@@ -16,9 +18,9 @@ input.on('line',(line)=>{
 `;
 
 describe("Docker stdio MCP integration", () => {
-  it.skipIf(!process.env.LITE_HARNESS_TEST_MCP_IMAGE)("executes the MCP protocol in a no-network immutable container", async () => {
+  it("executes the MCP protocol in a no-network immutable container", async () => {
     const transport = new DockerStdioMcpTransport({
-      image: process.env.LITE_HARNESS_TEST_MCP_IMAGE as string,
+      image,
       command: "node",
       args: ["-e", SERVER],
       timeoutMs: 30_000,
@@ -33,3 +35,9 @@ describe("Docker stdio MCP integration", () => {
     }
   }, 60_000);
 });
+
+function requiredImage(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required; run this suite through pnpm test:real-runtime`);
+  return value;
+}

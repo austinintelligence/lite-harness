@@ -6,10 +6,9 @@ import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalWorkspaceSnapshotStore, ManagedWorkspaceLifecycle, StaticSnapshotKeyProvider } from "@lite-harness/workspace";
 
-const image = process.env.LITE_HARNESS_TEST_DOCKER_IMAGE;
-const suite = image ? describe : describe.skip;
+const image = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 
-suite("Docker automatic workspace lifecycle", () => {
+describe("Docker automatic workspace lifecycle", () => {
   it("BD-047-REGRESSION checkpoints cold, removes the volume, and restores it before the next run", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-docker-cold-lifecycle-"));
     const workspaceId = `cold-${Date.now()}`; const runId = `run_${Date.now()}`;
@@ -20,7 +19,7 @@ suite("Docker automatic workspace lifecycle", () => {
     store.createWorkspace({ id: workspaceId, ...principal, mode: "managed", state: "WARM", createdAt: now, updatedAt: now });
     store.createOrGetRun(runId, { agent: "coder", workspace: workspaceId, input: "cold lifecycle", idempotencyKey: runId, principal });
     const attempt = store.createRunAttempt(runId, `att_${Date.now()}`);
-    const runtime = new DockerToolRuntime({ image: image as string, installationId: "docker-cold-lifecycle", containerStore: store });
+    const runtime = new DockerToolRuntime({ image, installationId: "docker-cold-lifecycle", containerStore: store });
     const lifecycle = new ManagedWorkspaceLifecycle(
       store, runtime, new LocalWorkspaceSnapshotStore(join(root, "snapshots"), new StaticSnapshotKeyProvider(Buffer.alloc(32, 9))),
     );
@@ -43,3 +42,9 @@ suite("Docker automatic workspace lifecycle", () => {
     }
   }, 90_000);
 });
+
+function requiredImage(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required; run this suite through pnpm test:real-runtime`);
+  return value;
+}

@@ -32,6 +32,7 @@ import {
 import { SchedulerEngine, SqliteTriggerStore } from "@lite-harness/automation";
 
 const cleanup: string[] = [];
+const browserImage = requiredBrowserImage();
 afterEach(() => {
   for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
 });
@@ -76,8 +77,8 @@ describe("managed browser broker", () => {
     await expect(profiles.load("default", other)).resolves.toContain("other");
   });
 
-  it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("runs the pinned Chromium sidecar and stops it", async () => {
-    const driver = new DockerBrowserDriver({ image: process.env.LITE_HARNESS_TEST_BROWSER_IMAGE as string, timeoutMs: 60_000 });
+  it("runs the pinned Chromium sidecar and stops it", async () => {
+    const driver = new DockerBrowserDriver({ image: browserImage, timeoutMs: 60_000 });
     try {
       await driver.start({ allowedOrigins: ["https://example.com"] });
       await expect(driver.execute({ action: "navigate", url: "https://example.com" })).resolves.toMatchObject({
@@ -95,7 +96,7 @@ describe("managed browser broker", () => {
     }
   }, 90_000);
 
-  it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("uploads an authorized file and quarantines a streamed download", async () => {
+  it("uploads an authorized file and quarantines a streamed download", async () => {
     const server = createServer((request, response) => {
       if (request.url === "/download") {
         response.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=fixture.txt" });
@@ -107,7 +108,7 @@ describe("managed browser broker", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve));
     const origin = `http://host.docker.internal:${(server.address() as AddressInfo).port}`;
-    const driver = new DockerBrowserDriver({ image: process.env.LITE_HARNESS_TEST_BROWSER_IMAGE as string, timeoutMs: 60_000 });
+    const driver = new DockerBrowserDriver({ image: browserImage, timeoutMs: 60_000 });
     try {
       await driver.start({ allowedOrigins: [origin], allowPrivateNetworks: true });
       await driver.execute({ action: "navigate", url: origin });
@@ -256,4 +257,10 @@ class FakeBrowserDriver implements BrowserDriver {
 
 function requireHmac(body: Buffer, timestamp: string, secret: string): string {
   return `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:`).update(body).digest("hex")}`;
+}
+
+function requiredBrowserImage(): string {
+  const value = process.env.LITE_HARNESS_TEST_BROWSER_IMAGE?.trim();
+  if (!value) throw new Error("LITE_HARNESS_TEST_BROWSER_IMAGE is required; run this suite through pnpm test:real-runtime");
+  return value;
 }

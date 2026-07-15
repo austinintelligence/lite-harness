@@ -4,9 +4,11 @@ import { InMemoryCredentialBroker, ModelRegistry, RoutedModelGateway } from "@li
 import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
 import { InMemoryToolRuntime } from "@lite-harness/runtime";
 
-const suite = process.env.LITE_HARNESS_LIVE_MODEL_TEST === "hermes" ? describe : describe.skip;
+if (process.env.LITE_HARNESS_LIVE_MODEL_TEST !== "hermes") {
+  throw new Error("Hermes live tests must be run through pnpm test:hermes");
+}
 
-suite("local Hermes model route", () => {
+describe("local Hermes model route", () => {
   it("runs a minimal harness inference through gpt-5.6-luna", async () => {
     const baseUrl = required("LITE_HARNESS_PROVIDER_BASE_URL");
     const modelId = required("LITE_HARNESS_MODEL");

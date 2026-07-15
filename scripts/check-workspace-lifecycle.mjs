@@ -16,7 +16,7 @@ try {
     resolve(root, "node_modules", "vitest", "vitest.mjs"), "run",
     "test/workspace.test.ts", "test/workspace-lifecycle.test.ts", "test/docker-workspace-lifecycle.integration.test.ts",
     "--no-file-parallelism", "--reporter=json", `--outputFile=${reportPath}`,
-  ], { cwd: root, stdio: "inherit", env: { ...process.env, LITE_HARNESS_TEST_DOCKER_IMAGE: image } });
+  ], { cwd: root, stdio: "inherit", env: { ...process.env, LITE_HARNESS_REAL_RUNTIME_TEST: "1", LITE_HARNESS_TEST_DOCKER_IMAGE: image } });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
   if (report.success !== true || report.numFailedTests !== 0 || report.numPendingTests !== 0 || report.numTodoTests !== 0) {
     throw new Error("Workspace lifecycle suite did not produce a zero-skip pass");

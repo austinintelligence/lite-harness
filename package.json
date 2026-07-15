@@ -65,6 +65,7 @@
     "test:browser": "node scripts/check-browser.mjs",
     "test:context": "node scripts/check-context-optimization.mjs",
     "test:docker": "node scripts/check-docker.mjs",
+    "test:real-runtime": "node scripts/check-real-runtime.mjs",
     "test:workspace-lifecycle": "node scripts/check-workspace-lifecycle.mjs",
     "test:run-snapshot": "node scripts/check-run-snapshot.mjs",
     "test:integrations": "node scripts/check-integrations.mjs",

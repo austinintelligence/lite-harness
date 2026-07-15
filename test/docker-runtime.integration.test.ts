@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
-const image = process.env.LITE_HARNESS_TEST_DOCKER_IMAGE;
-const suite = image ? describe : describe.skip;
+const image = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 
-suite("Docker runtime integration", () => {
+describe("Docker runtime integration", () => {
   it("persists a named-volume workspace across containers and restores an archive", async () => {
     const workspaceId = `integration-${Date.now()}`;
     const runId = `run_${Date.now()}`;
@@ -13,7 +12,7 @@ suite("Docker runtime integration", () => {
     const store = new SqliteRunStore(":memory:");
     store.createOrGetRun(runId, { agent: "coder", workspace: workspaceId, input: "integration", idempotencyKey: runId, principal });
     const attempt = store.createRunAttempt(runId, `att_${Date.now()}`);
-    const runtime = new DockerToolRuntime({ image: image as string, installationId: "docker-integration", containerStore: store });
+    const runtime = new DockerToolRuntime({ image, installationId: "docker-integration", containerStore: store });
     const execute = (id: string, name: string, args: Record<string, unknown>) => runtime.execute({
       runId, attemptId: attempt.id, workspaceId, principal, call: { id, name, arguments: args },
     });
@@ -35,3 +34,9 @@ suite("Docker runtime integration", () => {
     }
   }, 60_000);
 });
+
+function requiredImage(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required; run this suite through pnpm test:real-runtime`);
+  return value;
+}

@@ -1080,14 +1080,22 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/sdk-typescript/src/index.ts",
+        "apps/gateway/src/server.ts"
+      ],
+      "testIds": [
+        "A03-RECONNECT-REPLAY"
+      ],
+      "ciJob": "replay-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/reconnect-replay.json",
+          "producer": "pnpm test:replay -- --evidence evidence/m2/reconnect-replay.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "A04",

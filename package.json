@@ -60,6 +60,7 @@
     "harness:hermes": "node scripts/with-hermes-model.mjs node --import tsx apps/launcher/src/main.ts",
     "test": "vitest run",
     "test:migrations": "node scripts/check-migrations.mjs",
+    "test:replay": "node scripts/check-replay.mjs",
     "test:watch": "vitest",
     "dev:manager": "tsx apps/manager/src/main.ts",
     "dev:gateway": "tsx apps/gateway/src/main.ts",

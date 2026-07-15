@@ -12,15 +12,15 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Requirement ledger
 
 - Total required rows: 922
-- Verified: 4
+- Verified: 5
 - In progress: 0
-- Blocked or unverified: 918
+- Blocked or unverified: 917
 
 | Kind | Total | Verified |
 | --- | ---: | ---: |
 | frozen-decision | 32 | 2 |
 | phase-exit | 13 | 0 |
-| alpha-gate | 22 | 1 |
+| alpha-gate | 22 | 2 |
 | contract-requirement | 855 | 1 |
 
 ## Alpha gates
@@ -29,7 +29,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | --- | --- | --- |
 | A01 Cross-platform profile | blocked | traceability-not-yet-established |
 | A02 Installable TypeScript SDK | verified | none |
-| A03 Reconnect and replay | blocked | traceability-not-yet-established |
+| A03 Reconnect and replay | verified | none |
 | A04 Real model-plus-Docker loop | blocked | traceability-not-yet-established |
 | A05 Zero permanent container secrets | blocked | traceability-not-yet-established |
 | A06 One writer with fencing | blocked | traceability-not-yet-established |

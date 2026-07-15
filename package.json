@@ -28,6 +28,7 @@
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:provenance": "node scripts/check-provenance.mjs",
     "check:release": "node scripts/check-release.mjs",
+    "check:images": "node scripts/check-image-workflow.mjs",
     "generate:requirements": "node scripts/generate-requirements.mjs",
     "check:requirements:structure": "node scripts/check-requirements.mjs --structure",
     "check:requirements": "node scripts/check-requirements.mjs",

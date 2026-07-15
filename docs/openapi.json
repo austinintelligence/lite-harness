@@ -146,6 +146,7 @@
           "name": {
             "minLength": 1,
             "maxLength": 128,
+            "pattern": ".*\\S.*",
             "type": "string"
           },
           "instructions": {

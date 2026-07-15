@@ -100,18 +100,20 @@ export const CreateRunRequestSchema = Type.Object(
 
 export type CreateRunRequest = Static<typeof CreateRunRequestSchema>;
 
-export interface InternalPrincipal {
-  appId: string;
-  tenantId: string;
-  userId: string;
-  scopes: string[];
-  tokenId?: string;
-  tokenType?: "app" | "run";
-  replayPolicy?: "multi_use" | "resource_bound_multi_use";
-  agentId?: string;
-  workspaceId?: string;
-  budgetCeiling?: Partial<RunBudget>;
-}
+export const InternalPrincipalSchema = Type.Object({
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  scopes: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256, uniqueItems: true }),
+  tokenId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  tokenType: Type.Optional(Type.Union([Type.Literal("app"), Type.Literal("run")])),
+  replayPolicy: Type.Optional(Type.Union([Type.Literal("multi_use"), Type.Literal("resource_bound_multi_use")])),
+  agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  workspaceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  budgetCeiling: Type.Optional(RunBudgetOverridesSchema),
+}, { additionalProperties: false });
+
+export type InternalPrincipal = Static<typeof InternalPrincipalSchema>;
 
 export const MintRunTokenRequestSchema = Type.Object({
   scopes: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 64, uniqueItems: true }),
@@ -146,13 +148,20 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
-export interface InternalStartRunRequest extends CreateRunRequest {
-  idempotencyKey: string;
-  principal: InternalPrincipal;
-  parentRunId?: string;
-  depth?: number;
-  deliveryAllowed?: boolean;
-}
+export const InternalStartRunRequestSchema = Type.Object({
+  agent: Type.String({ minLength: 1, maxLength: 128 }),
+  workspace: Type.String({ minLength: 1, maxLength: 128 }),
+  session: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  input: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+  budget: Type.Optional(RunBudgetOverridesSchema),
+  idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+  principal: InternalPrincipalSchema,
+  parentRunId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 128 })),
+  deliveryAllowed: Type.Optional(Type.Boolean()),
+}, { additionalProperties: false });
+
+export type InternalStartRunRequest = Static<typeof InternalStartRunRequestSchema>;
 
 export interface RunRecord {
   id: string;
@@ -235,16 +244,24 @@ export interface CreateAgentProfileRequest {
 
 export const CreateAgentProfileRequestSchema = Type.Object({
   id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-  name: Type.String({ minLength: 1, maxLength: 128 }),
+  name: Type.String({ minLength: 1, maxLength: 128, pattern: ".*\\S.*" }),
   instructions: Type.Optional(Type.String({ maxLength: 1_000_000 })),
   modelCapabilities: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256 })),
   allowedTools: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 })),
   defaultBudget: Type.Optional(RunBudgetOverridesSchema),
 }, { additionalProperties: false });
 
-export interface InternalCreateAgentProfileRequest extends CreateAgentProfileRequest {
-  principal: InternalPrincipal;
-}
+export const InternalCreateAgentProfileRequestSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  name: Type.String({ minLength: 1, maxLength: 128, pattern: ".*\\S.*" }),
+  instructions: Type.Optional(Type.String({ maxLength: 1_000_000 })),
+  modelCapabilities: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256 })),
+  allowedTools: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 })),
+  defaultBudget: Type.Optional(RunBudgetOverridesSchema),
+  principal: InternalPrincipalSchema,
+}, { additionalProperties: false });
+
+export type InternalCreateAgentProfileRequest = Static<typeof InternalCreateAgentProfileRequestSchema>;
 
 export interface WorkspaceRecord {
   id: string;
@@ -268,9 +285,13 @@ export const CreateWorkspaceRequestSchema = Type.Object({
   mode: Type.Optional(Type.Literal("managed")),
 }, { additionalProperties: false });
 
-export interface InternalCreateWorkspaceRequest extends CreateWorkspaceRequest {
-  principal: InternalPrincipal;
-}
+export const InternalCreateWorkspaceRequestSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  mode: Type.Optional(Type.Literal("managed")),
+  principal: InternalPrincipalSchema,
+}, { additionalProperties: false });
+
+export type InternalCreateWorkspaceRequest = Static<typeof InternalCreateWorkspaceRequestSchema>;
 
 export interface RunAttemptRecord {
   id: string;
@@ -335,15 +356,22 @@ export interface ArtifactRecord {
   createdAt: string;
 }
 
-export interface PublishArtifactRequest {
-  path: string;
-  mediaType: string;
-  dataBase64: string;
-}
+export const PublishArtifactRequestSchema = Type.Object({
+  path: Type.String({ minLength: 1, maxLength: 4_096 }),
+  mediaType: Type.String({ minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$" }),
+  dataBase64: Type.String({ minLength: 4, maxLength: 24 * 1024 * 1024, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }),
+}, { additionalProperties: false });
 
-export interface InternalPublishArtifactRequest extends PublishArtifactRequest {
-  principal: InternalPrincipal;
-}
+export type PublishArtifactRequest = Static<typeof PublishArtifactRequestSchema>;
+
+export const InternalPublishArtifactRequestSchema = Type.Object({
+  path: Type.String({ minLength: 1, maxLength: 4_096 }),
+  mediaType: Type.String({ minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$" }),
+  dataBase64: Type.String({ minLength: 4, maxLength: 24 * 1024 * 1024, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }),
+  principal: InternalPrincipalSchema,
+}, { additionalProperties: false });
+
+export type InternalPublishArtifactRequest = Static<typeof InternalPublishArtifactRequestSchema>;
 
 export interface ArtifactPayloadResponse {
   record: ArtifactRecord;

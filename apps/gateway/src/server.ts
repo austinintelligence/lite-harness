@@ -20,6 +20,7 @@ import {
   type InternalPrincipal,
   type InternalStartRunRequest,
   type PublishArtifactRequest,
+  PublishArtifactRequestSchema,
   type RunEvent,
   type RunRecord,
   type SessionMessageRecord,
@@ -407,7 +408,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       try {
         const run = await options.manager.getRun(request.params.runId);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
-        if (!isPublishArtifactRequest(request.body)) return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
+        if (!Value.Check(PublishArtifactRequestSchema, request.body)) return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
         return reply.code(201).send(await options.manager.publishArtifact(run.id, request.body, principal));
       } catch (error) {
         return reply.code(400).send({ error: { code: "artifact_publish_failed", message: error instanceof Error ? error.message : String(error) } });
@@ -486,14 +487,6 @@ function installExactJsonBodyParser(app: FastifyInstance): void {
     try { done(null, JSON.parse(request.rawBody.toString("utf8"))); }
     catch (error) { done(error as Error); }
   });
-}
-
-function isPublishArtifactRequest(value: unknown): value is PublishArtifactRequest {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.path === "string" && record.path.length > 0 &&
-    typeof record.mediaType === "string" && record.mediaType.length > 0 &&
-    typeof record.dataBase64 === "string" && record.dataBase64.length <= 24 * 1024 * 1024;
 }
 
 function principalFromRequest(request: FastifyRequest): InternalPrincipal {

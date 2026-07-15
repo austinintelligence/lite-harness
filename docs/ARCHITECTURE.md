@@ -37,6 +37,15 @@ exact JSON Schema advertised for that tool in the current model turn. Invalid,
 unadvertised, or ambiguously duplicated tools fail before approval and runtime
 dispatch; validation never coerces, removes, or defaults model-supplied values.
 
+## Wire-contract boundary
+
+Public REST and local Gateway-to-Manager bodies reuse the authoritative TypeBox
+schemas exported by `@lite-harness/contracts`. The internal schemas are tied to
+the required IPC protocol header and reject unknown properties, malformed
+principals, out-of-range budgets, invalid modes, and malformed artifact data
+before a control-plane or storage method runs. OpenAPI is generated from the
+same public schemas.
+
 ## Optional packs
 
 Plugins, skills, MCP, browser, connectors, schedules, subagents, memory, and

@@ -151,6 +151,9 @@ importers:
       '@lite-harness/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
+      '@sinclair/typebox':
+        specifier: 0.34.41
+        version: 0.34.41
       fastify:
         specifier: 5.8.5
         version: 5.8.5

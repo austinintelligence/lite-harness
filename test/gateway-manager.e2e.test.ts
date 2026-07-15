@@ -392,6 +392,17 @@ describe("Gateway to Manager vertical slice", () => {
       },
     });
     expect(artifact.statusCode).toBe(201);
+    const malformedArtifact = await gateway.inject({
+      method: "POST", url: `/v1/runs/${firstBody.runId}/artifacts`,
+      headers: {
+        authorization: `Bearer ${appToken}`,
+        "x-lite-tenant-id": "tenant-a",
+        "x-lite-user-id": "user-a",
+        "content-type": "application/json",
+      },
+      payload: { path: "output/invalid.txt", mediaType: "text/plain", dataBase64: "***", unexpected: true },
+    });
+    expect(malformedArtifact.statusCode).toBe(400);
     const artifactId = artifact.json<{ id: string }>().id;
     const download = await gateway.inject({
       method: "GET",

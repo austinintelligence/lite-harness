@@ -12,7 +12,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/gateway-manager.e2e.test.ts",
+    "run", "test/gateway-manager.e2e.test.ts", "test/internal-boundary-schemas.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -43,8 +43,10 @@ function writeEvidence(output, report) {
       gatewayPreservesExactBytesOverIpc: true,
       reserializedEquivalentJsonRejected: true,
       normalizedEnvelopeParsedOnlyAfterAuthentication: true,
+      publicAndInternalRequestsUseAuthoritativeSchemas: true,
+      unknownFieldsAndMalformedBase64Rejected: true,
     },
-    testIds: ["BD-036-REGRESSION"],
+    testIds: ["BD-036-REGRESSION", "BD-037-REGRESSION", "R32-2505"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { Value } from "@sinclair/typebox/value";
 import type {
   ArtifactPayloadResponse,
   InternalPrincipal,
@@ -12,6 +13,10 @@ import type {
 } from "@lite-harness/contracts";
 import {
   DEFAULT_RUN_BUDGET,
+  InternalCreateAgentProfileRequestSchema,
+  InternalCreateWorkspaceRequestSchema,
+  InternalPublishArtifactRequestSchema,
+  InternalStartRunRequestSchema,
   LITE_IPC_PROTOCOL_VERSION,
   LITE_IPC_VERSION_HEADER,
   errorEnvelope,
@@ -134,7 +139,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
 
   app.post<{ Body: InternalStartRunRequest }>("/internal/runs", async (request, reply) => {
     const body = request.body;
-    if (!isInternalStartRunRequest(body)) {
+    if (!Value.Check(InternalStartRunRequestSchema, body)) {
       return reply.code(400).send({
         error: { code: "invalid_request", message: "Malformed internal run request" },
       });
@@ -250,7 +255,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     "/internal/runs/:runId/artifacts",
     { bodyLimit: 24 * 1024 * 1024 },
     async (request, reply) => {
-      if (!options.artifactStore || !isInternalArtifactRequest(request.body)) {
+      if (!options.artifactStore || !Value.Check(InternalPublishArtifactRequestSchema, request.body)) {
         return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
       }
       const run = options.runService.getRun(request.params.runId);
@@ -287,7 +292,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
 
   app.post<{ Body: InternalCreateAgentProfileRequest }>("/internal/agents", async (request, reply) => {
     const body = request.body;
-    if (!body?.principal || typeof body.name !== "string" || !body.name.trim()) {
+    if (!Value.Check(InternalCreateAgentProfileRequestSchema, body)) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Agent name and principal are required" } });
     }
     const now = new Date().toISOString();
@@ -322,7 +327,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
 
   app.post<{ Body: InternalCreateWorkspaceRequest }>("/internal/workspaces", async (request, reply) => {
     const body = request.body;
-    if (!body?.principal || (body.mode !== undefined && body.mode !== "managed")) {
+    if (!Value.Check(InternalCreateWorkspaceRequestSchema, body)) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Only managed public workspaces are supported" } });
     }
     const now = new Date().toISOString();
@@ -375,16 +380,6 @@ function installExactJsonBodyParser(app: FastifyInstance): void {
   });
 }
 
-function isInternalArtifactRequest(value: unknown): value is InternalPublishArtifactRequest {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  const principal = record.principal as Record<string, unknown> | undefined;
-  return typeof record.path === "string" && typeof record.mediaType === "string" &&
-    typeof record.dataBase64 === "string" && Boolean(principal) &&
-    typeof principal?.appId === "string" && typeof principal.tenantId === "string" &&
-    typeof principal.userId === "string" && Array.isArray(principal.scopes);
-}
-
 function principalFromInternalHeaders(headers: Record<string, unknown>): InternalPrincipal {
   const value = (name: string) => typeof headers[name] === "string" ? headers[name] as string : "";
   return { appId: value("x-lite-app-id"), tenantId: value("x-lite-tenant-id"), userId: value("x-lite-user-id"), scopes: [] };
@@ -410,24 +405,4 @@ function boundedInteger(
   return Number.isSafeInteger(number) && number >= minimum && number <= maximum
     ? number
     : fallback;
-}
-
-function isInternalStartRunRequest(value: unknown): value is InternalStartRunRequest {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  const principal = record.principal as Record<string, unknown> | undefined;
-  return (
-    typeof record.agent === "string" &&
-    typeof record.workspace === "string" &&
-    typeof record.input === "string" &&
-    typeof record.idempotencyKey === "string" &&
-    Boolean(principal) &&
-    typeof principal?.appId === "string" &&
-    typeof principal.tenantId === "string" &&
-    typeof principal.userId === "string" &&
-    Array.isArray(principal.scopes) &&
-    principal.scopes.every((scope) => typeof scope === "string")
-  );
 }

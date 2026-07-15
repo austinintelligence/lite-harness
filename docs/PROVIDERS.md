@@ -18,9 +18,12 @@ DPAPI on Windows, Keychain on macOS, or Secret Service on Linux. The default
 `environment` lane accepts `LITE_HARNESS_PROVIDER_API_KEY` for ephemeral local
 use. Neither lane serializes secret material into run state, logs, or Docker.
 
-Fallback occurs only for typed retryable failures and only before a tool call
-becomes externally visible. Model IDs, prices, capabilities, and context limits
-are operator/discovery data, not hard-coded aliases disguised as compatibility.
+Fallback occurs only for typed retryable failures before the provider accepts
+the request and before any text, tool call, or usage becomes visible. Once any
+of those boundaries is crossed, the route is never replayed through a fallback,
+preventing duplicate billing and repeated work. Model IDs, prices, capabilities,
+and context limits are operator/discovery data, not hard-coded aliases disguised
+as compatibility.
 
 Because every run has a dollar ceiling, direct routes require both
 `LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION` and

@@ -1,5 +1,6 @@
 import type {
   ModelEvent,
+  ProviderAdapterEvent,
   ProviderAdapter,
 } from "@lite-harness/provider-core";
 import { ProviderError, readProviderJson, readSseData } from "@lite-harness/provider-core";
@@ -42,7 +43,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
-  async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ModelEvent> {
+  async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
     const response = await this.#fetch(new URL("chat/completions", ensureTrailingSlash(this.#baseUrl)), {
       method: "POST",
       headers: {
@@ -80,6 +81,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         response.status,
       );
     }
+    yield { type: "request.accepted" };
     if (response.headers.get("content-type")?.includes("text/event-stream")) {
       yield* streamOpenAi(response, params.signal);
       return;

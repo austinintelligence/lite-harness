@@ -48,12 +48,13 @@ function writeEvidence(output, report) {
     boundaries: {
       requiredCapabilitiesCheckedBeforeIo: true,
       retryOnlyBeforeVisibleSideEffect: true,
+      requestAcceptanceAndUsageDisableFallback: true,
       providerResponsesBounded: true,
       unknownPricingRejectedUnderCostCeiling: true,
       omittedAdapterCostCalculatedFromFrozenRates: true,
       conservativeHigherCostEnforced: true,
     },
-    testIds: ["BD-030-REGRESSION"],
+    testIds: ["BD-030-REGRESSION", "BD-031-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

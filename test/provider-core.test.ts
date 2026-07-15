@@ -105,6 +105,47 @@ describe("provider plane", () => {
     expect(fallbackCalls).toBe(0);
   });
 
+  it("BD-031-REGRESSION never falls back after request acceptance or usage visibility", async () => {
+    for (const firstVisibleEvent of [
+      { type: "request.accepted" as const },
+      { type: "usage" as const, inputTokens: 1, outputTokens: 1 },
+    ]) {
+      const registry = new ModelRegistry([
+        baseModel("first", "preferred"),
+        baseModel("second", "fallback"),
+      ]);
+      const broker = new InMemoryCredentialBroker();
+      broker.set("preferred-credential", { authorizationHeader: "Bearer preferred-secret" });
+      broker.set("fallback-credential", { authorizationHeader: "Bearer fallback-secret" });
+      let fallbackCalls = 0;
+      const first: ProviderAdapter = {
+        providerId: "preferred",
+        async *stream() {
+          yield firstVisibleEvent;
+          throw new ProviderError("provider_unavailable", "failed after provider visibility", true, 503);
+        },
+      };
+      const fallback: ProviderAdapter = {
+        providerId: "fallback",
+        async *stream() {
+          fallbackCalls += 1;
+          yield { type: "completed", finishReason: "stop" };
+        },
+      };
+      const gateway = new RoutedModelGateway(
+        registry.plan({ requiredCapabilities: ["text"] }),
+        [first, fallback],
+        broker,
+      );
+      await expect(async () => {
+        for await (const _event of gateway.streamTurn({ messages: [{ role: "user", content: "hello" }] })) {
+          // consume until the post-visibility failure
+        }
+      }).rejects.toThrow(/failed after provider visibility/);
+      expect(fallbackCalls).toBe(0);
+    }
+  });
+
   it("redacts credential fields and embedded provider keys recursively", () => {
     const keyShapedFixture = ["sk", "abcdefghijklmnopqrstuvwxyz1234567890"].join("-");
     expect(

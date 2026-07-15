@@ -40,6 +40,7 @@ describe("direct provider adapters", () => {
       credential: { authorizationHeader: "Bearer upstream-secret" },
     })) events.push(event);
     expect(events).toEqual([
+      { type: "request.accepted" },
       { type: "text.delta", delta: "hello" },
       { type: "usage", inputTokens: 2, outputTokens: 1 },
       { type: "completed", finishReason: "stop" },
@@ -66,6 +67,7 @@ describe("direct provider adapters", () => {
         credential: { authorizationHeader: "Bearer fixture-secret" },
       })) events.push(event);
       expect(events).toEqual([
+        { type: "request.accepted" },
         { type: "text.delta", delta: "streamed" },
         { type: "usage", inputTokens: 3, outputTokens: 2 },
         { type: "completed", finishReason: "stop" },

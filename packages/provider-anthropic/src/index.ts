@@ -1,4 +1,4 @@
-import type { ModelEvent, ProviderAdapter } from "@lite-harness/provider-core";
+import type { ModelEvent, ProviderAdapter, ProviderAdapterEvent } from "@lite-harness/provider-core";
 import { ProviderError, readProviderJson, readSseData, type ModelMessage } from "@lite-harness/provider-core";
 
 export class AnthropicProvider implements ProviderAdapter {
@@ -17,7 +17,7 @@ export class AnthropicProvider implements ProviderAdapter {
     this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
-  async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ModelEvent> {
+  async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
     const response = await this.#fetch(new URL("messages", ensureTrailingSlash(this.#baseUrl)), {
       method: "POST",
       headers: {
@@ -43,6 +43,7 @@ export class AnthropicProvider implements ProviderAdapter {
         response.status,
       );
     }
+    yield { type: "request.accepted" };
     if (response.headers.get("content-type")?.includes("text/event-stream")) {
       yield* streamAnthropic(response, params.signal);
       return;

@@ -14,6 +14,8 @@ export type ModelEvent =
   | { type: "usage"; inputTokens: number; outputTokens: number; costUsd?: number }
   | { type: "completed"; finishReason: "stop" | "tool_calls" };
 
+export type ProviderAdapterEvent = ModelEvent | { type: "request.accepted" };
+
 export interface ModelRunContext {
   runId: string;
   attemptId: string;
@@ -208,7 +210,7 @@ export interface ProviderAdapter {
     tools?: readonly ToolDefinition[];
     credential: CredentialMaterial;
     signal?: AbortSignal;
-  }): AsyncIterable<ModelEvent>;
+  }): AsyncIterable<ProviderAdapterEvent>;
 }
 
 export async function* readSseData(
@@ -328,7 +330,8 @@ export class RoutedModelGateway implements ModelGateway {
           credential,
           ...(params.signal ? { signal: params.signal } : {}),
         })) {
-          if (event.type === "tool.call" || event.type === "text.delta") externallyVisible = true;
+          if (providerRequestBecameVisible(event)) externallyVisible = true;
+          if (event.type === "request.accepted") continue;
           yield event.type === "usage" ? withAuthoritativeCost(event, model) : event;
         }
         return;
@@ -342,6 +345,12 @@ export class RoutedModelGateway implements ModelGateway {
       ? lastError
       : new ProviderError("route_exhausted", "Every provider route failed", true);
   }
+}
+
+/** Once true, retrying another route could duplicate billed or externally visible work. */
+export function providerRequestBecameVisible(event: ProviderAdapterEvent): boolean {
+  return event.type === "request.accepted" || event.type === "usage" ||
+    event.type === "tool.call" || event.type === "text.delta";
 }
 
 export interface UsageRecord {

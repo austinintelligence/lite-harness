@@ -35,7 +35,7 @@ describe("tool approvals and steering", () => {
     }
   });
 
-  it("persists steering as a session message and run event", () => {
+  it("persists steering as a session message and run event", async () => {
     const store = new SqliteRunStore(":memory:");
     const service = new RunService(store, new AgentRunner(new FakeModelGateway(), new InMemoryToolRuntime()));
     try {
@@ -51,6 +51,7 @@ describe("tool approvals and steering", () => {
       expect(service.listSessionMessages(run.sessionId as string, run)).toContainEqual(
         expect.objectContaining({ role: "user", content: "also explain the result", metadata: { steering: true } }),
       );
+      await service.waitForTerminal(run.id);
     } finally {
       store.close();
     }

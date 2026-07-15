@@ -491,17 +491,25 @@ export class RunService {
   }
 
   #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent): void {
-    this.store.appendEvent({ runId: run.id, type: event.type, payload: event.payload });
+    const usage = event.type === "usage.updated"
+      ? {
+          inputTokens: numberValue(event.payload.inputTokens),
+          outputTokens: numberValue(event.payload.outputTokens),
+          costUsd: numberValue(event.payload.costUsd),
+        }
+      : event.type === "tool.call.requested"
+        ? { toolCalls: 1 }
+        : undefined;
+    this.store.appendEvent({
+      runId: run.id,
+      type: event.type,
+      payload: event.payload,
+      ...(usage ? { usage } : {}),
+    });
     if (event.type === "usage.updated") {
-      const updated = this.store.recordUsage(run.id, {
-        inputTokens: numberValue(event.payload.inputTokens),
-        outputTokens: numberValue(event.payload.outputTokens),
-        costUsd: numberValue(event.payload.costUsd),
-      });
-      this.#enforceBudget(updated);
+      this.#enforceBudget(this.getRun(run.id) as RunRecord);
     } else if (event.type === "tool.call.requested") {
-      const updated = this.store.recordUsage(run.id, { toolCalls: 1 });
-      this.#enforceBudget(updated);
+      this.#enforceBudget(this.getRun(run.id) as RunRecord);
     }
     if (run.sessionId && event.type === "agent.message.completed") {
       this.store.appendSessionMessage({

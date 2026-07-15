@@ -25,6 +25,7 @@ export interface AppendRunEvent {
   status?: RunStatus;
   errorCode?: string;
   errorMessage?: string;
+  usage?: Partial<RunUsage>;
 }
 
 export interface ResourceOwner {

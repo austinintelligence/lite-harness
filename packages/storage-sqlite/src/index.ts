@@ -21,6 +21,7 @@ import type {
   WorkspaceLease,
 } from "@lite-harness/contracts";
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
+import { isTerminalRunStatus } from "@lite-harness/contracts";
 import type { AppendRunEvent, ResourceOwner, RunStore } from "@lite-harness/domain";
 
 interface RunRow {
@@ -826,6 +827,10 @@ export class SqliteRunStore implements RunStore {
              last_sequence = ?,
              error_code = COALESCE(?, error_code),
              error_message = COALESCE(?, error_message),
+             usage_input_tokens = usage_input_tokens + ?,
+             usage_output_tokens = usage_output_tokens + ?,
+             usage_cost_usd = usage_cost_usd + ?,
+             usage_tool_calls = usage_tool_calls + ?,
              updated_at = ?
            WHERE id = ?`,
         )
@@ -834,9 +839,18 @@ export class SqliteRunStore implements RunStore {
           sequence,
           params.errorCode ?? null,
           params.errorMessage ?? null,
+          params.usage?.inputTokens ?? 0,
+          params.usage?.outputTokens ?? 0,
+          params.usage?.costUsd ?? 0,
+          params.usage?.toolCalls ?? 0,
           createdAt,
           params.runId,
         );
+      if (params.status && isTerminalRunStatus(params.status)) {
+        this.#database.prepare(
+          "UPDATE run_attempts SET status = ?, ended_at = ? WHERE run_id = ? AND status = 'RUNNING'",
+        ).run(params.status, createdAt, params.runId);
+      }
       this.#database.exec("COMMIT");
       return { runId: params.runId, sequence, type: params.type, payload, createdAt };
     } catch (error) {

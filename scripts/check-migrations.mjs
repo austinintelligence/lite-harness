@@ -20,6 +20,7 @@ try {
     "test/owner-scoped-identities.test.ts",
     "test/session-history.test.ts",
     "test/queue-deadline.test.ts",
+    "test/transactional-projections.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -58,10 +59,12 @@ function writeEvidence(output, report) {
       newestSessionHistoryWindow: true,
       structuredAssistantToolCalls: true,
       acceptedToTerminalDeadline: true,
+      atomicEventProjectionAndAttempt: true,
     },
     testIds: [
       "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-012-REGRESSION", "BD-013-REGRESSION",
       "BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320",
+      "BD-021-REGRESSION",
     ],
   };
   const absolute = resolve(root, output);

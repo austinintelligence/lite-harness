@@ -950,7 +950,7 @@
         "section": "Known baseline defects / 27",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-027-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -964,14 +964,16 @@
       },
       "regression": {
         "testId": "BD-027-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/process-rpc-safety.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m6/plugin-security.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "a77ccce544ba618669c4c66acd5494b5e6887454"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-028",

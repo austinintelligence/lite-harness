@@ -2158,14 +2158,12 @@
         "lineStart": 518,
         "lineEnd": 521
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/contracts/src/index.ts", "packages/control-plane/src/index.ts", "packages/storage-sqlite/src/index.ts"],
+      "testIds": ["BD-048-REGRESSION"],
+      "ciJob": "run-snapshot-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "status": "in-progress",
+      "blockers": ["integration-origin-not-frozen"]
     },
     {
       "id": "R07-0525",
@@ -2202,14 +2200,12 @@
         "lineStart": 526,
         "lineEnd": 526
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/contracts/src/index.ts", "packages/control-plane/src/index.ts", "packages/storage-sqlite/src/index.ts"],
+      "testIds": ["BD-048-REGRESSION"],
+      "ciJob": "run-snapshot-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0527",
@@ -2224,14 +2220,12 @@
         "lineStart": 527,
         "lineEnd": 527
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/skills/src/index.ts", "packages/agent-runtime/src/index.ts", "packages/control-plane/src/index.ts"],
+      "testIds": ["BD-048-REGRESSION"],
+      "ciJob": "run-snapshot-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0528",
@@ -2246,14 +2240,12 @@
         "lineStart": 528,
         "lineEnd": 528
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/agent-runtime/src/index.ts", "packages/control-plane/src/index.ts"],
+      "testIds": ["BD-048-REGRESSION"],
+      "ciJob": "run-snapshot-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0529",
@@ -2268,14 +2260,12 @@
         "lineStart": 529,
         "lineEnd": 529
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/agent-runtime/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-048-REGRESSION"],
+      "ciJob": "run-snapshot-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0530",

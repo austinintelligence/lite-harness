@@ -81,9 +81,9 @@ function configureContext(dataDir: string, modelId: string, environment: NodeJS.
     { gate, cache: new TenantContextRenderCache() },
   );
   return {
-    compile: async ({ principal }) => {
+    compile: async ({ principal, modelId: selectedModelId }) => {
       const blocks = await compiler.compile(
-        modelId,
+        selectedModelId ?? modelId,
         enabled ? "conservative" : "off",
         principal ? { appId: principal.appId, tenantId: principal.tenantId } : undefined,
       );

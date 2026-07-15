@@ -1643,7 +1643,7 @@
         "section": "Known baseline defects / 47",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-047-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1657,14 +1657,12 @@
       },
       "regression": {
         "testId": "BD-047-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/docker-workspace-lifecycle.integration.test.ts",
+        "result": "pass",
+        "evidenceArtifact": { "path": "evidence/m4/automatic-workspace-lifecycle.json" }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": ["56f4db21e7abc6be5e928d3c730aee3d0cec088c"],
+      "blockers": []
     },
     {
       "id": "BD-048",

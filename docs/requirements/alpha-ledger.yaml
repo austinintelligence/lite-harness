@@ -389,14 +389,12 @@
         "lineStart": 199,
         "lineEnd": 199
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "D18",
@@ -1810,14 +1808,12 @@
         "lineStart": 488,
         "lineEnd": 488
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "packages/control-plane/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0489",
@@ -12152,14 +12148,12 @@
         "lineStart": 1941,
         "lineEnd": 1941
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/control-plane/src/index.ts", "packages/workspace/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1942",
@@ -12174,14 +12168,12 @@
         "lineStart": 1942,
         "lineEnd": 1942
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/runtime-docker/src/index.ts", "packages/workspace/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1943",
@@ -12306,14 +12298,12 @@
         "lineStart": 1948,
         "lineEnd": 1948
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-015-REGRESSION", "BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1949",
@@ -12328,14 +12318,12 @@
         "lineStart": 1949,
         "lineEnd": 1949
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-016-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1950",
@@ -12350,14 +12338,12 @@
         "lineStart": 1950,
         "lineEnd": 1950
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-016-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1951",
@@ -12372,14 +12358,12 @@
         "lineStart": 1951,
         "lineEnd": 1951
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1958",
@@ -12394,14 +12378,12 @@
         "lineStart": 1958,
         "lineEnd": 1958
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/control-plane/src/index.ts", "apps/manager/src/main.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R22-1960",
@@ -14571,14 +14553,12 @@
         "lineStart": 2152,
         "lineEnd": 2152
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-016-REGRESSION", "BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R26-2153",
@@ -15055,14 +15035,12 @@
         "lineStart": 2181,
         "lineEnd": 2181
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-016-REGRESSION", "BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2182",
@@ -15447,14 +15425,12 @@
         "lineStart": 2208,
         "lineEnd": 2208
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-016-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2209",
@@ -18550,14 +18526,12 @@
         "lineStart": 2877,
         "lineEnd": 2877
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-015-REGRESSION", "BD-016-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2878",
@@ -18933,14 +18907,12 @@
         "lineStart": 2897,
         "lineEnd": 2897
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts", "packages/control-plane/src/index.ts"],
+      "testIds": ["BD-047-REGRESSION"],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2898",

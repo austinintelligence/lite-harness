@@ -401,6 +401,9 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
     image,
     installationId: dataDir,
     containerStore: runStore,
+    memory: configuration.runtimeMemory,
+    cpus: configuration.runtimeCpus,
+    pidsLimit: configuration.runtimePids,
     workspaceQuotaBytes: configuration.workspaceQuotaBytes,
     resolveRegisteredWorkspace: (workspaceId, principal) => {
       if (!principal) return undefined;

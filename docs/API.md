@@ -58,7 +58,9 @@ TypeScript model and operation inventory is
 `packages/sdk-typescript/src/generated-api.ts`, and the Python TypedDict model
 inventory is `sdks/python/src/lite_harness/generated_api.py`. Release checks
 require every public operation to expose a typed request (when applicable), a
-typed success response, and matching SDK operation/model inventories.
+typed success response, and matching SDK operation/model inventories. Gateway
+route discovery is AST-based, resolves only static path constants, and fails
+closed when a public route is declared dynamically.
 
 The webhook route does not use the app bearer token. It requires
 `X-Lite-Signature` and resolves a preconfigured account/sender binding inside

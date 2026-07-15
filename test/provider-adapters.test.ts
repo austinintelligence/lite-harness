@@ -200,6 +200,37 @@ describe("direct provider adapters", () => {
     expect(events.at(-1)).toEqual({ type: "completed", finishReason: "stop" });
   });
 
+  it("rejects non-loopback plaintext Anthropic endpoints before credential-bearing I/O", async () => {
+    const fetch = vi.fn();
+    expect(() => new AnthropicProvider({
+      baseUrl: "http://anthropic.example/v1/",
+      allowedOrigins: ["http://anthropic.example"],
+      fetch,
+    })).toThrow(/plaintext Anthropic endpoints must be loopback/);
+    expect(() => new AnthropicProvider({
+      baseUrl: "https://user:password@api.anthropic.com/v1/",
+      allowedOrigins: ["https://api.anthropic.com"],
+      fetch,
+    })).toThrow(/embedded credentials|allowlisted/);
+    expect(fetch).not.toHaveBeenCalled();
+
+    const local = new AnthropicProvider({
+      baseUrl: "http://127.0.0.2:8999/v1/",
+      allowedOrigins: ["http://127.0.0.2:8999"],
+      fetch: vi.fn(async () => new Response(JSON.stringify({
+        content: [{ type: "text", text: "local" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } })),
+    });
+    const events = [];
+    for await (const event of local.stream({
+      model: model("claude-local", "anthropic"), messages: [{ role: "user", content: "hi" }],
+      credential: { authorizationHeader: "Bearer placeholder" },
+    })) events.push(event);
+    expect(events).toContainEqual({ type: "text.delta", delta: "local" });
+  });
+
   it("streams Anthropic text, usage, and tool calls with paired tool results", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { stream: boolean; messages: Array<{ role: string; content: unknown[] }> };

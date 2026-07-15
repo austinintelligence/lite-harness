@@ -56,9 +56,10 @@ function writeEvidence(output, report) {
       nativeOpenAiUsesResponsesApi: true,
       responsesTerminalStatesNormalized: true,
       openAiCompatibleRemainsSeparate: true,
+      anthropicPlaintextRestrictedToLoopback: true,
     },
     testIds: [
-      "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION",
+      "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION", "BD-033-REGRESSION",
       "R14-1251", "R27-2223", "R34-2883",
       "R14-1052", "R14-1281",
     ],

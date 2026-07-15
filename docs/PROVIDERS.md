@@ -41,6 +41,8 @@ zero-marginal-cost local or subscription proxy.
 
 Direct adapters parse true SSE incrementally, bound response sizes and idle
 time, normalize usage, and reject endpoints outside their configured origins.
+Credential-bearing Anthropic endpoints require HTTPS unless the allowlisted
+host is loopback; embedded URL credentials are rejected.
 `codex` and `claude` are separate delegated process routes; subscription login
 remains owned by each official runtime.
 

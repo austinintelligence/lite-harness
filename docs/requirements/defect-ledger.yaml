@@ -662,7 +662,7 @@
         "section": "Known baseline defects / 19",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-019-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -676,14 +676,16 @@
       },
       "regression": {
         "testId": "BD-019-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/docker-lifecycle.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m3/docker-policy.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "c21c7ed8cc0407e927b8e3b818b96876f7a9491a"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-020",
@@ -696,7 +698,7 @@
         "section": "Known baseline defects / 20",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-020-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -710,14 +712,16 @@
       },
       "regression": {
         "testId": "BD-020-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/docker-lifecycle.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m3/docker-policy.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "c21c7ed8cc0407e927b8e3b818b96876f7a9491a"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-021",

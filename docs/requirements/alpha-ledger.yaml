@@ -196,14 +196,22 @@
         "lineStart": 189,
         "lineEnd": 190
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/auth/src/index.ts",
+        "packages/storage-sqlite/src/index.ts",
+        "apps/gateway/src/server.ts"
+      ],
+      "testIds": [
+        "BD-001-REGRESSION"
+      ],
+      "ciJob": "packaged-python-parity",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/packaged-auth.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "D10",
@@ -218,14 +226,23 @@
         "lineStart": 191,
         "lineEnd": 191
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/auth/src/index.ts",
+        "apps/gateway/src/server.ts",
+        "apps/gateway/src/manager-client.ts",
+        "packages/contracts/src/index.ts"
+      ],
+      "testIds": [
+        "BD-001-REGRESSION"
+      ],
+      "ciJob": "packaged-python-parity",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/packaged-auth.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "D11",

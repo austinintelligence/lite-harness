@@ -12,13 +12,13 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Requirement ledger
 
 - Total required rows: 922
-- Verified: 1
+- Verified: 3
 - In progress: 0
-- Blocked or unverified: 921
+- Blocked or unverified: 919
 
 | Kind | Total | Verified |
 | --- | ---: | ---: |
-| frozen-decision | 32 | 0 |
+| frozen-decision | 32 | 2 |
 | phase-exit | 13 | 0 |
 | alpha-gate | 22 | 1 |
 | contract-requirement | 855 | 0 |
@@ -70,7 +70,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 ## Open release-blocking defects
 
-- Critical: 7
+- Critical: 6
 - High: 51
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.

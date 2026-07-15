@@ -8344,14 +8344,12 @@
         "lineStart": 1408,
         "lineEnd": 1408
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1410",
@@ -8366,14 +8364,12 @@
         "lineStart": 1410,
         "lineEnd": 1410
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1411",
@@ -8388,14 +8384,12 @@
         "lineStart": 1411,
         "lineEnd": 1411
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1412",
@@ -8410,14 +8404,12 @@
         "lineStart": 1412,
         "lineEnd": 1412
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1413",
@@ -8432,14 +8424,12 @@
         "lineStart": 1413,
         "lineEnd": 1413
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1414",
@@ -8454,14 +8444,12 @@
         "lineStart": 1414,
         "lineEnd": 1414
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-049-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R15-1416",

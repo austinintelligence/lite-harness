@@ -53,7 +53,7 @@ function writeEvidence(output, report) {
       executionBoundaryRevalidatesDigest: true,
       approvalRecordsDurableInSqlite: true,
     },
-    testIds: ["BD-028-REGRESSION"],
+    testIds: ["BD-028-REGRESSION", "R11-0885", "R27-2237", "R34-2900"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

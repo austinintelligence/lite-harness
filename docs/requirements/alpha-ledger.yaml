@@ -5444,14 +5444,23 @@
         "lineStart": 885,
         "lineEnd": 886
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "BD-028-REGRESSION"
+      ],
+      "ciJob": "approval-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/approval-security.json",
+          "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R12-0894",
@@ -15762,14 +15771,22 @@
         "lineStart": 2237,
         "lineEnd": 2237
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "BD-028-REGRESSION"
+      ],
+      "ciJob": "approval-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/approval-security.json",
+          "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2238",
@@ -18914,14 +18931,23 @@
         "lineStart": 2900,
         "lineEnd": 2900
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "test/approval.test.ts",
+        "test/approval-binding.test.ts"
+      ],
+      "testIds": [
+        "BD-028-REGRESSION"
+      ],
+      "ciJob": "approval-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/approval-security.json",
+          "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2901",

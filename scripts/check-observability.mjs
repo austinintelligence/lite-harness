@@ -37,6 +37,7 @@ try {
           requestTraceHeaders: true,
           structuredRequestMetrics: true,
           runLifecycleTelemetry: true,
+          runUsageAndFirstEventLatency: true,
           durableJsonlAuditSink: true,
           promptFilePathStackAndSecretRedaction: true,
         },

@@ -71,6 +71,9 @@ export class RunService {
   readonly #queueTails = new Map<string, Promise<void>>();
   readonly #scheduled = new Set<string>();
   readonly #executions = new Map<string, Promise<void>>();
+  readonly #executionStartedAt = new Map<string, number>();
+  readonly #firstModelToken = new Set<string>();
+  readonly #firstVisibleAgentEvent = new Set<string>();
   #accepting = true;
 
   constructor(
@@ -460,6 +463,7 @@ export class RunService {
         runId: run.id, workspaceId: run.workspaceId,
         appId: run.appId, tenantId: run.tenantId,
       };
+      this.#executionStartedAt.set(run.id, Date.now());
       executionTrace = this.#safeStartTrace("run.execute", lifecycleAttributes);
       this.#safeObserve("run.queue_wait_ms", Math.max(0, Date.now() - Date.parse(run.createdAt)), lifecycleAttributes);
       this.#safeCounter("runs.attempts.started", 1, lifecycleAttributes);
@@ -542,7 +546,7 @@ export class RunService {
           if (!this.options.runSnapshot || !attempt) return;
           this.#freezeRunSnapshot(run, attempt, profile, prepared);
         },
-        onEvent: (event) => this.#appendAgentEvent(run, event),
+        onEvent: (event) => this.#appendAgentEvent(run, event, attempt?.id),
       });
 
       if (this.options.workspaceLifecycle) this.#transition(runId, "CHECKPOINTING", "run.checkpointing");
@@ -655,6 +659,9 @@ export class RunService {
       }
       this.#active.delete(runId);
       this.#steering.delete(runId);
+      this.#executionStartedAt.delete(runId);
+      this.#firstModelToken.delete(runId);
+      this.#firstVisibleAgentEvent.delete(runId);
       const latest = this.getRun(runId);
       if (terminal && latest && !isTerminalRunStatus(latest.status)) {
         this.#transition(runId, terminal.status, terminal.type, terminal.payload);
@@ -906,7 +913,7 @@ export class RunService {
     throw new Error(`Workspace lease timed out for ${run.workspaceId}`);
   }
 
-  #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent): void {
+  #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent, attemptId?: string): void {
     const usage = event.type === "usage.updated"
       ? {
           inputTokens: numberValue(event.payload.inputTokens),
@@ -916,6 +923,32 @@ export class RunService {
       : event.type === "tool.call.requested"
         ? { toolCalls: 1 }
         : undefined;
+    const telemetryAttributes: RunObservabilityAttributes = {
+      runId: run.id, workspaceId: run.workspaceId,
+      appId: run.appId, tenantId: run.tenantId,
+      ...(attemptId ? { attemptId } : {}),
+    };
+    const elapsedMs = this.#executionStartedAt.get(run.id);
+    if (event.type === "agent.message.delta" && elapsedMs !== undefined) {
+      const elapsed = Math.max(0, Date.now() - elapsedMs);
+      if (!this.#firstModelToken.has(run.id)) {
+        this.#firstModelToken.add(run.id);
+        this.#safeObserve("run.time_to_first_model_token_ms", elapsed, telemetryAttributes);
+      }
+      if (!this.#firstVisibleAgentEvent.has(run.id)) {
+        this.#firstVisibleAgentEvent.add(run.id);
+        this.#safeObserve("run.time_to_first_visible_event_ms", elapsed, telemetryAttributes);
+      }
+    }
+    if (event.type === "usage.updated") {
+      const inputTokens = numberValue(event.payload.inputTokens);
+      const outputTokens = numberValue(event.payload.outputTokens);
+      if (Number.isSafeInteger(inputTokens)) this.#safeCounter("model.input_tokens.total", inputTokens, telemetryAttributes);
+      if (Number.isSafeInteger(outputTokens)) this.#safeCounter("model.output_tokens.total", outputTokens, telemetryAttributes);
+      if (typeof event.payload.costUsd === "number" && Number.isFinite(event.payload.costUsd) && event.payload.costUsd >= 0) {
+        this.#safeObserve("model.cost_usd", event.payload.costUsd, telemetryAttributes);
+      }
+    }
     this.store.appendEvent({
       runId: run.id,
       type: event.type,

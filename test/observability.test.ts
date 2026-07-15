@@ -126,7 +126,13 @@ describe("structured observability", () => {
       expect(snapshot.events.some((event) => event.kind === "audit" && event.name === "run.terminal" && event.traceId === snapshot.events.find((candidate) => candidate.kind === "trace" && candidate.name === "run.execute")?.traceId)).toBe(true);
       expect(snapshot.counters["runs.accepted.total"]).toBe(1);
       expect(snapshot.counters["runs.terminal.total"]).toBe(1);
+      expect(snapshot.counters["model.input_tokens.total"]).toBeGreaterThan(0);
+      expect(snapshot.counters["model.output_tokens.total"]).toBeGreaterThan(0);
+      expect(snapshot.events.some((event) => event.kind === "metric" && event.name === "model.input_tokens.total" && typeof event.attributes.attemptId === "string")).toBe(true);
       expect(snapshot.histograms["run.queue_wait_ms"]?.count).toBe(1);
+      expect(snapshot.histograms["model.cost_usd"]?.count).toBeGreaterThan(0);
+      expect(snapshot.histograms["run.time_to_first_model_token_ms"]?.count).toBe(1);
+      expect(snapshot.histograms["run.time_to_first_visible_event_ms"]?.count).toBe(1);
       expect(JSON.stringify(snapshot)).not.toContain("private prompt that must not be logged");
 
       const replay = service.createRun({

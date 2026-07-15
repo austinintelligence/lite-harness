@@ -50,7 +50,7 @@
         "section": "Known baseline defects / 2",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-002-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -64,14 +64,16 @@
       },
       "regression": {
         "testId": "BD-002-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/lifecycle-safety.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m2/migrations.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "a9ed59688fd87b796c7c5468ba94631569947ab7"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-003",
@@ -118,7 +120,7 @@
         "section": "Known baseline defects / 4",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-004-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -132,14 +134,16 @@
       },
       "regression": {
         "testId": "BD-004-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/lifecycle-safety.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m2/migrations.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "a9ed59688fd87b796c7c5468ba94631569947ab7"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-005",
@@ -152,7 +156,7 @@
         "section": "Known baseline defects / 5",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-005-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -166,14 +170,16 @@
       },
       "regression": {
         "testId": "BD-005-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/lifecycle-safety.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m2/migrations.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "a9ed59688fd87b796c7c5468ba94631569947ab7"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-006",
@@ -708,7 +714,7 @@
         "section": "Known baseline defects / 21",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-021-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -722,14 +728,16 @@
       },
       "regression": {
         "testId": "BD-021-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/transactional-projections.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m2/migrations.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "928060c4caa12fd4edb0826b1e21fed79b33fb6f"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-022",

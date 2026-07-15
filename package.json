@@ -59,6 +59,7 @@
     "with:hermes": "node scripts/with-hermes-model.mjs",
     "harness:hermes": "node scripts/with-hermes-model.mjs node --import tsx apps/launcher/src/main.ts",
     "test": "vitest run",
+    "test:approvals": "node scripts/check-approvals.mjs",
     "test:backpressure": "node scripts/check-backpressure.mjs",
     "test:browser": "node scripts/check-browser.mjs",
     "test:docker": "node scripts/check-docker.mjs",

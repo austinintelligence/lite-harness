@@ -23,6 +23,15 @@ not appear in the Manager import graph until enabled.
 7. The runtime container disappears; the named volume, session, and events remain.
 8. Manager restart marks interrupted attempts `ORPHANED` with retry guidance.
 
+## Approval boundary
+
+Each pending approval stores a SHA-256 execution digest over the exact tool and
+canonical argument digest, run, app/tenant/user owner, workspace, agent-policy
+version, provider-route generation, and expiry. The Manager revalidates that
+binding both when a decision is resolved and immediately before the tool
+runtime mutation boundary. Route or policy drift, changed arguments, and
+expired decisions fail closed and require a new approval.
+
 ## Optional packs
 
 Plugins, skills, MCP, browser, connectors, schedules, subagents, memory, and

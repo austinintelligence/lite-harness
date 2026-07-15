@@ -359,6 +359,14 @@ export interface ApprovalRecord {
   runId: string;
   toolCallId: string;
   toolName: string;
+  toolArgumentsDigest: string;
+  executionDigest: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  workspaceId: string;
+  policyGeneration: number;
+  routeGeneration: string;
   status: ApprovalStatus;
   expiresAt: string;
   createdAt: string;

@@ -41,6 +41,7 @@ export class RunService {
       workspaceLeaseTtlMs?: number;
       workspaceQueueTimeoutMs?: number;
       approvalTimeoutMs?: number;
+      approvalRouteGeneration?: string | ((run: RunRecord) => string);
       maxSubagentDepth?: number;
       requiresApproval?: (tool: ToolCall, run: RunRecord) => boolean;
     } = {},
@@ -188,12 +189,18 @@ export class RunService {
   resolveApproval(approvalId: string, approved: boolean): ApprovalRecord | undefined {
     const existing = this.store.getApproval(approvalId);
     if (!existing || existing.status !== "PENDING") return existing;
-    const resolved = this.store.resolveApproval(approvalId, approved ? "APPROVED" : "DENIED");
+    const bindingValid = this.#approvalBindingIsCurrent(existing);
+    const expired = Date.parse(existing.expiresAt) <= Date.now();
+    const status = expired ? "EXPIRED" : bindingValid && approved ? "APPROVED" : "DENIED";
+    let resolved = this.store.resolveApproval(approvalId, status, existing.executionDigest);
+    if (status === "APPROVED" && resolved?.status === "PENDING") {
+      resolved = this.store.resolveApproval(approvalId, "EXPIRED", existing.executionDigest);
+    }
     if (resolved) {
       this.store.appendEvent({
         runId: resolved.runId,
         type: "approval.resolved",
-        payload: { approvalId, status: resolved.status },
+        payload: { approvalId, status: resolved.status, executionDigest: resolved.executionDigest },
       });
       this.#notify(resolved.runId);
     }
@@ -201,7 +208,7 @@ export class RunService {
     if (waiter) {
       clearTimeout(waiter.timer);
       this.#approvalWaiters.delete(approvalId);
-      waiter.resolve(approved);
+      waiter.resolve(resolved?.status === "APPROVED");
     }
     return resolved;
   }
@@ -434,7 +441,7 @@ export class RunService {
         takeSteering: () => this.#takeSteering(runId),
         beforeToolCall: async (call) => {
           if (!lease || !this.store.validateWorkspaceLease(lease)) throw new WorkspaceLeaseLostError();
-          await this.#authorizeTool(run, call, controller.signal);
+          return await this.#authorizeTool(run, call, controller.signal);
         },
         onEvent: (event) => this.#appendAgentEvent(run, event),
       });
@@ -537,44 +544,100 @@ export class RunService {
     return queued;
   }
 
-  async #approveToolIfRequired(run: RunRecord, call: ToolCall, signal: AbortSignal): Promise<void> {
-    if (!this.options.requiresApproval?.(call, run)) return;
+  async #approveToolIfRequired(
+    run: RunRecord,
+    call: ToolCall,
+    policyGeneration: number,
+    signal: AbortSignal,
+  ): Promise<ApprovalRecord | undefined> {
+    if (!this.options.requiresApproval?.(call, run)) return undefined;
+    signal.throwIfAborted();
     const id = createId("apr");
     const timeoutMs = this.options.approvalTimeoutMs ?? 60_000;
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
+    const routeGeneration = this.#approvalRouteGeneration(run);
+    const argumentsDigest = approvalArgumentsDigest(call.arguments);
+    const executionDigest = approvalExecutionDigest({
+      runId: run.id,
+      toolCallId: call.id,
+      toolName: call.name,
+      toolArgumentsDigest: argumentsDigest,
+      appId: run.appId,
+      tenantId: run.tenantId,
+      userId: run.userId,
+      workspaceId: run.workspaceId,
+      policyGeneration,
+      routeGeneration,
+      expiresAt,
+    });
     const record = this.store.createApproval({
       id,
       runId: run.id,
       toolCallId: call.id,
       toolName: call.name,
+      toolArgumentsDigest: argumentsDigest,
+      executionDigest,
+      appId: run.appId,
+      tenantId: run.tenantId,
+      userId: run.userId,
+      workspaceId: run.workspaceId,
+      policyGeneration,
+      routeGeneration,
       status: "PENDING",
-      expiresAt: new Date(Date.now() + timeoutMs).toISOString(),
-      createdAt: new Date().toISOString(),
+      expiresAt,
+      createdAt,
     });
     this.store.appendEvent({
       runId: run.id,
       type: "approval.requested",
-      payload: { approvalId: id, toolCallId: call.id, toolName: call.name, expiresAt: record.expiresAt },
+      payload: {
+        approvalId: id,
+        toolCallId: call.id,
+        toolName: call.name,
+        toolArgumentsDigest: record.toolArgumentsDigest,
+        executionDigest: record.executionDigest,
+        expiresAt: record.expiresAt,
+      },
     });
     this.#notify(run.id);
     const approved = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        this.#approvalWaiters.delete(id);
-        this.store.resolveApproval(id, "EXPIRED");
-        this.store.appendEvent({ runId: run.id, type: "approval.resolved", payload: { approvalId: id, status: "EXPIRED" } });
-        this.#notify(run.id);
-        resolve(false);
-      }, timeoutMs);
-      this.#approvalWaiters.set(id, { resolve, timer });
-      signal.addEventListener("abort", () => {
+      let settled = false;
+      const settle = (value: boolean) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         this.#approvalWaiters.delete(id);
-        resolve(false);
-      }, { once: true });
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      };
+      const recordResolution = (status: "DENIED" | "EXPIRED") => {
+        const resolved = this.store.resolveApproval(id, status, record.executionDigest);
+        if (resolved?.status !== status) return;
+        this.store.appendEvent({
+          runId: run.id,
+          type: "approval.resolved",
+          payload: { approvalId: id, status, executionDigest: record.executionDigest },
+        });
+        this.#notify(run.id);
+      };
+      const onAbort = () => {
+        recordResolution("DENIED");
+        settle(false);
+      };
+      const timer = setTimeout(() => {
+        recordResolution("EXPIRED");
+        settle(false);
+      }, timeoutMs);
+      this.#approvalWaiters.set(id, { resolve: settle, timer });
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
     });
     if (!approved) throw new Error(`Tool approval denied or expired: ${call.name}`);
+    return record;
   }
 
-  async #authorizeTool(run: RunRecord, call: ToolCall, signal: AbortSignal): Promise<void> {
+  async #authorizeTool(run: RunRecord, call: ToolCall, signal: AbortSignal): Promise<(() => void) | undefined> {
     const profile = this.store.getAgentProfile(run.agentId, run);
     if (!profile || !profile.allowedTools.includes(call.name)) {
       throw new Error(`Tool is not allowed by agent policy: ${call.name}`);
@@ -582,7 +645,56 @@ export class RunService {
     if (!run.deliveryAllowed && ["message_send", "integration_reply", "connector_send"].includes(call.name)) {
       throw new Error("Delivery tools are disabled for subagent runs");
     }
-    await this.#approveToolIfRequired(run, call, signal);
+    const approval = await this.#approveToolIfRequired(run, call, profile.version, signal);
+    return approval ? () => this.#assertApprovalExecutable(approval.id, run, call) : undefined;
+  }
+
+  #approvalBindingIsCurrent(record: ApprovalRecord, call?: ToolCall): boolean {
+    const run = this.store.getRun(record.runId);
+    if (!run) return false;
+    const profile = this.store.getAgentProfile(run.agentId, run);
+    if (!profile) return false;
+    const routeGeneration = this.#approvalRouteGeneration(run);
+    if (record.appId !== run.appId || record.tenantId !== run.tenantId || record.userId !== run.userId ||
+        record.workspaceId !== run.workspaceId || record.policyGeneration !== profile.version ||
+        record.routeGeneration !== routeGeneration) {
+      return false;
+    }
+    const argumentsDigest = call ? approvalArgumentsDigest(call.arguments) : record.toolArgumentsDigest;
+    const digest = approvalExecutionDigest({
+      runId: run.id,
+      toolCallId: call?.id ?? record.toolCallId,
+      toolName: call?.name ?? record.toolName,
+      toolArgumentsDigest: argumentsDigest,
+      appId: run.appId,
+      tenantId: run.tenantId,
+      userId: run.userId,
+      workspaceId: run.workspaceId,
+      policyGeneration: profile.version,
+      routeGeneration,
+      expiresAt: record.expiresAt,
+    });
+    return digest === record.executionDigest;
+  }
+
+  #assertApprovalExecutable(approvalId: string, run: RunRecord, call: ToolCall): void {
+    const approval = this.store.getApproval(approvalId);
+    if (!approval || approval.status !== "APPROVED") throw new Error("Tool approval is not approved");
+    if (Date.parse(approval.expiresAt) <= Date.now()) throw new Error("Tool approval expired before execution");
+    if (approval.runId !== run.id || !this.#approvalBindingIsCurrent(approval, call)) {
+      throw new Error("Tool approval execution binding changed before execution");
+    }
+  }
+
+  #approvalRouteGeneration(run: RunRecord): string {
+    const configured = this.options.approvalRouteGeneration;
+    const generation = typeof configured === "function"
+      ? configured(run)
+      : configured ?? "default-route-v1";
+    if (!generation || generation.length > 256 || /[\r\n\0]/.test(generation)) {
+      throw new Error("Approval route generation must be a bounded single-line value");
+    }
+    return generation;
   }
 
   async #waitForWorkspaceLease(run: RunRecord, signal: AbortSignal): Promise<WorkspaceLease> {
@@ -731,6 +843,51 @@ class BudgetExceededError extends Error {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+export interface ApprovalExecutionBinding {
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  toolArgumentsDigest: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  workspaceId: string;
+  policyGeneration: number;
+  routeGeneration: string;
+  expiresAt: string;
+}
+
+/** Hashes JSON tool arguments without depending on object insertion order. */
+export function approvalArgumentsDigest(argumentsValue: Record<string, unknown>): string {
+  return createHash("sha256").update(canonicalApprovalJson(argumentsValue)).digest("hex");
+}
+
+/** Immutable authorization identity rechecked at resolution and immediately before execution. */
+export function approvalExecutionDigest(binding: ApprovalExecutionBinding): string {
+  return createHash("sha256").update(canonicalApprovalJson({
+    version: 1,
+    ...binding,
+  })).digest("hex");
+}
+
+function canonicalApprovalJson(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Approval arguments must contain only finite JSON numbers");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalApprovalJson).join(",")}]`;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => {
+      if (record[key] === undefined) throw new Error("Approval arguments must not contain undefined values");
+      return `${JSON.stringify(key)}:${canonicalApprovalJson(record[key])}`;
+    }).join(",")}}`;
+  }
+  throw new Error("Approval arguments must contain only JSON values");
 }
 
 function acceptedDeadline(run: RunRecord): number {

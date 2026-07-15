@@ -60,7 +60,11 @@ export interface RunStore {
   releaseWorkspaceLease(lease: WorkspaceLease): boolean;
   createApproval(record: ApprovalRecord): ApprovalRecord;
   getApproval(id: string): ApprovalRecord | undefined;
-  resolveApproval(id: string, status: Exclude<ApprovalStatus, "PENDING">): ApprovalRecord | undefined;
+  resolveApproval(
+    id: string,
+    status: Exclude<ApprovalStatus, "PENDING">,
+    expectedExecutionDigest: string,
+  ): ApprovalRecord | undefined;
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord;
   getAgentProfile(id: string, owner: ResourceOwner): AgentProfileRecord | undefined;
   listAgentProfiles(principal: ResourceOwner): AgentProfileRecord[];

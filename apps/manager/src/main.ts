@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { accessSync, constants, statfsSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence, type IntervalTrigger } from "@lite-harness/automation";
@@ -71,6 +72,7 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime), {
     ? () => true
     : () => false,
   approvalTimeoutMs: Number.parseInt(process.env.LITE_HARNESS_APPROVAL_TIMEOUT_MS ?? "60000", 10),
+  approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
 });
 const integrationRouter = integrationStore ? new InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({
@@ -422,6 +424,29 @@ function validBase64Key(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function configuredApprovalRouteGeneration(provider: string): string {
+  const explicit = process.env.LITE_HARNESS_ROUTE_GENERATION?.trim();
+  if (explicit) return explicit;
+  let baseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "provider-default";
+  try {
+    const parsed = new URL(baseUrl);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    baseUrl = parsed.toString();
+  } catch {
+    // Named provider presets do not require a URL.
+  }
+  const descriptor = JSON.stringify({
+    version: 1,
+    provider,
+    model: process.env.LITE_HARNESS_MODEL?.trim() || "provider-default",
+    baseUrl,
+  });
+  return `route-${createHash("sha256").update(descriptor).digest("hex")}`;
 }
 
 function resolveModelGateway(

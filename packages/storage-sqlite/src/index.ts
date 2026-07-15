@@ -139,6 +139,14 @@ interface ApprovalRow {
   run_id: string;
   tool_call_id: string;
   tool_name: string;
+  tool_arguments_digest: string;
+  execution_digest: string;
+  app_id: string;
+  tenant_id: string;
+  user_id: string;
+  workspace_id: string;
+  policy_generation: number;
+  route_generation: string;
   status: ApprovalStatus;
   expires_at: string;
   created_at: string;
@@ -270,6 +278,14 @@ function toApproval(row: ApprovalRow): ApprovalRecord {
     runId: row.run_id,
     toolCallId: row.tool_call_id,
     toolName: row.tool_name,
+    toolArgumentsDigest: row.tool_arguments_digest,
+    executionDigest: row.execution_digest,
+    appId: row.app_id,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    workspaceId: row.workspace_id,
+    policyGeneration: row.policy_generation,
+    routeGeneration: row.route_generation,
     status: row.status,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
@@ -609,6 +625,27 @@ export class SqliteRunStore implements RunStore {
         ) STRICT;
         CREATE INDEX runtime_containers_run ON runtime_containers(run_id, attempt_id);
       `),
+      () => {
+        this.#ensureColumn("approvals", "tool_arguments_digest", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "execution_digest", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "app_id", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "tenant_id", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "user_id", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "workspace_id", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        this.#ensureColumn("approvals", "policy_generation", "INTEGER NOT NULL DEFAULT 0");
+        this.#ensureColumn("approvals", "route_generation", "TEXT NOT NULL DEFAULT 'legacy-unbound'");
+        const migratedAt = new Date().toISOString();
+        this.#database.prepare(`
+          UPDATE approvals
+          SET app_id = COALESCE((SELECT app_id FROM runs WHERE runs.id = approvals.run_id), 'legacy-unbound'),
+              tenant_id = COALESCE((SELECT tenant_id FROM runs WHERE runs.id = approvals.run_id), 'legacy-unbound'),
+              user_id = COALESCE((SELECT user_id FROM runs WHERE runs.id = approvals.run_id), 'legacy-unbound'),
+              workspace_id = COALESCE((SELECT workspace_id FROM runs WHERE runs.id = approvals.run_id), 'legacy-unbound'),
+              status = CASE WHEN status = 'PENDING' THEN 'EXPIRED' ELSE status END,
+              resolved_at = CASE WHEN status = 'PENDING' THEN ? ELSE resolved_at END
+          WHERE execution_digest = 'legacy-unbound'
+        `).run(migratedAt);
+      },
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -1050,10 +1087,16 @@ export class SqliteRunStore implements RunStore {
 
   createApproval(record: ApprovalRecord): ApprovalRecord {
     this.#database.prepare(
-      `INSERT INTO approvals(id, run_id, tool_call_id, tool_name, status, expires_at, created_at, resolved_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO approvals(
+         id, run_id, tool_call_id, tool_name, tool_arguments_digest, execution_digest,
+         app_id, tenant_id, user_id, workspace_id, policy_generation, route_generation,
+         status, expires_at, created_at, resolved_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      record.id, record.runId, record.toolCallId, record.toolName, record.status,
+      record.id, record.runId, record.toolCallId, record.toolName,
+      record.toolArgumentsDigest, record.executionDigest,
+      record.appId, record.tenantId, record.userId, record.workspaceId,
+      record.policyGeneration, record.routeGeneration, record.status,
       record.expiresAt, record.createdAt, record.resolvedAt ?? null,
     );
     return record;
@@ -1064,11 +1107,17 @@ export class SqliteRunStore implements RunStore {
     return row ? toApproval(row) : undefined;
   }
 
-  resolveApproval(id: string, status: Exclude<ApprovalStatus, "PENDING">): ApprovalRecord | undefined {
+  resolveApproval(
+    id: string,
+    status: Exclude<ApprovalStatus, "PENDING">,
+    expectedExecutionDigest: string,
+  ): ApprovalRecord | undefined {
     const resolvedAt = new Date().toISOString();
     this.#database.prepare(
-      "UPDATE approvals SET status = ?, resolved_at = ? WHERE id = ? AND status = 'PENDING'",
-    ).run(status, resolvedAt, id);
+      `UPDATE approvals SET status = ?, resolved_at = ?
+       WHERE id = ? AND status = 'PENDING' AND execution_digest = ?
+         AND (? != 'APPROVED' OR expires_at > ?)`,
+    ).run(status, resolvedAt, id, expectedExecutionDigest, status, resolvedAt);
     return this.getApproval(id);
   }
 

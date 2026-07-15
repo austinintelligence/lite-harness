@@ -26,7 +26,7 @@ export class AgentRunner {
     principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
-    beforeToolCall?: (call: ToolCall) => Promise<void>;
+    beforeToolCall?: (call: ToolCall) => Promise<void | (() => void)>;
     maxTurns?: number;
     modelIdleTimeoutMs?: number;
     commandTimeoutMs?: number;
@@ -103,7 +103,8 @@ export class AgentRunner {
           type: "tool.call.requested",
           payload: { callId: call.id, name: call.name, arguments: call.arguments },
         });
-        await params.beforeToolCall?.(call);
+        const assertAuthorized = await params.beforeToolCall?.(call);
+        assertAuthorized?.();
         const commandSignal = params.signal
           ? AbortSignal.any([params.signal, AbortSignal.timeout(params.commandTimeoutMs ?? 300_000)])
           : AbortSignal.timeout(params.commandTimeoutMs ?? 300_000);

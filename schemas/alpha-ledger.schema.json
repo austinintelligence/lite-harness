@@ -48,7 +48,10 @@
             "items": {
               "type": "object",
               "required": ["path"],
-              "properties": { "path": { "type": "string", "minLength": 1 } },
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "producer": { "type": "string", "minLength": 1 }
+              },
               "additionalProperties": false
             }
           },

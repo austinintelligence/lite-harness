@@ -18105,14 +18105,23 @@
         "lineStart": 2505,
         "lineEnd": 2505
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/contracts/src/index.ts",
+        "apps/gateway/src/server.ts",
+        "apps/manager/src/server.ts"
+      ],
+      "testIds": [
+        "BD-037-REGRESSION"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations -- --evidence evidence/m8/integration-authenticity.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R32-2506",

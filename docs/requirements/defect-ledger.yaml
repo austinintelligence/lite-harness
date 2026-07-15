@@ -1310,7 +1310,7 @@
         "section": "Known baseline defects / 37",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-037-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1324,14 +1324,16 @@
       },
       "regression": {
         "testId": "BD-037-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/internal-boundary-schemas.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m8/integration-authenticity.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "52e650f5454f9dd41d3ba722b05cf7ebdbc0ddd0"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-038",

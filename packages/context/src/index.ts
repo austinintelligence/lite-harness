@@ -244,7 +244,7 @@ export class ConservativeContextCompiler {
       (!this.policy || Boolean(scope && this.policy.gate.allows(scope.appId, modelId)));
     return Promise.all(this.store.list().map(async (block) => {
       if (!mayRender || !block.lossyEligible || block.sensitive || block.exactText.length < 1_024 ||
-          block.kind === "source" || block.kind === "tool-state") {
+          (block.kind !== "logs" && block.kind !== "memory")) {
         return asText(block);
       }
       try {

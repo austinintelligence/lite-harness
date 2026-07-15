@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -90,6 +91,47 @@ describe("production optional-system composition", () => {
     const second = await runtime.execute(execution("cache_resolve", descriptor, { ...principal, tenantId: "tenant-b" }));
     expect(JSON.parse(first.content).key).not.toBe(JSON.parse(second.content).key);
     expect(first.content).not.toContain(root);
+    await systems.stop();
+  });
+
+  it("connects an explicitly classified semantic file to the selected vision route and exact recovery", async () => {
+    const root = temporaryRoot();
+    const exact = `${"Archived semantic reference line.\n".repeat(80)}Recovery token: MANAGER-OPTICAL-42`;
+    const contextPath = join(root, "reference.md"); writeFileSync(contextPath, exact);
+    const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
+    const systems = await configureProductionOptionalSystems({
+      dataDir: root, modelId: "vision-model", runtime,
+      environment: {
+        LITE_HARNESS_CONTEXT_FILE: contextPath, LITE_HARNESS_CONTEXT_KIND: "memory",
+        LITE_HARNESS_CONTEXT_OPTIMIZATION: "true", LITE_HARNESS_CONTEXT_ALLOWED_APPS: "app",
+        LITE_HARNESS_CONTEXT_ALLOWED_MODELS: "vision-model",
+      },
+    });
+    const observed: ModelMessage[][] = [];
+    const model = {
+      prepareRun: async () => ({
+        routePlanId: "route-vision", modelId: "vision-model", providerId: "fixture",
+        capabilities: ["text" as const, "vision" as const],
+      }),
+      streamTurn: async function* (params: { messages: readonly ModelMessage[] }) {
+        observed.push(params.messages.map((message) => ({ ...message })));
+        yield { type: "completed" as const, finishReason: "stop" as const };
+      },
+    };
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] };
+    await new AgentRunner(model, runtime, 1, systems.context).run({
+      input: "read the reference", workspaceId: "workspace", runId: "run", attemptId: "attempt",
+      fencingToken: 1, principal, allowedTools: [], onEvent: () => undefined,
+    });
+    expect(observed[0]?.[0]).toMatchObject({
+      role: "user", content: expect.stringContaining("Exact canonical text is retained"),
+      imageDataUrls: [expect.stringMatching(/^data:image\/png;base64,/)],
+    });
+    const blockId = `operator-${createHash("sha256").update(exact).digest("hex")}`;
+    const recovered = await runtime.execute({
+      ...execution("context_fetch_exact", { blockId }, principal), allowedTools: ["context_fetch_exact"],
+    });
+    expect(recovered).toMatchObject({ ok: true, content: exact, metadata: { blockId, exact: true } });
     await systems.stop();
   });
 });

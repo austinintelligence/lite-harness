@@ -70,9 +70,15 @@ async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, m
   const exactText = readFileSync(path, "utf8");
   mkdirSync(dataDir, { recursive: true });
   const store = new ContextStore(join(dataDir, "context.sqlite"));
+  const kind = environment.LITE_HARNESS_CONTEXT_KIND?.trim() || "instructions";
+  if (!(["instructions", "source", "logs", "memory"] as const).includes(kind as "instructions")) {
+    store.close();
+    throw new Error("LITE_HARNESS_CONTEXT_KIND must be instructions, source, logs, or memory");
+  }
+  const lossyEligible = kind === "logs" || kind === "memory";
   store.put({
     id: `operator-${createHash("sha256").update(exactText).digest("hex")}`,
-    kind: "instructions", exactText, lossyEligible: true, sensitive: false,
+    kind: kind as "instructions" | "source" | "logs" | "memory", exactText, lossyEligible, sensitive: false,
     provenance: `operator:${basename(path)}`, timeRange: { start: metadata.mtime.toISOString(), end: metadata.mtime.toISOString() },
   });
   runtime.register("context_fetch_exact", async (params) => {
@@ -89,7 +95,9 @@ async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, m
   const enabled = environment.LITE_HARNESS_CONTEXT_OPTIMIZATION === "true";
   const allowedApps = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_APPS);
   const allowedModels = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_MODELS);
-  const gate = new ContextOptimizationGate({ enabled, allowedApps, allowedModels });
+  const killedApps = csvSet(environment.LITE_HARNESS_CONTEXT_KILLED_APPS);
+  const killedModels = csvSet(environment.LITE_HARNESS_CONTEXT_KILLED_MODELS);
+  const gate = new ContextOptimizationGate({ enabled, allowedApps, allowedModels, killedApps, killedModels });
   const compiler = new ConservativeContextCompiler(
     store,
     new OptionalPxpipeRenderer(),

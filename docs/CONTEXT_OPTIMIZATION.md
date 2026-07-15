@@ -21,6 +21,11 @@ Set `LITE_HARNESS_CONTEXT_FILE` to a bounded operator-owned instruction file to
 compose canonical context into real runs. Optional rendering additionally
 requires `LITE_HARNESS_CONTEXT_OPTIMIZATION=true` and explicit comma-separated
 `LITE_HARNESS_CONTEXT_ALLOWED_APPS` and `LITE_HARNESS_CONTEXT_ALLOWED_MODELS`.
+The file defaults to exact `instructions`; only an explicit
+`LITE_HARNESS_CONTEXT_KIND=logs|memory` makes a large semantic file eligible.
+`LITE_HARNESS_CONTEXT_KILLED_APPS` and
+`LITE_HARNESS_CONTEXT_KILLED_MODELS` are immediate comma-separated kill
+switches that override allowlists.
 The Manager compiles only after route selection. An eligible block becomes a
 native text label plus bounded image data, and OpenAI-compatible, OpenAI
 Responses, and Anthropic adapters serialize that multimodal input using their

@@ -18,6 +18,7 @@ export interface AgentContextCompiler {
     instructions?: string;
     workspaceId: string;
     runId?: string;
+    allowedTools?: readonly string[];
     principal?: InternalPrincipal;
     modelId?: string;
   }): Promise<readonly ModelMessage[]>;
@@ -82,6 +83,7 @@ export class AgentRunner {
       ...(params.instructions ? { instructions: params.instructions } : {}),
       workspaceId: params.workspaceId,
       ...(params.runId ? { runId: params.runId } : {}),
+      ...(params.allowedTools ? { allowedTools: Object.freeze([...params.allowedTools]) } : {}),
       ...(params.principal ? { principal: params.principal } : {}),
       ...(preparedRoute ? { modelId: preparedRoute.modelId } : {}),
     }) ?? [];
@@ -170,6 +172,7 @@ export class AgentRunner {
           workspaceId: params.workspaceId,
           ...(params.runId ? { runId: params.runId } : {}),
           ...(params.attemptId ? { attemptId: params.attemptId } : {}),
+          allowedTools: Object.freeze([...allowed]),
           ...(params.principal ? { principal: params.principal } : {}),
           call,
           signal: commandSignal,

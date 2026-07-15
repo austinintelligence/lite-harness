@@ -4,6 +4,8 @@ export interface ToolExecutionContext {
   workspaceId: string;
   runId?: string;
   attemptId?: string;
+  /** Exact immutable tool names advertised to the model for this run. */
+  allowedTools?: readonly string[];
   principal?: InternalPrincipal;
   call: ToolCall;
   signal?: AbortSignal;

@@ -10,9 +10,17 @@ invocation timeout, clears failed workers, and stops idle workers. Production
 third-party entries should use the isolated process worker protocol; trusted
 in-process factories are for reviewed built-ins and tests.
 
-SKILL.md discovery is bounded, ignores symlinks, snapshots content, and uses
-deterministic precedence. Requested tool metadata is informational and cannot
-grant a tool.
+SKILL.md discovery bounds bytes, frontmatter, prompt characters, recursion,
+and candidate count and ignores symlinks. Startup reads only bounded manifests
+and streams each selected file into a content-addressed, read-only generation;
+`skill_view` is the first operation that decodes the selected instruction body.
+Source-tier precedence is run, workspace, app/tenant, installed pack, then
+built-in, with configured precedence used only inside a tier. Exact catalog and
+content digests are attached to run-visible tool results. Requested tools,
+capabilities, and permissions are eligibility metadata and never grant authority.
+Before the first model turn, the context boundary writes the exact eligible
+name/digest set to `skill-run-snapshots.sqlite`; a later attempt to bind a
+different generation to the same owned run fails instead of mutating replay.
 
 MCP servers are registered as lazy transports. Payloads and time are bounded;
 a timeout, oversized response, or crash stops only that server. Remote MCP
@@ -45,9 +53,13 @@ Optional systems are disabled by default. The Manager composes them before a
 run freezes its advertised tools and stops every active supervisor during
 shutdown:
 
-- `LITE_HARNESS_SKILL_ROOTS` is a JSON array of `{root, precedence, source}`
-  entries. Discovery freezes exact `SKILL.md` bodies; `skill_list` exposes only
-  metadata and `skill_view` loads one body without granting its requested tools.
+- `LITE_HARNESS_SKILL_ROOTS` is a JSON array of `{root, precedence, source,
+  sourceVersion, visibilityScope}` entries. Non-public app, user, workspace,
+  run, and OpenClaw-import roots require an explicit scope such as
+  `tenant:tenant_local`; built-in and installed-pack roots default to `public`.
+  `skill_list` returns eligible manifests only, and `skill_view` verifies the
+  immutable digest before loading one body. `LITE_HARNESS_SKILL_CAPABILITIES`
+  is the comma-separated operator capability gate.
 - `LITE_HARNESS_MCP_SERVERS` is a JSON array of stdio or HTTP server records.
   Every record declares its advertised tool schemas up front. Transports start
   only when one of those brokered tools is invoked.

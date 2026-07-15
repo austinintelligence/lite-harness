@@ -36,7 +36,7 @@ describe("production optional-system composition", () => {
       environment: {
         LITE_HARNESS_CONTEXT_FILE: contextPath,
         LITE_HARNESS_CONTEXT_OPTIMIZATION: "false",
-        LITE_HARNESS_SKILL_ROOTS: JSON.stringify([{ root: skillRoot, precedence: 10, source: "app" }]),
+        LITE_HARNESS_SKILL_ROOTS: JSON.stringify([{ root: skillRoot, precedence: 10, source: "app", visibilityScope: "tenant:tenant-a" }]),
         LITE_HARNESS_MCP_SERVERS: JSON.stringify([{ transport: "stdio", id: "demo", command: "does-not-start-during-configuration", tools: [{ name: "lookup", inputSchema: { type: "object", additionalProperties: false } }] }]),
         LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION: "true",
         LITE_HARNESS_ENABLE_CACHE_CATALOG: "true",
@@ -61,8 +61,22 @@ describe("production optional-system composition", () => {
       { role: "user", content: "hello" },
     ]);
     const principal = { appId: "app", tenantId: "tenant-a", userId: "user", scopes: ["runs:create"] };
+    const runGatedSkills = await runtime.execute({
+      ...execution("skill_list", {}, principal), runId: "run-gated", allowedTools: ["skill_list", "skill_view"],
+    });
+    expect(JSON.parse(runGatedSkills.content)).toEqual([]);
+    const listedSkills = await runtime.execute(execution("skill_list", {}, principal));
+    expect(listedSkills.content).not.toContain("Exact review steps.");
+    const otherTenantSkills = await runtime.execute({
+      ...execution("skill_list", {}, { ...principal, tenantId: "tenant-b" }), runId: "run-other-tenant",
+    });
+    expect(JSON.parse(otherTenantSkills.content)).toEqual([]);
+    writeFileSync(join(skillRoot, "review", "SKILL.md"), "---\nname: review\ndescription: changed\n---\nTampered.\n");
     const viewed = await runtime.execute(execution("skill_view", { name: "review" }, principal));
-    expect(viewed).toMatchObject({ ok: true, content: "Exact review steps.\n", metadata: { requestedTools: ["read_file"] } });
+    expect(viewed).toMatchObject({
+      ok: true, content: "Exact review steps.\n",
+      metadata: { requestedTools: ["read_file"], contentDigest: expect.stringMatching(/^[a-f0-9]{64}$/), generation: expect.any(String) },
+    });
     const snapshot = await runtime.execute(execution("workspace_snapshot", {}, principal));
     expect(snapshot.ok).toBe(true);
     expect(JSON.parse(snapshot.content)).toMatchObject({ plaintextBytes: archive.length });

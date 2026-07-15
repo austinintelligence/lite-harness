@@ -31,6 +31,7 @@ describe("AgentRunner", () => {
 
   it("advertises only profile-approved tools and prepends agent instructions", async () => {
     const observed: Array<{ roles: string[]; tools: string[] }> = [];
+    let compiledAllowedTools: readonly string[] | undefined;
     const model: ModelGateway = {
       async *streamTurn(params): AsyncIterable<ModelEvent> {
         observed.push({ roles: params.messages.map((message) => message.role), tools: (params.tools ?? []).map((tool) => tool.name) });
@@ -38,10 +39,13 @@ describe("AgentRunner", () => {
         yield { type: "completed", finishReason: "stop" };
       },
     };
-    await new AgentRunner(model, new InMemoryToolRuntime()).run({
+    await new AgentRunner(model, new InMemoryToolRuntime(), 8, {
+      compile: async (params) => { compiledAllowedTools = params.allowedTools; return []; },
+    }).run({
       input: "inspect", instructions: "Be precise.", allowedTools: ["read_file"], workspaceId: "workspace-2", onEvent: () => undefined,
     });
     expect(observed).toEqual([{ roles: ["system", "user"], tools: ["read_file"] }]);
+    expect(compiledAllowedTools).toEqual(["read_file"]);
   });
 
   it("BD-003-REGRESSION does not let non-cooperative iterator cleanup defeat the model deadline", async () => {

@@ -9,7 +9,7 @@ import {
   OptionalPxpipeRenderer,
   TenantContextRenderCache,
 } from "@lite-harness/context";
-import type { InternalPrincipal, ToolDefinition } from "@lite-harness/contracts";
+import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
 import { McpSupervisor, StdioMcpTransport, StreamableHttpMcpTransport } from "@lite-harness/mcp";
 import {
   createOpenClawCompatibilityWorker,
@@ -21,7 +21,9 @@ import {
 } from "@lite-harness/plugin-core";
 import type { BrokeredToolRuntime } from "@lite-harness/runtime";
 import type { DockerToolRuntime } from "@lite-harness/runtime-docker";
-import { discoverSkills, type SkillSnapshot, type SkillSource } from "@lite-harness/skills";
+import {
+  DurableSkillRunSnapshotStore, ImmutableSkillCatalog, type ImmutableSkillSnapshot, type SkillSource,
+} from "@lite-harness/skills";
 import {
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
@@ -47,14 +49,18 @@ export interface ProductionOptionalSystems {
 export function configureProductionOptionalSystems(options: OptionalSystemsOptions): ProductionOptionalSystems {
   const environment = options.environment ?? process.env;
   const stops: Array<() => Promise<void>> = [];
-  const context = configureContext(options.dataDir, options.modelId, environment);
-  configureSkills(options.runtime, environment);
+  const contextCompilers: AgentContextCompiler[] = [];
+  const operatorContext = configureContext(options.dataDir, options.modelId, environment);
+  if (operatorContext) contextCompilers.push(operatorContext);
+  const skills = configureSkills(options.runtime, options.dataDir, environment);
+  if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
   const mcp = configureMcp(options.runtime, environment);
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = configurePlugins(options.runtime, options.dataDir, environment);
   if (plugins.length) stops.push(() => Promise.all(plugins.map((plugin) => plugin.stop())).then(() => undefined));
   configureSnapshots(options, environment);
   configureCacheCatalog(options.runtime, options.dataDir, environment);
+  const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
   return {
     ...(context ? { context } : {}),
     stop: async () => { for (const stop of stops.reverse()) await stop(); },
@@ -97,27 +103,74 @@ function configureContext(dataDir: string, modelId: string, environment: NodeJS.
   };
 }
 
-function configureSkills(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): void {
+function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): {
+  context: AgentContextCompiler;
+  stop(): Promise<void>;
+} | undefined {
   const raw = environment.LITE_HARNESS_SKILL_ROOTS?.trim();
-  if (!raw) return;
+  if (!raw) return undefined;
   const sources = parseJson(raw, "LITE_HARNESS_SKILL_ROOTS") as unknown;
   if (!Array.isArray(sources)) throw new Error("LITE_HARNESS_SKILL_ROOTS must be a JSON array");
   const normalized = sources.map(validateSkillSource);
-  const skills = Object.freeze(discoverSkills(normalized).map((skill) => Object.freeze({ ...skill })));
-  const byName = new Map(skills.map((skill) => [skill.name, skill]));
-  runtime.register("skill_list", async (params) => ({
-    callId: params.call.id, ok: true,
-    content: JSON.stringify(skills.map(({ name, description, source, precedence, requestedTools }) => ({ name, description, source, precedence, requestedTools }))),
-    metadata: { count: skills.length },
-  }), toolDefinition("List the immutable skills available to this Manager generation.", { type: "object", additionalProperties: false }));
+  const catalog = new ImmutableSkillCatalog(normalized, {
+    snapshotRoot: join(dataDir, "skill-snapshots"),
+    protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+  });
+  const snapshots = new DurableSkillRunSnapshotStore(join(dataDir, "skill-run-snapshots.sqlite"));
+  const eligibility = (params: { principal?: InternalPrincipal; workspaceId: string; runId?: string; allowedTools?: readonly string[] }) => {
+    const principal = requirePrincipal(params.principal);
+    const runId = requiredString(params.runId, "run id");
+    return {
+      allowedTools: new Set(params.allowedTools ?? runtime.listTools().map((tool) => tool.name)),
+      capabilities: csvSet(environment.LITE_HARNESS_SKILL_CAPABILITIES),
+      protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+      visibilityScopes: new Set([
+        "public", `app:${principal.appId}`, `tenant:${principal.tenantId}`, `user:${principal.userId}`,
+        `workspace:${params.workspaceId}`, `run:${runId}`,
+      ]),
+    };
+  };
+  runtime.register("skill_list", async (params) => {
+    const runSnapshot = recordRunSnapshot(params);
+    const skills = catalog.list(eligibility(params));
+    return {
+      callId: params.call.id, ok: true, content: JSON.stringify(skills),
+      metadata: { count: skills.length, generation: runSnapshot.generation, digests: runSnapshot.skills },
+    };
+  }, toolDefinition("List bounded eligible immutable skill manifests without loading instruction bodies.", { type: "object", additionalProperties: false }));
   runtime.register("skill_view", async (params) => {
     const name = requiredString(params.call.arguments.name, "name");
-    const skill = byName.get(name);
+    const runSnapshot = recordRunSnapshot(params);
+    const skill = catalog.view(name, eligibility(params));
     if (!skill) return { callId: params.call.id, ok: false, content: `Skill not found: ${name}` };
-    return { callId: params.call.id, ok: true, content: skill.body, metadata: skillMetadata(skill) };
+    return { callId: params.call.id, ok: true, content: skill.body, metadata: skillMetadata(skill, runSnapshot.runId) };
   }, toolDefinition("Load one exact immutable skill body. Skill metadata never grants tools.", {
     type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 256 } }, required: ["name"], additionalProperties: false,
   }));
+  function recordRunSnapshot(params: { principal?: InternalPrincipal; workspaceId: string; runId?: string; allowedTools?: readonly string[] }) {
+    const principal = requirePrincipal(params.principal);
+    const runSnapshot = catalog.snapshotForRun(requiredString(params.runId, "run id"), eligibility(params));
+    snapshots.record({
+      runId: runSnapshot.runId, appId: principal.appId, tenantId: principal.tenantId, userId: principal.userId,
+      workspaceId: params.workspaceId, generation: runSnapshot.generation, skills: runSnapshot.skills,
+    });
+    return runSnapshot;
+  }
+  return {
+    context: {
+      compile: async (params) => {
+        if (params.runId && params.principal) recordRunSnapshot(params);
+        return [];
+      },
+    },
+    stop: async () => snapshots.close(),
+  };
+}
+
+function composeContextCompilers(compilers: readonly AgentContextCompiler[]): AgentContextCompiler {
+  return {
+    compile: async (params) => (await Promise.all(compilers.map((compiler) => compiler.compile(params)))).flat(),
+  };
 }
 
 function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): McpSupervisor | undefined {
@@ -243,9 +296,17 @@ function configureCacheCatalog(runtime: BrokeredToolRuntime, dataDir: string, en
 function validateSkillSource(value: unknown): SkillSource {
   const source = objectRecord(value, "skill source");
   const kind = requiredString(source.source, "skill source kind");
-  if (!(["app", "user", "builtin", "openclaw-import"] as const).includes(kind as never)) throw new Error("Skill source kind is invalid");
+  if (!(["run-pinned", "workspace", "app", "user", "installed-pack", "builtin", "openclaw-import"] as const).includes(kind as never)) throw new Error("Skill source kind is invalid");
   if (!Number.isSafeInteger(source.precedence)) throw new Error("Skill source precedence must be an integer");
-  return { root: resolve(requiredString(source.root, "skill root")), precedence: source.precedence as number, source: kind as SkillSource["source"] };
+  const visibilityScope = source.visibilityScope === undefined
+    ? (["builtin", "installed-pack"] as const).includes(kind as never) ? "public" : undefined
+    : requiredString(source.visibilityScope, "skill visibility scope");
+  if (!visibilityScope) throw new Error(`Skill source ${kind} requires an explicit app, tenant, user, workspace, or run visibilityScope`);
+  return {
+    root: resolve(requiredString(source.root, "skill root")), precedence: source.precedence as number, source: kind as SkillSource["source"],
+    ...(source.sourceVersion === undefined ? {} : { sourceVersion: requiredString(source.sourceVersion, "skill source version") }),
+    visibilityScope,
+  };
 }
 
 function validateAdvertisedTools(value: unknown, label: string): Array<{ name: string; alias?: string; description?: string; inputSchema: Record<string, unknown> }> {
@@ -263,7 +324,14 @@ function validateAdvertisedTools(value: unknown, label: string): Array<{ name: s
 }
 
 function toolDefinition(description: string, inputSchema: Record<string, unknown>): Omit<ToolDefinition, "name"> { return { description, inputSchema }; }
-function skillMetadata(skill: SkillSnapshot): Record<string, unknown> { return { name: skill.name, source: skill.source, precedence: skill.precedence, requestedTools: skill.requestedTools }; }
+function skillMetadata(skill: ImmutableSkillSnapshot, runId: string): Record<string, unknown> {
+  return {
+    runId, name: skill.name, source: skill.source, sourceVersion: skill.sourceVersion,
+    precedence: skill.precedence, requestedTools: skill.requestedTools,
+    requiredCapabilities: skill.requiredCapabilities, permissionRequests: skill.permissionRequests,
+    contentDigest: skill.contentDigest, generation: skill.generation,
+  };
+}
 function csvSet(value: string | undefined): Set<string> { return new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean)); }
 function parseJson(value: string, label: string): unknown { try { return JSON.parse(value); } catch { throw new Error(`${label} must be valid JSON`); } }
 function objectRecord(value: unknown, label: string): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value as Record<string, unknown>; }

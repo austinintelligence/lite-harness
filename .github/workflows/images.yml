@@ -31,7 +31,7 @@ jobs:
       - run: git diff --exit-code -- docs/sbom.cdx.json
       - run: pnpm release:check
 
-  publish:
+  candidate:
     needs: release-gate
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -40,25 +40,94 @@ jobs:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: tool-runtime
             context: docker/tool-runtime
+            platform: linux/amd64
+            arch: amd64
+          - name: tool-runtime
+            context: docker/tool-runtime
+            platform: linux/arm64
+            arch: arm64
           - name: browser-runtime
             context: docker/browser-runtime
+            platform: linux/amd64
+            arch: amd64
+          - name: browser-runtime
+            context: docker/browser-runtime
+            platform: linux/arm64
+            arch: arm64
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
-          tags: ghcr.io/${{ github.repository_owner }}/lite-harness-${{ matrix.name }}:${{ github.ref_name }}
-          provenance: mode=max
-          sbom: true
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: lite-harness-candidate:${{ matrix.name }}-${{ matrix.arch }}-${{ github.sha }}
+      - name: Execute exact candidate digest
+        run: docker run --rm ${{ steps.build.outputs.digest }}
+      - name: Push the tested image without rebuilding
+        id: push
+        shell: bash
+        env:
+          CANDIDATE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/lite-harness-${{ matrix.name }}
+        run: |
+          candidate_ref="$CANDIDATE_REPOSITORY:candidate-${GITHUB_SHA}-${{ matrix.arch }}"
+          docker tag "${{ steps.build.outputs.digest }}" "$candidate_ref"
+          docker push "$candidate_ref"
+          repo_digest=$(docker image inspect "$candidate_ref" --format '{{index .RepoDigests 0}}')
+          test -n "$repo_digest"
+          mkdir -p digests
+          printf '%s\n' "$repo_digest" > "digests/${{ matrix.name }}-${{ matrix.arch }}.txt"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-${{ matrix.name }}-${{ matrix.arch }}
+          path: digests/*.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [release-gate, candidate]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        name: [tool-runtime, browser-runtime]
+    steps:
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          path: digests
+          merge-multiple: true
+      - name: Promote only tested platform digests
+        shell: bash
+        env:
+          VERSION_REPOSITORY: ghcr.io/${{ github.repository_owner }}/lite-harness-${{ matrix.name }}
+        run: |
+          mapfile -t digests < <(cat digests/${{ matrix.name }}-*.txt)
+          test "${#digests[@]}" -eq 2
+          docker buildx imagetools create \
+            --tag "$VERSION_REPOSITORY:${{ github.ref_name }}" \
+            "${digests[@]}"
+          docker buildx imagetools inspect "$VERSION_REPOSITORY:${{ github.ref_name }}"

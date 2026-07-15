@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { currentCommit, defectClosureFailures, requirementVerificationFailures } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, defectClosureFailures, requirementVerificationFailures } from "./release-truth-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const requirementPath = resolve(root, "docs", "requirements", "alpha-ledger.yaml");
@@ -8,12 +8,13 @@ const defectPath = resolve(root, "docs", "requirements", "defect-ledger.yaml");
 const requirements = JSON.parse(readFileSync(requirementPath, "utf8"));
 const defects = JSON.parse(readFileSync(defectPath, "utf8"));
 const head = currentCommit(root);
+const tree = currentTree(root, head);
 let demotedRequirements = 0;
 let reopenedDefects = 0;
 
 for (const row of requirements.requirements) {
   if (row.status !== "verified") continue;
-  const failures = requirementVerificationFailures(row, { root, head });
+  const failures = requirementVerificationFailures(row, { root, head, tree });
   if (!failures.length) continue;
   row.status = "blocked";
   row.blockers = [...new Set([...row.blockers, ...requirementBlockers(failures)])];
@@ -22,7 +23,7 @@ for (const row of requirements.requirements) {
 
 for (const defect of defects.defects) {
   if (defect.status !== "closed") continue;
-  const failures = defectClosureFailures(defect, { root, head });
+  const failures = defectClosureFailures(defect, { root, head, tree });
   if (!failures.length) continue;
   defect.status = "fix-in-progress";
   defect.blockers = [...new Set([

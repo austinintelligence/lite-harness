@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { arch, platform, release } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { writePolicyEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const evidenceArgument = process.argv.indexOf("--evidence");
@@ -273,47 +273,65 @@ function walkFiles(directory) {
 }
 
 function writeEvidence(output, suite) {
-  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  const artifacts = [required.application, required.contracts, required.sdk, readdirOne(resolve(root, "dist", "python"), (name) => name.endsWith(".whl"))]
+  const packages = [required.application, required.contracts, required.sdk, readdirOne(resolve(root, "dist", "python"), (name) => name.endsWith(".whl"))]
     .map((path) => {
       const absolute = resolve(root, path);
       return {
-        path: absolute.startsWith(root) ? absolute.slice(root.length + 1).replaceAll("\\", "/") : absolute,
+        name: absolute.startsWith(root) ? absolute.slice(root.length + 1).replaceAll("\\", "/") : absolute,
         sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex"),
       };
     });
-  const document = {
-    schemaVersion: 1,
-    evidenceId: `${suite}-${commit.slice(0, 12)}-${platform()}-${arch()}`,
-    commit,
-    capturedAt: new Date().toISOString(),
-    platform: { os: platform(), release: release(), architecture: arch(), node: process.version },
+  const authSuite = suite === "m2-packaged-auth";
+  const assertions = {
+    cleanInstalledApplication: true,
+    cleanInstalledTypeScriptSdk: true,
+    cleanInstalledPythonWheel: true,
+    separateManagerAndGatewayProcesses: true,
+    realLocalIpc: true,
+    secondManagerRejected: true,
+    serverResolvedIdentity: true,
+    crossOwnerIsolation: true,
+    runTokenScopesAndBindings: true,
+    runTokenRevocation: true,
+    plaintextTokenPersistenceDenied: true,
+  };
+  const allAssertions = Object.keys(assertions);
+  const authAssertions = [
+    "serverResolvedIdentity", "crossOwnerIsolation", "runTokenScopesAndBindings",
+    "runTokenRevocation", "plaintextTokenPersistenceDenied",
+  ];
+  writePolicyEvidence({
+    root,
+    output,
     suite,
-    result: "pass",
-    tests: 17,
-    failures: 0,
-    skips: 0,
-    boundaries: {
-      cleanInstalledApplication: true,
-      cleanInstalledTypeScriptSdk: true,
-      cleanInstalledPythonWheel: true,
-      separateManagerAndGatewayProcesses: true,
-      realLocalIpc: true,
-      secondManagerRejected: true,
-      serverResolvedIdentity: true,
-      crossOwnerIsolation: true,
-      runTokenScopesAndBindings: true,
-      runTokenRevocation: true,
-      plaintextTokenPersistenceDenied: true,
+    command: "pnpm check:artifacts --python-wheel",
+    assertions,
+    requirementIds: authSuite ? ["D09", "D10"] : ["A02"],
+    regressionIds: authSuite
+      ? ["BD-001-REGRESSION"]
+      : [
+          "BD-001-REGRESSION", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION",
+          "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION",
+        ],
+    claims: {
       runtime: "deterministic-fake",
       provider: "deterministic-fake",
+      legacyNonLedgerLabel: authSuite ? null : "M1-EXIT",
     },
-    testIds: suite === "m2-packaged-auth"
-      ? ["BD-001-REGRESSION", "D09", "D10"]
-      : ["M1-EXIT", "A02", "BD-001-REGRESSION", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION", "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION"],
-    artifacts,
-  };
-  const absoluteOutput = resolve(root, output);
-  mkdirSync(dirname(absoluteOutput), { recursive: true });
-  writeFileSync(absoluteOutput, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
+    sourcePath: "scripts/check-built-artifacts.mjs",
+    caseBindings: authSuite
+      ? { "BD-001-REGRESSION": authAssertions }
+      : {
+          A02: allAssertions,
+          "M1-EXIT": allAssertions,
+          "BD-001-REGRESSION": authAssertions,
+          "BD-006-REGRESSION": ["separateManagerAndGatewayProcesses", "realLocalIpc", "secondManagerRejected"],
+          "BD-051-REGRESSION": ["cleanInstalledApplication"],
+          "BD-052-REGRESSION": ["cleanInstalledTypeScriptSdk"],
+          "BD-053-REGRESSION": ["cleanInstalledPythonWheel"],
+          "BD-054-REGRESSION": ["separateManagerAndGatewayProcesses", "realLocalIpc"],
+          "BD-060-REGRESSION": ["cleanInstalledApplication", "cleanInstalledTypeScriptSdk", "cleanInstalledPythonWheel"],
+        },
+    packages,
+  });
 }

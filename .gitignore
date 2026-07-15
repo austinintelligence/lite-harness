@@ -28,6 +28,8 @@ evidence/m9/
 evidence/m10/
 evidence/m11/
 evidence/runs/
+evidence/candidate/
+evidence/external/
 test-results/
 playwright-report/
 blob-report/

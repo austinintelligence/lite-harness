@@ -61,6 +61,7 @@ jobs:
       - run: pnpm check:doctor
       - run: pnpm check:truth-structure
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: lite-harness-readiness-evidence
           path: |
@@ -113,6 +114,7 @@ jobs:
         env:
           LITE_HARNESS_TEST_MCP_IMAGE: ${{ env.LITE_HARNESS_TEST_DOCKER_IMAGE }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: required-real-runtime
           path: evidence/m3/required-real-runtime.json
@@ -156,12 +158,14 @@ jobs:
       - run: pnpm build:all
       - run: pnpm check:artifacts --python-wheel --evidence evidence/m1/packaged-artifacts.json --auth-evidence evidence/m2/packaged-auth.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m1-packaged-artifacts
           path: evidence/m1/packaged-artifacts.json
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m2-packaged-auth
           path: evidence/m2/packaged-auth.json
@@ -181,6 +185,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:migrations -- --evidence evidence/m2/migrations.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m2-migrations
           path: evidence/m2/migrations.json
@@ -200,6 +205,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:replay -- --evidence evidence/m2/reconnect-replay.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m2-reconnect-replay
           path: evidence/m2/reconnect-replay.json
@@ -219,6 +225,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:plugins -- --evidence evidence/m6/plugin-security.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m6-plugin-security
           path: evidence/m6/plugin-security.json
@@ -238,6 +245,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:approvals -- --evidence evidence/m6/approval-security.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m6-approval-security
           path: evidence/m6/approval-security.json
@@ -257,6 +265,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:providers -- --evidence evidence/m5/provider-conformance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m5-provider-conformance
           path: evidence/m5/provider-conformance.json
@@ -276,6 +285,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:browser -- --evidence evidence/m7/browser-core.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m7-browser-core
           path: evidence/m7/browser-core.json
@@ -295,6 +305,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m4-workspace-recovery
           path: evidence/m4/workspace-recovery.json
@@ -314,6 +325,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integrations -- --evidence evidence/m8/integration-authenticity.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m8-integration-authenticity
           path: evidence/m8/integration-authenticity.json
@@ -333,6 +345,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:optional-systems -- --evidence evidence/m9/optional-composition.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m9-optional-composition
           path: evidence/m9/optional-composition.json
@@ -352,6 +365,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:docker -- --evidence evidence/m3/docker-policy.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m3-docker-policy
           path: evidence/m3/docker-policy.json
@@ -372,6 +386,7 @@ jobs:
       - run: echo "LITE_HARNESS_TEST_DOCKER_IMAGE=$(docker build -q docker/tool-runtime)" >> "$GITHUB_ENV"
       - run: pnpm test:workspace-lifecycle -- --evidence evidence/m4/automatic-workspace-lifecycle.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m4-automatic-workspace-lifecycle
           path: evidence/m4/automatic-workspace-lifecycle.json
@@ -391,6 +406,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:run-snapshot -- --evidence evidence/m9/run-snapshot.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m9-run-snapshot
           path: evidence/m9/run-snapshot.json
@@ -410,6 +426,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:context -- --evidence evidence/m10/context-optimization.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m10-context-optimization
           path: evidence/m10/context-optimization.json
@@ -429,6 +446,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:backpressure -- --evidence evidence/m2/backpressure.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m2-backpressure
           path: evidence/m2/backpressure.json
@@ -448,6 +466,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:readiness -- --evidence evidence/m11/readiness.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: m11-readiness
           path: evidence/m11/readiness.json
@@ -488,18 +507,53 @@ jobs:
       - run: corepack enable
       - run: corepack prepare pnpm@11.7.0 --activate
       - run: pnpm install --frozen-lockfile
-      - name: Require every candidate evidence producer
-        shell: bash
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-        run: |
-          node -e 'const needs=JSON.parse(process.env.NEEDS_JSON); const failed=Object.entries(needs).filter(([, value]) => value.result !== "success"); if (failed.length) { console.error(failed.map(([name, value]) => `${name}=${value.result}`).join("\n")); process.exit(1); }'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
         with:
           path: .candidate-evidence
-      - run: pnpm assemble:ci-evidence -- --source .candidate-evidence
+      - run: pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete
+        id: assemble_evidence
+        if: ${{ always() }}
+      - run: pnpm check:secrets -- --include evidence --evidence
+        id: evidence_secret_scan
+        if: ${{ always() }}
       - run: pnpm check:schemas
+        id: schema_check
+        if: ${{ always() }}
+      - run: pnpm check:evidence
+        id: evidence_check
+        if: ${{ always() }}
       - run: pnpm check:requirements:verified
+        id: verified_requirement_check
+        if: ${{ always() }}
       - run: pnpm check:defects:closed
+        id: closed_defect_check
+        if: ${{ always() }}
+      - run: pnpm check:requirements
+        id: complete_requirement_check
+        if: ${{ always() }}
+      - run: pnpm check:defects
+        id: complete_defect_check
+        if: ${{ always() }}
       - run: pnpm check:status
+        id: status_check
+        if: ${{ always() }}
       - run: pnpm check:blockers
+        id: blocker_check
+        if: ${{ always() }}
+      - run: pnpm aggregate:evidence
+        if: ${{ always() }}
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          FANIN_CHECKS_JSON: >-
+            {"assemble":"${{ steps.assemble_evidence.outcome }}","evidenceSecretScan":"${{ steps.evidence_secret_scan.outcome }}","schemas":"${{ steps.schema_check.outcome }}","evidence":"${{ steps.evidence_check.outcome }}","verifiedRequirements":"${{ steps.verified_requirement_check.outcome }}","closedDefects":"${{ steps.closed_defect_check.outcome }}","completeRequirements":"${{ steps.complete_requirement_check.outcome }}","completeDefects":"${{ steps.complete_defect_check.outcome }}","status":"${{ steps.status_check.outcome }}","blockers":"${{ steps.blocker_check.outcome }}"}
+      - run: pnpm check:secrets -- --include evidence/candidate --evidence
+        id: aggregate_secret_scan
+        if: ${{ always() }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() && steps.evidence_secret_scan.outcome == 'success' && steps.aggregate_secret_scan.outcome == 'success' }}
+        with:
+          name: lite-harness-candidate-evidence
+          path: evidence/candidate/manifest.json
+          if-no-files-found: error
+          retention-days: 30

@@ -207,7 +207,8 @@
       "ciJob": "packaged-python-parity",
       "evidenceArtifacts": [
         {
-          "path": "evidence/m2/packaged-auth.json"
+          "path": "evidence/m2/packaged-auth.json",
+          "producer": "pnpm check:artifacts --python-wheel"
         }
       ],
       "status": "blocked",
@@ -240,7 +241,8 @@
       "ciJob": "packaged-python-parity",
       "evidenceArtifacts": [
         {
-          "path": "evidence/m2/packaged-auth.json"
+          "path": "evidence/m2/packaged-auth.json",
+          "producer": "pnpm check:artifacts --python-wheel"
         }
       ],
       "status": "blocked",
@@ -1115,7 +1117,8 @@
       "ciJob": "packaged-python-parity",
       "evidenceArtifacts": [
         {
-          "path": "evidence/m1/packaged-artifacts.json"
+          "path": "evidence/m1/packaged-artifacts.json",
+          "producer": "pnpm check:artifacts --python-wheel"
         }
       ],
       "status": "blocked",
@@ -17947,7 +17950,8 @@
       "ciJob": "migration-evidence",
       "evidenceArtifacts": [
         {
-          "path": "evidence/m2/migrations.json"
+          "path": "evidence/m2/migrations.json",
+          "producer": "pnpm test:migrations"
         }
       ],
       "status": "blocked",

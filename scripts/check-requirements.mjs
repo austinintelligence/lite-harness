@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { currentCommit, requirementVerificationFailures } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, requirementVerificationFailures } from "./release-truth-lib.mjs";
 import { BASELINE_COMMIT, PLAN_PATH, PLAN_SHA256, extractRequirements } from "./requirements-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -43,10 +43,11 @@ for (const id of actual.keys()) if (!expected.has(id)) failures.push(`unexpected
 
 if (!structureOnly) {
   const head = currentCommit(root);
+  const tree = currentTree(root, head);
   for (const row of actual.values()) {
     if (!row.required) continue;
     if (verifiedOnly && row.status !== "verified") continue;
-    failures.push(...requirementVerificationFailures(row, { root, head }).map((failure) => `${row.id} ${failure}`));
+    failures.push(...requirementVerificationFailures(row, { root, head, tree }).map((failure) => `${row.id} ${failure}`));
   }
 }
 

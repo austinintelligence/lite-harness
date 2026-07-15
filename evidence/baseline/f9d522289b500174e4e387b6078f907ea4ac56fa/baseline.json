@@ -1,42 +1,71 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "kind": "measurement",
   "evidenceId": "reviewed-baseline-f9d522289b50-windows-x64",
-  "commit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
-  "dirty": false,
-  "capturedAt": "2026-07-14T22:04:53.4392511Z",
-  "platform": {
-    "os": "Windows_NT",
-    "release": "10.0.26200",
-    "architecture": "x64",
-    "cpu": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
-    "logicalCpus": 8
-  },
-  "runtime": {
-    "node": "v24.14.0",
-    "pnpm": "11.7.0",
-    "docker": {
-      "available": true,
-      "context": "desktop-linux",
-      "clientVersion": "29.3.1",
-      "serverVersion": "29.3.1",
-      "serverOs": "linux",
-      "serverArchitecture": "amd64",
-      "platform": "Docker Desktop 4.67.0 (222858)",
-      "kernel": "6.6.87.2-microsoft-standard-WSL2"
-    }
-  },
-  "artifacts": {
+  "subject": {
+    "source": {
+      "commit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
+      "tree": "14020a9671f9c2fde6ea9102a31763ed6f54da89",
+      "dirty": false
+    },
+    "scope": "source-tree",
     "packages": [],
     "images": []
   },
+  "capture": {
+    "at": "2026-07-14T22:04:53.4392511Z",
+    "platform": {
+      "os": "Windows_NT",
+      "release": "10.0.26200",
+      "architecture": "x64",
+      "cpu": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+      "logicalCpus": 8
+    },
+    "runtime": {
+      "node": "v24.14.0",
+      "pnpm": "11.7.0",
+      "docker": {
+        "available": true,
+        "context": "desktop-linux",
+        "clientVersion": "29.3.1",
+        "serverVersion": "29.3.1",
+        "serverOs": "linux",
+        "serverArchitecture": "amd64",
+        "platform": "Docker Desktop 4.67.0 (222858)",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2"
+      }
+    },
+    "ci": {
+      "provider": null,
+      "workflow": null,
+      "job": null,
+      "runId": null,
+      "runAttempt": null
+    }
+  },
   "test": {
     "suite": "baseline-capture",
-    "result": "not-run",
-    "tests": 0,
-    "failures": 0,
-    "skips": 0,
-    "durationMs": 0
+    "command": "manual reviewed baseline capture",
+    "result": "blocked",
+    "counts": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "durationMs": 0,
+    "cases": []
   },
+  "coverage": {
+    "requirementIds": [],
+    "regressionIds": []
+  },
+  "claims": {
+    "reviewedBaseline": true,
+    "releaseQualification": false
+  },
+  "attachments": [],
   "externalGates": {
     "linuxRootful": "missing",
     "linuxRootless": "missing",

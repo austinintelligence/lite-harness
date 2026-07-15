@@ -22,17 +22,18 @@ export interface DefectTraceRow {
 }
 
 export function currentCommit(root: string): string;
+export function currentTree(root: string, revision?: string): string;
 export function requirementVerificationFailures(
   row: RequirementTraceRow,
-  options: { root: string; head: string },
+  options: { root: string; head: string; tree?: string },
 ): string[];
 export function defectClosureFailures(
   defect: DefectTraceRow,
-  options: { root: string; head: string; checkFreshness?: boolean },
+  options: { root: string; head: string; tree?: string; checkFreshness?: boolean },
 ): string[];
 export function evaluateReleaseTruth(
   ledgers: { requirements: RequirementTraceRow[]; defects: DefectTraceRow[] },
-  options: { root: string; head: string },
+  options: { root: string; head: string; tree?: string },
 ): {
   requirementEvaluations: Array<{ row: RequirementTraceRow; failures: string[]; verified: boolean }>;
   defectEvaluations: Array<{ defect: DefectTraceRow; failures: string[]; closed: boolean }>;

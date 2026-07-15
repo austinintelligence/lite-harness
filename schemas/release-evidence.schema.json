@@ -1,78 +1,354 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lite-harness.invalid/schemas/release-evidence.schema.json",
-  "title": "Lite-Harness release evidence",
+  "title": "Lite-Harness release evidence envelope",
   "type": "object",
-  "required": ["schemaVersion", "evidenceId", "commit", "dirty", "capturedAt", "platform", "runtime", "artifacts", "test", "externalGates"],
+  "required": [
+    "schemaVersion",
+    "kind",
+    "evidenceId",
+    "subject",
+    "capture",
+    "test",
+    "coverage",
+    "claims",
+    "attachments",
+    "externalGates"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
+    "kind": { "enum": ["test-suite", "policy-check", "measurement", "aggregate"] },
     "evidenceId": { "type": "string", "minLength": 1 },
-    "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-    "dirty": { "type": "boolean" },
-    "capturedAt": { "type": "string", "format": "date-time" },
-    "platform": {
+    "subject": {
       "type": "object",
-      "required": ["os", "release", "architecture", "cpu"],
+      "required": ["source", "scope", "packages", "images"],
       "properties": {
-        "os": { "type": "string" }, "release": { "type": "string" },
-        "architecture": { "type": "string" }, "cpu": { "type": "string" }
-      },
-      "additionalProperties": true
-    },
-    "runtime": {
-      "type": "object",
-      "required": ["node", "pnpm", "docker"],
-      "properties": {
-        "node": { "type": "string" }, "pnpm": { "type": "string" },
-        "docker": {
+        "source": {
           "type": "object",
-          "required": ["available", "context"],
+          "required": ["commit", "tree", "dirty"],
           "properties": {
-            "available": { "type": "boolean" }, "context": { "type": ["string", "null"] },
-            "clientVersion": { "type": ["string", "null"] }, "serverVersion": { "type": ["string", "null"] },
-            "serverOs": { "type": ["string", "null"] }, "serverArchitecture": { "type": ["string", "null"] }
+            "commit": { "$ref": "#/$defs/gitOid" },
+            "tree": { "$ref": "#/$defs/gitOid" },
+            "dirty": { "type": "boolean" }
           },
-          "additionalProperties": true
-        }
-      },
-      "additionalProperties": true
-    },
-    "artifacts": {
-      "type": "object",
-      "required": ["packages", "images"],
-      "properties": {
+          "additionalProperties": false
+        },
+        "scope": { "enum": ["source-tree", "candidate-artifact", "external-platform"] },
         "packages": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } },
         "images": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } }
       },
       "additionalProperties": false
     },
+    "capture": {
+      "type": "object",
+      "required": ["at", "platform", "runtime", "ci"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "platform": {
+          "type": "object",
+          "required": ["os", "release", "architecture", "cpu", "logicalCpus"],
+          "properties": {
+            "os": { "type": "string", "minLength": 1 },
+            "release": { "type": "string", "minLength": 1 },
+            "architecture": { "type": "string", "minLength": 1 },
+            "cpu": { "type": "string", "minLength": 1 },
+            "logicalCpus": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["node", "pnpm", "docker"],
+          "properties": {
+            "node": { "type": "string", "pattern": "^v\\d+\\.\\d+\\.\\d+(?:-.+)?$" },
+            "pnpm": {
+              "oneOf": [
+                { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-.+)?$" },
+                { "const": "unavailable" }
+              ]
+            },
+            "docker": {
+              "type": "object",
+              "required": ["available", "context", "clientVersion", "serverVersion", "serverOs", "serverArchitecture"],
+              "properties": {
+                "available": { "type": "boolean" },
+                "context": { "type": ["string", "null"] },
+                "clientVersion": { "type": ["string", "null"] },
+                "serverVersion": { "type": ["string", "null"] },
+                "serverOs": { "type": ["string", "null"] },
+                "serverArchitecture": { "type": ["string", "null"] },
+                "platform": { "type": ["string", "null"] },
+                "kernel": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "ci": {
+          "type": "object",
+          "required": ["provider", "workflow", "job", "runId", "runAttempt"],
+          "properties": {
+            "provider": { "type": ["string", "null"] },
+            "workflow": { "type": ["string", "null"] },
+            "job": { "type": ["string", "null"] },
+            "runId": { "type": ["string", "null"] },
+            "runAttempt": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "test": {
       "type": "object",
-      "required": ["suite", "result", "tests", "failures", "skips", "durationMs"],
+      "required": ["suite", "command", "result", "counts", "durationMs", "cases"],
       "properties": {
-        "suite": { "type": "string" }, "result": { "enum": ["pass", "fail", "not-run"] },
-        "tests": { "type": "integer", "minimum": 0 }, "failures": { "type": "integer", "minimum": 0 },
-        "skips": { "type": "integer", "minimum": 0 }, "durationMs": { "type": "number", "minimum": 0 }
+        "suite": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "result": { "enum": ["pass", "fail", "blocked"] },
+        "counts": {
+          "type": "object",
+          "required": ["total", "passed", "failed", "skipped", "todo"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "passed": { "type": "integer", "minimum": 0 },
+            "failed": { "type": "integer", "minimum": 0 },
+            "skipped": { "type": "integer", "minimum": 0 },
+            "todo": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/executionCase" }
+        }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
-    "externalGates": { "type": "object", "additionalProperties": { "enum": ["pass", "fail", "missing", "not-applicable"] } }
+    "coverage": {
+      "type": "object",
+      "required": ["requirementIds", "regressionIds"],
+      "properties": {
+        "requirementIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/requirementId" }
+        },
+        "regressionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/regressionId" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "claims": { "type": "object" },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "mediaType", "sha256", "content"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "mediaType": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "content": {}
+        },
+        "additionalProperties": false
+      }
+    },
+    "externalGates": { "$ref": "#/$defs/externalGates" }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "test": { "type": "object", "properties": { "result": { "const": "pass" } } } } },
+      "then": {
+        "properties": {
+          "test": {
+            "type": "object",
+            "properties": {
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "total": { "type": "integer", "minimum": 1 },
+                  "passed": { "type": "integer", "minimum": 1 },
+                  "failed": { "type": "integer", "const": 0 },
+                  "skipped": { "type": "integer", "const": 0 },
+                  "todo": { "type": "integer", "const": 0 }
+                }
+              },
+              "cases": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/executionCase" },
+                    { "type": "object", "properties": { "status": { "const": "passed" } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "measurement" } }
+      },
+      "then": {
+        "properties": {
+          "test": {
+            "type": "object",
+            "properties": { "result": { "const": "blocked" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "type": "object",
+            "anyOf": [
+              { "properties": { "packages": { "type": "array", "minItems": 1 } } },
+              { "properties": { "images": { "type": "array", "minItems": 1 } } }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": { "scope": { "const": "candidate-artifact" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": { "scope": { "const": "candidate-artifact" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "type": "object",
+            "anyOf": [
+              { "properties": { "packages": { "type": "array", "minItems": 1 } } },
+              { "properties": { "images": { "type": "array", "minItems": 1 } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capture": {
+            "type": "object",
+            "properties": {
+              "ci": {
+                "type": "object",
+                "properties": { "provider": { "const": "github-actions" } }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capture": {
+            "type": "object",
+            "properties": {
+              "ci": {
+                "type": "object",
+                "properties": {
+                  "workflow": { "type": "string", "minLength": 1 },
+                  "job": { "type": "string", "minLength": 1 },
+                  "runId": { "type": "string", "minLength": 1 },
+                  "runAttempt": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
+    "gitOid": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "requirementId": {
+      "type": "string",
+      "pattern": "^(?:D\\d{2}|P(?:0\\d|1[0-2])|A(?:0[1-9]|1\\d|2[0-2])|R\\d{2}-\\d{4})$"
+    },
+    "regressionId": { "type": "string", "pattern": "^BD-\\d{3}-REGRESSION$" },
     "digestedArtifact": {
       "type": "object",
       "required": ["name", "sha256"],
-      "properties": { "name": { "type": "string" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } },
-      "additionalProperties": true
-    },
-    "evidenceReference": {
-      "type": "object",
-      "required": ["path", "commit", "result", "skips"],
       "properties": {
-        "path": { "type": "string", "minLength": 1 }, "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-        "result": { "const": "pass" }, "skips": { "const": 0 }
+        "name": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
       },
       "additionalProperties": false
+    },
+    "executionCase": {
+      "type": "object",
+      "required": ["path", "name", "status"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:[\\\\/])(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "skipped", "todo", "blocked"] }
+      },
+      "additionalProperties": false
+    },
+    "externalGates": {
+      "type": "object",
+      "required": [
+        "linuxRootful",
+        "linuxRootless",
+        "linuxArm64",
+        "macosIntelDockerDesktop",
+        "macosAppleSiliconDockerDesktop",
+        "windows11DockerDesktopWsl2",
+        "openaiLive",
+        "anthropicLive",
+        "codexLive",
+        "namingApproval",
+        "signingAuthority",
+        "registryPromotion"
+      ],
+      "properties": {
+        "linuxRootful": { "$ref": "#/$defs/gateResult" },
+        "linuxRootless": { "$ref": "#/$defs/gateResult" },
+        "linuxArm64": { "$ref": "#/$defs/gateResult" },
+        "macosIntelDockerDesktop": { "$ref": "#/$defs/gateResult" },
+        "macosAppleSiliconDockerDesktop": { "$ref": "#/$defs/gateResult" },
+        "windows11DockerDesktopWsl2": { "$ref": "#/$defs/gateResult" },
+        "openaiLive": { "$ref": "#/$defs/gateResult" },
+        "anthropicLive": { "$ref": "#/$defs/gateResult" },
+        "codexLive": { "$ref": "#/$defs/gateResult" },
+        "namingApproval": { "$ref": "#/$defs/gateResult" },
+        "signingAuthority": { "$ref": "#/$defs/gateResult" },
+        "registryPromotion": { "$ref": "#/$defs/gateResult" }
+      },
+      "additionalProperties": false
+    },
+    "gateResult": {
+      "enum": ["pass", "fail", "missing", "not-applicable"]
     }
-  }
+  },
+  "additionalProperties": false
 }

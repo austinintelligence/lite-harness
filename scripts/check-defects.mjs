@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { baselineDefects } from "./defects-lib.mjs";
-import { currentCommit, defectClosureFailures } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, defectClosureFailures } from "./release-truth-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const structureOnly = process.argv.includes("--structure");
@@ -12,6 +12,7 @@ if (ledger.schemaVersion !== 1) failures.push("defect ledger schemaVersion must 
 if (ledger.baselineCommit !== "f9d522289b500174e4e387b6078f907ea4ac56fa") failures.push("defect baseline changed");
 if (ledger.defects?.length !== baselineDefects.length) failures.push(`expected ${baselineDefects.length} defects, found ${ledger.defects?.length ?? 0}`);
 const head = currentCommit(root);
+const tree = currentTree(root, head);
 const seen = new Set();
 for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
   const defect = ledger.defects[index];
@@ -24,7 +25,7 @@ for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
   }
   if (defect.severity !== (index < 8 ? "critical" : "high")) failures.push(`${defect.id} severity drifted`);
   if (defect.status === "closed") {
-    failures.push(...defectClosureFailures(defect, { root, head, checkFreshness: !structureOnly })
+    failures.push(...defectClosureFailures(defect, { root, head, tree, checkFreshness: !structureOnly })
       .map((failure) => `${defect.id} ${failure}`));
   }
 }

@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { arch, platform, release, tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { writeVitestEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const evidenceIndex = process.argv.indexOf("--evidence");
@@ -10,54 +11,46 @@ if (evidenceIndex >= 0 && (!evidenceOutput || evidenceOutput.startsWith("--"))) 
 const temporary = mkdtempSync(resolve(tmpdir(), "lite-recovery-report-"));
 const reportPath = resolve(temporary, "vitest.json");
 try {
-  execFileSync(process.execPath, [
+  const vitest = spawnSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
     "run", "test/workspace.test.ts", "test/runtime.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
-  const report = JSON.parse(readFileSync(reportPath, "utf8"));
-  if (report.success !== true || report.numFailedTests !== 0 || report.numPendingTests !== 0 || report.numTodoTests !== 0) {
-    throw new Error("Workspace recovery suite did not produce a zero-skip pass");
+  const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
+  if (!report) throw new Error("Workspace recovery suite did not produce JSON reporter output");
+  const passed = vitest.status === 0 && report.success === true && report.numFailedTests === 0 && report.numPendingTests === 0 && report.numTodoTests === 0;
+  const evidenceReport = { ...report, success: passed };
+  if (evidenceOutput) {
+    writeVitestEvidence({
+      root,
+      output: evidenceOutput,
+      suite: "m4-workspace-recovery",
+      command: "pnpm test:recovery",
+      report: evidenceReport,
+      requirementIds: ["R21-1897", "R21-1899", "R21-1900", "R24-2069", "R24-2070", "R25-2100"],
+      regressionIds: [
+        "BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION",
+        "BD-034-REGRESSION",
+      ],
+      claims: {
+        knownOpenGap: "BD-035 public artifact publication still accepts caller-supplied bytes instead of only a managed workspace path",
+        boundaries: {
+          snapshotIdentityAuthenticatedAsAad: true,
+          stagedGenerationVerifiedBeforeRotation: true,
+          corruptCurrentDoesNotReplacePreviousGood: true,
+          streamingAsyncCompressionEncryption: true,
+          boundedStreamingRestore: true,
+          artifactOwnerIsolation: true,
+          privateCacheOwnerIsolation: true,
+          registeredBindRootsCanonicalAndNonsensitive: true,
+          artifactSourceReadFromOwnedWorkspace: true,
+          artifactBlobEncryptedAndMetadataTransactional: true,
+        },
+      },
+    });
   }
-  if (evidenceOutput) writeEvidence(evidenceOutput, report);
+  if (!passed) throw new Error("Workspace recovery suite did not produce a zero-skip pass");
   process.stdout.write(`Workspace recovery checks passed (${report.numPassedTests}/${report.numTotalTests}, zero skips).\n`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
-}
-
-function writeEvidence(output, report) {
-  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  const document = {
-    schemaVersion: 1,
-    evidenceId: `m4-workspace-recovery-${commit.slice(0, 12)}-${platform()}-${arch()}`,
-    commit,
-    capturedAt: new Date().toISOString(),
-    platform: { os: platform(), release: release(), architecture: arch(), node: process.version },
-    suite: "m4-workspace-recovery",
-    result: "pass",
-    tests: report.numTotalTests,
-    failures: report.numFailedTests,
-    skips: report.numPendingTests + report.numTodoTests,
-    boundaries: {
-      snapshotIdentityAuthenticatedAsAad: true,
-      stagedGenerationVerifiedBeforeRotation: true,
-      corruptCurrentDoesNotReplacePreviousGood: true,
-      streamingAsyncCompressionEncryption: true,
-      boundedStreamingRestore: true,
-      artifactOwnerIsolation: true,
-      privateCacheOwnerIsolation: true,
-      registeredBindRootsCanonicalAndNonsensitive: true,
-      artifactSourceReadFromOwnedWorkspace: true,
-      artifactBlobEncryptedAndMetadataTransactional: true,
-    },
-    testIds: [
-      "BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION", "BD-034-REGRESSION",
-      "R21-1897", "R21-1899", "R21-1900",
-      "BD-035-REGRESSION",
-      "R24-2069", "R24-2070", "R25-2100",
-    ],
-  };
-  const absolute = resolve(root, output);
-  mkdirSync(dirname(absolute), { recursive: true });
-  writeFileSync(absolute, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
 }

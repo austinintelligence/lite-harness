@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { writePolicyEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const workflowPath = resolve(root, ".github", "workflows", "images.yml");
@@ -37,20 +37,28 @@ if (failures.length) {
   const output = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
   if (evidenceIndex >= 0 && (!output || output.startsWith("--"))) throw new Error("--evidence requires an output path");
   if (output) {
-    const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-    const path = resolve(root, output);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify({
-      schemaVersion: 1,
-      commit,
-      capturedAt: new Date().toISOString(),
+    const assertions = {
+      candidateBuildsAreLoadedAndExecuted: true,
+      promotionReusesTestedDigests: true,
+      bothRuntimeImagesCoverAmd64AndArm64: true,
+      actionsAreCommitPinned: true,
+      prereleaseNeverPublishesLatest: true,
+    };
+    writePolicyEvidence({
+      root,
+      output,
       suite: "candidate-image-promotion",
-      result: "pass",
-      skips: 0,
-      platforms: ["linux/amd64", "linux/arm64"],
-      images: ["tool-runtime", "browser-runtime"],
-      testIds: ["BD-056-REGRESSION"],
-    }, null, 2)}\n`);
+      command: "pnpm check:images",
+      assertions,
+      regressionIds: ["BD-056-REGRESSION"],
+      sourcePath: "scripts/check-image-workflow.mjs",
+      caseBindings: { "BD-056-REGRESSION": Object.keys(assertions) },
+      claims: {
+        advertisedPlatforms: ["linux/amd64", "linux/arm64"],
+        imageNames: ["tool-runtime", "browser-runtime"],
+        scope: "workflow-policy-only",
+      },
+    });
   }
   process.stdout.write("Candidate image promotion checks passed.\n");
 }

@@ -1,11 +1,15 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assembleCandidateEvidence, candidateEvidenceLayout } from "../scripts/assemble-ci-evidence.mjs";
+import { assembleCandidateEvidence, candidateEvidenceLayout, candidateEvidenceProducer } from "../scripts/assemble-ci-evidence.mjs";
+import { createEvidenceDocument, embeddedAttachment, validateEvidenceDocument, writeVitestEvidence } from "../scripts/evidence-lib.mjs";
 import { defectClosureFailures, evaluateReleaseTruth, requirementVerificationFailures } from "../scripts/release-truth-lib.mjs";
 
 const roots: string[] = [];
+const candidateCommit = "a".repeat(40);
+const candidateTree = "b".repeat(40);
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -14,62 +18,114 @@ afterEach(() => {
 describe("release truth", () => {
   it("requires current zero-skip evidence to name the exact requirement", () => {
     const root = fixtureRoot();
+    const evidencePath = "evidence/m1/packaged-artifacts.json";
     writeFileSync(join(root, "implementation.ts"), "export {};\n");
     writeFileSync(join(root, "regression.test.ts"), "export {};\n");
-    writeJson(join(root, "evidence.json"), {
-      commit: "candidate", result: "pass", skips: 0, testIds: ["A02"],
-    });
+    writeJson(join(root, evidencePath), passEvidence({
+      requirementIds: ["A02"],
+      command: "pnpm check:artifacts --python-wheel",
+      job: "packaged-python-parity",
+      cases: [{ path: "regression.test.ts", name: "A02-REGRESSION", status: "passed" }],
+    }));
     const row = {
       id: "A02", status: "verified", implementationPaths: ["implementation.ts"],
-      testIds: ["A02-REGRESSION"], ciJob: "candidate-evidence",
-      evidenceArtifacts: [{ path: "evidence.json", producer: "pnpm test:sdk" }], blockers: [],
+      testIds: ["A02-REGRESSION"], ciJob: "packaged-python-parity",
+      evidenceArtifacts: [{ path: evidencePath, producer: "pnpm check:artifacts --python-wheel" }], blockers: [],
     };
-    expect(requirementVerificationFailures(row, { root, head: "candidate" })).toEqual([]);
+    expect(requirementVerificationFailures(row, { root, head: candidateCommit, tree: candidateTree })).toEqual([]);
+    const wrongProducer = structuredClone(row);
+    wrongProducer.evidenceArtifacts[0]!.producer = "pnpm test:different";
+    expect(requirementVerificationFailures(wrongProducer, { root, head: candidateCommit, tree: candidateTree }))
+      .toContain(`evidence producer command does not match pnpm test:different: ${evidencePath}`);
 
-    writeJson(join(root, "evidence.json"), {
-      commit: "candidate", result: "pass", skips: 0, testIds: ["some-other-row"],
-    });
-    expect(requirementVerificationFailures(row, { root, head: "candidate" }))
-      .toContain("evidence does not name requirement A02: evidence.json");
+    writeJson(join(root, evidencePath), passEvidence({
+      requirementIds: ["D01"],
+      command: "pnpm check:artifacts --python-wheel",
+      job: "packaged-python-parity",
+      cases: [{ path: "regression.test.ts", name: "A02-REGRESSION", status: "passed" }],
+    }));
+    expect(requirementVerificationFailures(row, { root, head: candidateCommit, tree: candidateTree }))
+      .toContain(`evidence does not name requirement A02: ${evidencePath}`);
   });
 
   it("refuses a closed defect whose regression evidence targets another commit", () => {
     const root = fixtureRoot();
     writeFileSync(join(root, "regression.test.ts"), "export {};\n");
-    writeJson(join(root, "evidence.json"), {
-      commit: "parent", result: "pass", skips: 0, testIds: ["BD-063-REGRESSION"],
-    });
+    const evidencePath = "evidence/m11/release-validation.json";
+    writeJson(join(root, evidencePath), passEvidence({
+      commit: "c".repeat(40),
+      tree: "d".repeat(40),
+      regressionIds: ["BD-063-REGRESSION"],
+      command: "pnpm check:release",
+      job: "repository-readiness",
+      cases: [{ path: "regression.test.ts", name: "BD-063-REGRESSION", status: "passed" }],
+    }));
     const defect = {
       id: "BD-063", status: "closed", blockers: [],
       regression: {
         testId: "BD-063-REGRESSION", path: "regression.test.ts", result: "pass",
-        evidenceArtifact: { path: "evidence.json" },
+        evidenceArtifact: { path: evidencePath },
       },
     };
-    expect(defectClosureFailures(defect, { root, head: "candidate" }))
+    expect(defectClosureFailures(defect, { root, head: candidateCommit, tree: candidateTree }))
       .toContain("closed without current zero-skip evidence");
+  });
+
+  it("refuses locally forged defect evidence even when commit, coverage, and test path match", () => {
+    const root = fixtureRoot();
+    const evidencePath = "evidence/m11/release-validation.json";
+    writeFileSync(join(root, "regression.test.ts"), "export {};\n");
+    writeJson(join(root, evidencePath), passEvidence({
+      regressionIds: ["BD-057-REGRESSION"],
+      command: "pnpm check:release",
+      provider: null,
+      job: null,
+      cases: [{ path: "regression.test.ts", name: "BD-057-REGRESSION", status: "passed" }],
+    }));
+    const defect = {
+      id: "BD-057", status: "closed", blockers: [],
+      regression: {
+        testId: "BD-057-REGRESSION", path: "regression.test.ts", result: "pass",
+        evidenceArtifact: { path: evidencePath },
+      },
+    };
+    expect(defectClosureFailures(defect, { root, head: candidateCommit, tree: candidateTree }))
+      .toContain("regression evidence was not captured by required CI job repository-readiness");
   });
 
   it("keeps stale verified rows and unproven closures in every truth summary", () => {
     const root = fixtureRoot();
     writeFileSync(join(root, "implementation.ts"), "export {};\n");
     writeFileSync(join(root, "regression.test.ts"), "export {};\n");
-    writeJson(join(root, "evidence.json"), {
-      commit: "parent", result: "pass", skips: 0, testIds: ["A02", "BD-063-REGRESSION"],
-    });
+    const evidencePath = "evidence/m1/packaged-artifacts.json";
+    writeJson(join(root, evidencePath), passEvidence({
+      commit: "c".repeat(40),
+      tree: "d".repeat(40),
+      requirementIds: ["A02"],
+      regressionIds: ["BD-063-REGRESSION"],
+      command: "pnpm check:artifacts --python-wheel",
+      job: "packaged-python-parity",
+      cases: [
+        { path: "regression.test.ts", name: "A02-REGRESSION", status: "passed" },
+        { path: "regression.test.ts", name: "BD-063-REGRESSION", status: "passed" },
+      ],
+    }));
     const requirement = {
       id: "A02", status: "verified", implementationPaths: ["implementation.ts"],
-      testIds: ["A02-REGRESSION"], ciJob: "candidate-evidence",
-      evidenceArtifacts: [{ path: "evidence.json", producer: "pnpm test:sdk" }], blockers: [],
+      testIds: ["A02-REGRESSION"], ciJob: "packaged-python-parity",
+      evidenceArtifacts: [{ path: evidencePath, producer: "pnpm check:artifacts --python-wheel" }], blockers: [],
     };
     const defect = {
       id: "BD-063", status: "closed", blockers: [],
       regression: {
         testId: "BD-063-REGRESSION", path: "regression.test.ts", result: "pass",
-        evidenceArtifact: { path: "evidence.json" },
+        evidenceArtifact: { path: evidencePath },
       },
     };
-    const summary = evaluateReleaseTruth({ requirements: [requirement], defects: [defect] }, { root, head: "candidate" });
+    const summary = evaluateReleaseTruth(
+      { requirements: [requirement], defects: [defect] },
+      { root, head: candidateCommit, tree: candidateTree },
+    );
     expect(summary.requirementEvaluations[0]?.verified).toBe(false);
     expect(summary.defectEvaluations[0]?.closed).toBe(false);
   });
@@ -81,6 +137,120 @@ describe("release truth", () => {
       .toContain("NOT YET A VERIFIED ALPHA");
   });
 
+  it("rejects dirty, empty, skipped, and tampered pass evidence", () => {
+    const valid = passEvidence({
+      requirementIds: ["A02"],
+      attachments: [embeddedAttachment("report", "application/json", { passed: true })],
+    });
+    expect(validateEvidenceDocument(valid, {
+      expectedCommit: candidateCommit,
+      expectedTree: candidateTree,
+      requireClean: true,
+    })).toEqual([]);
+
+    const dirty = structuredClone(valid);
+    dirty.subject.source.dirty = true;
+    expect(validateEvidenceDocument(dirty, { requireClean: true })).toContain("source worktree was dirty during evidence capture");
+
+    const empty = structuredClone(valid);
+    empty.test.counts = { total: 0, passed: 0, failed: 0, skipped: 0, todo: 0 };
+    expect(validateEvidenceDocument(empty).some((failure) => failure.includes("must be >= 1"))).toBe(true);
+
+    const skipped = structuredClone(valid);
+    skipped.test.counts = { total: 2, passed: 1, failed: 0, skipped: 1, todo: 0 };
+    expect(validateEvidenceDocument(skipped).some((failure) => failure.includes("must be equal to constant"))).toBe(true);
+
+    const tampered = structuredClone(valid);
+    tampered.attachments[0]!.content = { passed: false };
+    expect(validateEvidenceDocument(tampered)).toContain("attachment digest mismatch: report");
+
+    const unsafe = structuredClone(valid);
+    unsafe.claims.privatePath = "D:\\Downloads\\private-workspace\\trace.txt";
+    expect(validateEvidenceDocument(unsafe)).toContain("evidence contains possible drive-absolute filesystem path");
+    for (const [privatePath, expected] of [
+      ["C:\\work\\private\\trace.txt", "evidence contains possible drive-absolute filesystem path"],
+      ["\\\\server\\private-share\\trace.txt", "evidence contains possible UNC or device filesystem path"],
+      ["/opt/private/trace.txt", "evidence contains possible Unix-absolute filesystem path"],
+    ]) {
+      const bypass = structuredClone(valid);
+      bypass.claims.privatePath = privatePath;
+      expect(validateEvidenceDocument(bypass)).toContain(expected);
+    }
+    for (const [payload, expected] of [
+      ["root=C:\\work\\private.txt", "evidence contains possible drive-absolute filesystem path"],
+      ["root:/opt/private.txt", "evidence contains possible Unix-absolute filesystem path"],
+      ["path=[/home/alice/private.txt]", "evidence contains possible Unix-absolute filesystem path"],
+      ["path,/opt/private.txt", "evidence contains possible Unix-absolute filesystem path"],
+      ["path->/srv/private.txt", "evidence contains possible Unix-absolute filesystem path"],
+      ["file:///C:/Users/alice/private.txt", "evidence contains possible drive-absolute filesystem path"],
+      ["github" + "_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890", "evidence contains possible GitHub fine-grained token"],
+      ["npm" + "_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890", "evidence contains possible npm token"],
+    ]) {
+      const bypass = structuredClone(valid);
+      bypass.claims.payload = payload;
+      expect(validateEvidenceDocument(bypass)).toContain(expected);
+    }
+  });
+
+  it("stores only repo-relative allowlisted Vitest proof fields", () => {
+    const outputRoot = fixtureRoot();
+    const output = join(outputRoot, "sanitized-evidence.json");
+    const secret = "SENSITIVE_FAILURE_PAYLOAD_THAT_MUST_NEVER_REACH_EVIDENCE";
+    const absoluteSuitePath = join(process.cwd(), "test", "release-truth.test.ts");
+    const document = writeVitestEvidence({
+      root: process.cwd(),
+      output,
+      suite: "sanitization-fixture",
+      command: "pnpm test:sanitization-fixture",
+      requirementIds: ["A02"],
+      facts: evidenceFacts({ job: "candidate-evidence" }),
+      report: {
+        numTotalTests: 1, numPassedTests: 1, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0,
+        success: true,
+        testResults: [{
+          name: absoluteSuitePath, status: "passed", startTime: 1, endTime: 2,
+          message: `private trace ${absoluteSuitePath}`,
+          assertionResults: [{
+            fullName: "sanitization A02-REGRESSION", title: "A02-REGRESSION", status: "passed", duration: 1,
+            failureMessages: [secret], meta: { secret },
+          }],
+        }],
+      },
+    });
+    const serialized = readFileSync(output, "utf8");
+    expect(serialized).not.toContain(process.cwd().replaceAll("\\", "/"));
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain("failureMessages");
+    expect(document.attachments.map((item) => item.name)).toEqual(["vitest-proof"]);
+    expect(document.test.cases).toEqual([{ path: "test/release-truth.test.ts", name: "sanitization A02-REGRESSION", status: "passed" }]);
+    expect(validateEvidenceDocument(document)).toEqual([]);
+  });
+
+  it("makes the explicit CI evidence scan reject embedded paths and current token formats", () => {
+    const root = fixtureRoot();
+    const path = join(root, "unsafe-evidence.json");
+    writeJson(path, {
+      drive: "root=C:\\work\\private.txt",
+      unc: "\\\\server\\private-share\\trace.txt",
+      unix: "root:/opt/private.txt",
+      unixBracket: "path=[/home/alice/private.txt]",
+      unixComma: "path,/opt/private.txt",
+      unixArrow: "path->/srv/private.txt",
+      fileUri: "file:///C:/Users/alice/private.txt",
+      github: "github" + "_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890",
+      npm: "npm" + "_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+    });
+    const result = spawnSync(process.execPath, ["scripts/check-secrets.mjs", "--include", path, "--evidence"], {
+      cwd: process.cwd(), encoding: "utf8",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("drive-absolute filesystem path");
+    expect(result.stderr).toContain("UNC or device filesystem path");
+    expect(result.stderr).toContain("Unix-absolute filesystem path");
+    expect(result.stderr).toContain("GitHub fine-grained token");
+    expect(result.stderr).toContain("npm token");
+  });
+
   it("reconstructs downloaded artifacts at every ledger evidence path", () => {
     const root = fixtureRoot();
     const sourceRoot = join(root, "downloads");
@@ -90,6 +260,29 @@ describe("release truth", () => {
     expect(assembleCandidateEvidence(sourceRoot, targetRoot)).toHaveLength(candidateEvidenceLayout.length);
     for (const [, target] of candidateEvidenceLayout) {
       expect(JSON.parse(readFileSync(join(targetRoot, target), "utf8"))).toEqual({ target });
+    }
+  });
+
+  it("keeps the CI artifact layout identical to every m1-m11 ledger reference", () => {
+    const requirements = JSON.parse(readFileSync(join(process.cwd(), "docs/requirements/alpha-ledger.yaml"), "utf8"));
+    const defects = JSON.parse(readFileSync(join(process.cwd(), "docs/requirements/defect-ledger.yaml"), "utf8"));
+    const referenced = new Set<string>();
+    for (const row of requirements.requirements) {
+      for (const artifact of row.evidenceArtifacts ?? []) if (artifact.path.startsWith("evidence/m")) referenced.add(artifact.path);
+    }
+    for (const defect of defects.defects) {
+      const path = defect.regression?.evidenceArtifact?.path;
+      if (path?.startsWith("evidence/m")) referenced.add(path);
+    }
+    expect(candidateEvidenceLayout.map(([, target]) => target).sort()).toEqual([...referenced].sort());
+    for (const row of requirements.requirements) {
+      for (const artifact of row.evidenceArtifacts ?? []) {
+        if (!artifact.path.startsWith("evidence/m")) continue;
+        const registered = candidateEvidenceProducer(artifact.path);
+        expect(registered, artifact.path).not.toBeNull();
+        expect(canonicalProducer(artifact.producer)).toBe(registered?.producer);
+        expect(row.ciJob).toBe(registered?.ciJob);
+      }
     }
   });
 
@@ -109,4 +302,88 @@ function fixtureRoot(): string {
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value)}\n`);
+}
+
+function passEvidence({
+  commit = candidateCommit,
+  tree = candidateTree,
+  requirementIds = [],
+  regressionIds = [],
+  attachments = [],
+  command = "pnpm test:fixture",
+  job = "candidate-evidence",
+  provider = "github-actions",
+  cases = [{ path: "regression.test.ts", name: "fixture-case", status: "passed" as const }],
+}: {
+  commit?: string;
+  tree?: string;
+  requirementIds?: string[];
+  regressionIds?: string[];
+  attachments?: Array<{ name: string; mediaType: string; sha256: string; content: unknown }>;
+  command?: string;
+  job?: string | null;
+  provider?: string | null;
+  cases?: Array<{ path: string; name: string; status: "passed" | "failed" | "skipped" | "todo" | "blocked" }>;
+}) {
+  return createEvidenceDocument({
+    root: "unused",
+    kind: "policy-check",
+    suite: "fixture-suite",
+    command,
+    result: "pass",
+    counts: { total: 1, passed: 1, failed: 0, skipped: 0, todo: 0 },
+    durationMs: 1,
+    cases,
+    requirementIds,
+    regressionIds,
+    claims: {
+      assertions: Object.fromEntries(cases.map((item) => [item.name, item.status === "passed"])),
+      policyProof: {
+        sourcePath: cases[0]?.path ?? "regression.test.ts",
+        caseBindings: Object.fromEntries(cases.map((item) => [item.name, [item.name]])),
+      },
+    },
+    attachments,
+    facts: evidenceFacts({ commit, tree, provider, job }),
+  });
+}
+
+function evidenceFacts({
+  commit = candidateCommit,
+  tree = candidateTree,
+  provider = "github-actions",
+  job = "candidate-evidence",
+}: { commit?: string; tree?: string; provider?: string | null; job?: string | null } = {}) {
+  return {
+    commit,
+    tree,
+    dirty: false,
+    at: "2026-07-15T00:00:00.000Z",
+    platform: { os: "test", release: "1", architecture: "x64", cpu: "fixture", logicalCpus: 1 },
+    runtime: {
+      node: "v24.0.0",
+      pnpm: "11.7.0",
+      docker: {
+        available: false,
+        context: null,
+        clientVersion: null,
+        serverVersion: null,
+        serverOs: null,
+        serverArchitecture: null,
+        platform: null,
+        kernel: null,
+      },
+    },
+    ci: {
+      provider,
+      workflow: provider ? "CI" : null,
+      job,
+      runId: provider ? "1" : null,
+      runAttempt: provider ? "1" : null,
+    },
+  };
+}
+
+function canonicalProducer(producer: string) {
+  return producer.replace(/\s+--\s+--evidence(?:\s+\S+)?\s*$/, "").trim();
 }

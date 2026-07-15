@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { currentCommit, evaluateReleaseTruth } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, evaluateReleaseTruth } from "./release-truth-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const ledger = JSON.parse(readFileSync(resolve(root, "docs", "requirements", "alpha-ledger.yaml"), "utf8"));
 const defects = JSON.parse(readFileSync(resolve(root, "docs", "requirements", "defect-ledger.yaml"), "utf8"));
 const head = currentCommit(root);
+const tree = currentTree(root, head);
 const output = resolve(root, "docs", "IMPLEMENTATION_STATUS.md");
 const rendered = render();
 if (process.argv.includes("--check")) {
@@ -25,7 +26,7 @@ function render() {
   const { requirementEvaluations: evaluatedRequirements, defectEvaluations } = evaluateReleaseTruth({
     requirements,
     defects: defects.defects,
-  }, { root, head });
+  }, { root, head, tree });
   const currentVerified = evaluatedRequirements.filter((item) => item.verified);
   const openDefects = defectEvaluations.filter((item) => !item.closed).map((item) => item.defect);
   const unprovenClosures = defectEvaluations

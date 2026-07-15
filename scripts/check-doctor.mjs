@@ -1,8 +1,9 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { writePolicyEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const temporary = mkdtempSync(join(tmpdir(), "lite-doctor-regression-"));
@@ -26,19 +27,25 @@ try {
   database.close();
   cases.push(runCase("missing-registered-bind", {}, false));
 
-  const evidencePath = resolve(root, "evidence/m11/doctor.json");
-  mkdirSync(dirname(evidencePath), { recursive: true });
-  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  writeFileSync(evidencePath, `${JSON.stringify({
-    schemaVersion: 1,
-    commit,
-    capturedAt: new Date().toISOString(),
+  const assertions = Object.fromEntries(cases.map((item) => [item.name, (item.exitCode === 0) === item.expectedSuccess]));
+  writePolicyEvidence({
+    root,
+    output: "evidence/m11/doctor.json",
     suite: "production-doctor",
-    result: "pass",
-    skips: 0,
-    cases,
-    testIds: ["BD-059-REGRESSION"],
-  }, null, 2)}\n`);
+    command: "pnpm check:doctor",
+    assertions,
+    qualificationResult: "blocked",
+    regressionIds: ["BD-059-REGRESSION"],
+    sourcePath: "scripts/check-doctor.mjs",
+    caseBindings: { "BD-059-REGRESSION": Object.keys(assertions) },
+    claims: {
+      cases,
+      missingRequiredCases: [
+        "locked-database", "migration-failure", "low-disk", "invalid-or-unavailable-key",
+        "bad-docker-context-or-version", "unhealthy-ipc", "invalid-config", "remediation-output",
+      ],
+    },
+  });
   process.stdout.write(`Doctor checks passed (${cases.length}/${cases.length}, zero skips).\n`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

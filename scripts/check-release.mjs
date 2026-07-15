@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { writePolicyEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const required = [
@@ -53,13 +54,18 @@ try {
 const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 for (const command of [
   "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
-  "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure",
-  "pnpm check:requirements:verified", "pnpm check:defects:closed",
+  "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure", "pnpm check:evidence",
+  "pnpm check:requirements:verified", "pnpm check:defects:closed", "pnpm check:requirements", "pnpm check:defects",
 ]) {
   if (!ciWorkflow.includes(command)) failures.push(`CI is missing required branch command: ${command}`);
 }
 if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("actions/download-artifact@") ||
-    !ciWorkflow.includes("Require every candidate evidence producer") || !ciWorkflow.includes("pnpm assemble:ci-evidence")) {
+    !ciWorkflow.includes("pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete") ||
+    !ciWorkflow.includes("NEEDS_JSON: ${{ toJSON(needs) }}") || !ciWorkflow.includes("FANIN_CHECKS_JSON:") ||
+    !ciWorkflow.includes("pnpm check:secrets -- --include evidence --evidence") ||
+    !ciWorkflow.includes("pnpm aggregate:evidence") || !ciWorkflow.includes("lite-harness-candidate-evidence") ||
+    !ciWorkflow.includes("steps.evidence_secret_scan.outcome == 'success'") ||
+    !ciWorkflow.includes("steps.aggregate_secret_scan.outcome == 'success'")) {
   failures.push("CI lacks a fail-closed candidate evidence fan-in");
 }
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
@@ -180,25 +186,24 @@ if (failures.length) {
   process.stderr.write(`Release checks failed:\n${failures.map((item) => `- ${item}`).join("\n")}\n`);
   process.exitCode = 1;
 } else {
-  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  const evidencePath = resolve(root, "evidence/m11/release-validation.json");
-  mkdirSync(dirname(evidencePath), { recursive: true });
-  writeFileSync(evidencePath, `${JSON.stringify({
-    schemaVersion: 1,
-    commit,
-    capturedAt: new Date().toISOString(),
+  const assertions = {
+    openApiGeneratedWithoutDrift: true,
+    openApiReferencesResolve: true,
+    nodePackagesInstallAndRunThroughGateway: true,
+    pythonWheelInstallsAndRunsThroughGateway: true,
+    prereleaseBehaviorEnforced: true,
+    testedImageDigestPromotionEnforced: true,
+  };
+  writePolicyEvidence({
+    root,
+    output: "evidence/m11/release-validation.json",
     suite: "semantic-release-validation",
-    result: "pass",
-    skips: 0,
-    assertions: {
-      openApiGeneratedWithoutDrift: true,
-      openApiReferencesResolve: true,
-      nodePackagesInstallAndRunThroughGateway: true,
-      pythonWheelInstallsAndRunsThroughGateway: true,
-      prereleaseBehaviorEnforced: true,
-      testedImageDigestPromotionEnforced: true,
-    },
-    testIds: ["BD-057-REGRESSION", "BD-061-REGRESSION"],
-  }, null, 2)}\n`);
+    command: "pnpm check:release",
+    assertions,
+    regressionIds: ["BD-057-REGRESSION"],
+    sourcePath: "scripts/check-release.mjs",
+    caseBindings: { "BD-057-REGRESSION": Object.keys(assertions) },
+    claims: { knownOpenGap: "BD-061 requires complete authoritative OpenAPI and generated SDK models" },
+  });
   process.stdout.write("Release structure checks passed.\n");
 }

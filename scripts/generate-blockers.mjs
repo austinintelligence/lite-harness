@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { currentCommit, evaluateReleaseTruth } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, evaluateReleaseTruth } from "./release-truth-lib.mjs";
 
 const requiredTestCommands = [
   "test:unit", "test:contracts", "test:migrations", "test:ipc", "test:sdk", "test:docker", "test:recovery",
@@ -12,6 +12,7 @@ const requirements = JSON.parse(readFileSync(resolve(root, "docs", "requirements
 const defects = JSON.parse(readFileSync(resolve(root, "docs", "requirements", "defect-ledger.yaml"), "utf8")).defects;
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const head = currentCommit(root);
+const tree = currentTree(root, head);
 const output = resolve(root, "BLOCKERS.md");
 const rendered = render();
 
@@ -29,7 +30,7 @@ if (process.argv.includes("--check")) {
 }
 
 function render() {
-  const { requirementEvaluations, defectEvaluations } = evaluateReleaseTruth({ requirements, defects }, { root, head });
+  const { requirementEvaluations, defectEvaluations } = evaluateReleaseTruth({ requirements, defects }, { root, head, tree });
   const blocked = requirementEvaluations.filter((item) => !item.verified);
   const open = defectEvaluations.filter((item) => !item.closed).map((item) => item.defect);
   const severity = countBy(open, "severity");

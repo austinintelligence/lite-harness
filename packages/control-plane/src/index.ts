@@ -53,6 +53,7 @@ export class RunService {
     private readonly agent: AgentRunner,
     private readonly options: {
       workspaceLeaseTtlMs?: number;
+      workspaceLeaseRenewalIntervalMs?: number;
       workspaceQueueTimeoutMs?: number;
       approvalTimeoutMs?: number;
       approvalRouteGeneration?: string | ((run: RunRecord) => string);
@@ -65,6 +66,12 @@ export class RunService {
     } = {},
   ) {
     this.#events.setMaxListeners(0);
+    const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
+    const renewalIntervalMs = this.options.workspaceLeaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseTtlMs / 3));
+    if (!Number.isSafeInteger(leaseTtlMs) || leaseTtlMs < 20) throw new Error("Workspace lease TTL must be an integer of at least 20ms");
+    if (!Number.isSafeInteger(renewalIntervalMs) || renewalIntervalMs < 1 || renewalIntervalMs >= leaseTtlMs) {
+      throw new Error("Workspace lease renewal interval must be a positive integer smaller than the lease TTL");
+    }
   }
 
   createRun(request: InternalStartRunRequest): CreateRunResponse {
@@ -437,6 +444,7 @@ export class RunService {
       }
       if (!this.#transitionIfActive(runId, "RUNNING", "run.started")) return;
       const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
+      const renewalIntervalMs = this.options.workspaceLeaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseTtlMs / 3));
       renewal = setInterval(() => {
         if (!lease || controller.signal.aborted) return;
         const renewed = this.store.renewWorkspaceLease(lease, leaseTtlMs);
@@ -445,7 +453,7 @@ export class RunService {
           return;
         }
         lease = renewed;
-      }, Math.max(10, Math.floor(leaseTtlMs / 3)));
+      }, renewalIntervalMs);
       renewal.unref?.();
 
       const history = run.sessionId

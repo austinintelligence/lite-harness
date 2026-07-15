@@ -12,10 +12,14 @@ describe("run lifecycle safety", () => {
     const store = new SqliteRunStore(":memory:");
     let renewals = 0;
     let rejectMutation = false;
+    let releaseRenewedModel: () => void = () => undefined;
+    const renewedModelGate = new Promise<void>((resolve) => { releaseRenewedModel = resolve; });
     const wrapped = runStoreProxy(store, {
       renewWorkspaceLease: (...args) => {
         renewals += 1;
-        return store.renewWorkspaceLease(...args);
+        const renewed = store.renewWorkspaceLease(...args);
+        if (renewed && renewals >= 2) releaseRenewedModel();
+        return renewed;
       },
       validateWorkspaceLease: (lease) => !rejectMutation && store.validateWorkspaceLease(lease),
     });
@@ -23,7 +27,8 @@ describe("run lifecycle safety", () => {
     const slow: ModelGateway = {
       async *streamTurn(params: { messages: readonly ModelMessage[]; signal?: AbortSignal }): AsyncIterable<ModelEvent> {
         if (params.messages.some((message) => message.role === "user" && message.content === "renewed")) {
-          await abortableDelay(70, params.signal);
+          await waitForGate(renewedModelGate, params.signal);
+          params.signal?.throwIfAborted();
           yield { type: "completed", finishReason: "stop" };
           return;
         }
@@ -34,7 +39,10 @@ describe("run lifecycle safety", () => {
         yield { type: "completed", finishReason: "tool_calls" };
       },
     };
-    const service = new RunService(wrapped, new AgentRunner(slow, runtime), { workspaceLeaseTtlMs: 30 });
+    const service = new RunService(wrapped, new AgentRunner(slow, runtime), {
+      workspaceLeaseTtlMs: 1_000,
+      workspaceLeaseRenewalIntervalMs: 10,
+    });
     try {
       const renewed = service.createRun(request("renewed", "renewed-workspace"));
       expect((await service.waitForTerminal(renewed.runId)).status).toBe("SUCCEEDED");
@@ -136,5 +144,26 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
       clearTimeout(timer);
       reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
     }, { once: true });
+  });
+}
+
+function waitForGate(gate: Promise<void>, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+      return;
+    }
+    const onAbort = () => {
+      const reason = signal?.reason;
+      reject(reason instanceof Error ? reason : new Error("aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    gate.then(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, (error) => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(error);
+    });
   });
 }

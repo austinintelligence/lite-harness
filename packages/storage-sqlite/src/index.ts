@@ -1006,6 +1006,21 @@ export class SqliteRunStore implements RunStore {
     );
   }
 
+  renewWorkspaceLease(lease: WorkspaceLease, ttlMs: number): WorkspaceLease | undefined {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    const result = this.#database.prepare(
+      `UPDATE workspace_leases SET expires_at = ?, updated_at = ?
+       WHERE workspace_internal_id = (
+         SELECT workspace_internal_id FROM runs WHERE id = ? AND workspace_id = ?
+       ) AND owner_run_id = ? AND fencing_token = ? AND expires_at > ?`,
+    ).run(
+      expiresAt, now.toISOString(), lease.ownerRunId, lease.workspaceId,
+      lease.ownerRunId, lease.fencingToken, now.toISOString(),
+    );
+    return result.changes === 1 ? { ...lease, expiresAt } : undefined;
+  }
+
   releaseWorkspaceLease(lease: WorkspaceLease): boolean {
     const result = this.#database
       .prepare(

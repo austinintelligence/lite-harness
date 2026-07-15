@@ -90,6 +90,7 @@ const integrationDelivery = integrationStore ? configureIntegrationDelivery(serv
 app.addHook("onClose", async () => {
   automation?.stop();
   integrationDelivery?.stop();
+  await service.shutdown(Number.parseInt(process.env.LITE_HARNESS_SHUTDOWN_TIMEOUT_MS ?? "30000", 10));
   await brokeredCapabilities.stop();
   memoryStore?.close();
   integrationStore?.close();

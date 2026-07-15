@@ -55,6 +55,7 @@ export interface RunStore {
   }): SessionMessageRecord;
   listSessionMessages(sessionId: string, owner: ResourceOwner, limit?: number): SessionMessageRecord[];
   acquireWorkspaceLease(workspaceId: string, runId: string, ttlMs: number): WorkspaceLease | undefined;
+  renewWorkspaceLease(lease: WorkspaceLease, ttlMs: number): WorkspaceLease | undefined;
   validateWorkspaceLease(lease: WorkspaceLease): boolean;
   releaseWorkspaceLease(lease: WorkspaceLease): boolean;
   createApproval(record: ApprovalRecord): ApprovalRecord;

@@ -44,10 +44,10 @@ describe("durable subagent runs", () => {
     store.close();
   });
 
-  it("rejects oversubscribed children and cascades cancellation", () => {
+  it("rejects oversubscribed children and cascades cancellation", async () => {
     const store = new SqliteRunStore(":memory:");
+    const service = new RunService(store, new AgentRunner(new FakeModelGateway(), new InMemoryToolRuntime()));
     try {
-      const service = new RunService(store, new AgentRunner(new FakeModelGateway(), new InMemoryToolRuntime()));
       const parent = service.createRun({
         agent: "coder", workspace: "workspace", input: "parent", idempotencyKey: "parent-cancel",
         budget: { maxInputTokens: 1_000, maxOutputTokens: 1_000, maxCostUsd: 1, maxTurns: 2, maxToolCalls: 2 },
@@ -63,7 +63,10 @@ describe("durable subagent runs", () => {
       });
       expect(service.cancelRun(parent.runId)).toMatchObject({ status: "CANCELLED" });
       expect(service.getRun(child.runId)).toMatchObject({ status: "CANCELLED" });
-    } finally { store.close(); }
+    } finally {
+      await service.shutdown();
+      store.close();
+    }
   });
 });
 

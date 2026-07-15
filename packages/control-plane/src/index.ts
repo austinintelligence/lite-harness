@@ -30,6 +30,9 @@ export class RunService {
   readonly #steering = new Map<string, ModelMessage[]>();
   readonly #approvalWaiters = new Map<string, { resolve: (approved: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
   readonly #queueTails = new Map<string, Promise<void>>();
+  readonly #scheduled = new Set<string>();
+  readonly #executions = new Map<string, Promise<void>>();
+  #accepting = true;
 
   constructor(
     private readonly store: RunStore,
@@ -46,10 +49,14 @@ export class RunService {
   }
 
   createRun(request: InternalStartRunRequest): CreateRunResponse {
+    if (!this.#accepting) throw new Error("Run service is shutting down");
     const result = this.store.createOrGetRun(createId("run"), request);
     if (result.created) {
       this.#notify(result.run.id);
+      this.#scheduled.add(result.run.id);
       setImmediate(() => {
+        this.#scheduled.delete(result.run.id);
+        if (!this.#accepting) return;
         this.#enqueue(result.run);
       });
     }
@@ -270,9 +277,46 @@ export class RunService {
       return run;
     }
     for (const child of this.store.listChildRuns(runId)) this.cancelRun(child.id);
-    this.#active.get(runId)?.abort(new Error("Run cancelled"));
-    this.#transition(runId, "CANCELLED", "run.cancelled", { reason: "requested" });
+    const controller = this.#active.get(runId);
+    if (controller) {
+      controller.abort(new RunCancelledError());
+    } else {
+      this.#transition(runId, "CANCELLED", "run.cancelled", { reason: "requested" });
+    }
     return this.getRun(runId);
+  }
+
+  async shutdown(timeoutMs = 30_000): Promise<void> {
+    if (!this.#accepting && this.#executions.size === 0) return;
+    this.#accepting = false;
+    const pendingRunIds = new Set([
+      ...this.#scheduled,
+      ...this.#executions.keys(),
+      ...this.#active.keys(),
+    ]);
+    for (const runId of pendingRunIds) this.cancelRun(runId);
+    for (const [approvalId, waiter] of this.#approvalWaiters) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(false);
+      this.#approvalWaiters.delete(approvalId);
+    }
+    const executions = [...this.#executions.values()];
+    if (executions.length === 0) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled(executions),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`Run service did not drain within ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+          timeout.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   #enqueue(run: RunRecord): void {
@@ -300,8 +344,10 @@ export class RunService {
       await this.#execute(run.id);
     });
     const tail = execution.catch(() => undefined);
+    this.#executions.set(run.id, tail);
     for (const key of keys) this.#queueTails.set(key, tail);
     void tail.finally(() => {
+      this.#executions.delete(run.id);
       for (const key of keys) if (this.#queueTails.get(key) === tail) this.#queueTails.delete(key);
     });
   }
@@ -312,6 +358,8 @@ export class RunService {
     let lease: WorkspaceLease | undefined;
     let attempt: RunAttemptRecord | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let renewal: ReturnType<typeof setInterval> | undefined;
+    let terminal: { status: RunStatus; type: RunEventType; payload?: Record<string, unknown> } | undefined;
     try {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run disappeared: ${runId}`);
@@ -337,6 +385,17 @@ export class RunService {
       });
       this.#notify(runId);
       if (!this.#transitionIfActive(runId, "RUNNING", "run.started")) return;
+      const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
+      renewal = setInterval(() => {
+        if (!lease || controller.signal.aborted) return;
+        const renewed = this.store.renewWorkspaceLease(lease, leaseTtlMs);
+        if (!renewed) {
+          controller.abort(new WorkspaceLeaseLostError());
+          return;
+        }
+        lease = renewed;
+      }, Math.max(10, Math.floor(leaseTtlMs / 3)));
+      renewal.unref?.();
 
       const history = run.sessionId
         ? this.store.listSessionMessages(run.sessionId, run).map(toModelMessage)
@@ -357,40 +416,60 @@ export class RunService {
         modelIdleTimeoutMs: run.budget.modelIdleTimeoutMs,
         commandTimeoutMs: run.budget.commandTimeoutMs,
         takeSteering: () => this.#takeSteering(runId),
-        beforeToolCall: (call) => this.#authorizeTool(run, call, controller.signal),
+        beforeToolCall: async (call) => {
+          if (!lease || !this.store.validateWorkspaceLease(lease)) throw new WorkspaceLeaseLostError();
+          await this.#authorizeTool(run, call, controller.signal);
+        },
         onEvent: (event) => this.#appendAgentEvent(run, event),
       });
 
-      const latest = this.getRun(runId);
-      if (latest && !isTerminalRunStatus(latest.status)) {
-        this.#transition(runId, "SUCCEEDED", "run.succeeded");
-      }
+      terminal = { status: "SUCCEEDED", type: "run.succeeded" };
     } catch (error) {
-      const run = this.getRun(runId);
-      if (run && !isTerminalRunStatus(run.status)) {
-        const reason = controller.signal.reason;
-        if (reason instanceof RunTimeoutError) {
-          this.#transition(runId, "TIMED_OUT", "run.timed_out", {
+      const reason = controller.signal.reason;
+      if (reason instanceof RunCancelledError) {
+        terminal = {
+          status: "CANCELLED", type: "run.cancelled",
+          payload: { reason: "requested" },
+        };
+      } else if (reason instanceof RunTimeoutError) {
+        terminal = {
+          status: "TIMED_OUT", type: "run.timed_out",
+          payload: {
             code: "run_timeout",
             message: reason.message,
             retryable: true,
-          });
-        } else if (reason instanceof BudgetExceededError) {
-          this.#transition(runId, "FAILED", "run.failed", {
+          },
+        };
+      } else if (reason instanceof BudgetExceededError) {
+        terminal = {
+          status: "FAILED", type: "run.failed",
+          payload: {
             code: "budget_exceeded",
             message: reason.message,
             retryable: false,
-          });
-        } else {
-          this.#transition(runId, "FAILED", "run.failed", {
+          },
+        };
+      } else if (reason instanceof WorkspaceLeaseLostError || error instanceof WorkspaceLeaseLostError) {
+        terminal = {
+          status: "ORPHANED", type: "run.orphaned",
+          payload: {
+            code: "workspace_lease_lost",
+            message: "Workspace lease renewal or fencing validation failed",
+            retryable: true,
+          },
+        };
+      } else {
+        terminal = {
+          status: "FAILED", type: "run.failed",
+          payload: {
             code: "agent_run_failed",
             message: error instanceof Error ? error.message : String(error),
-          });
-        }
+          },
+        };
       }
-      throw error;
     } finally {
       if (timeout) clearTimeout(timeout);
+      if (renewal) clearInterval(renewal);
       if (lease && this.store.releaseWorkspaceLease(lease)) {
         const latest = this.getRun(runId);
         if (latest) {
@@ -401,14 +480,26 @@ export class RunService {
           });
           this.#notify(runId);
         }
+      } else if (lease && terminal?.status === "SUCCEEDED") {
+        terminal = {
+          status: "ORPHANED", type: "run.orphaned",
+          payload: {
+            code: "workspace_lease_lost",
+            message: "Workspace lease could not be released with the active fencing token",
+            retryable: true,
+          },
+        };
       }
       this.#active.delete(runId);
       this.#steering.delete(runId);
-      if (attempt) {
-        const status = this.getRun(runId)?.status;
-        const attemptStatus = status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED" ||
-          status === "TIMED_OUT" || status === "ORPHANED" ? status : "FAILED";
-        this.store.completeRunAttempt(attempt.id, attemptStatus);
+      const latest = this.getRun(runId);
+      if (terminal && latest && !isTerminalRunStatus(latest.status)) {
+        this.#transition(runId, terminal.status, terminal.type, terminal.payload);
+      } else if (attempt && latest && !isTerminalRunStatus(latest.status)) {
+        this.#transition(runId, "FAILED", "run.failed", {
+          code: "run_finalization_failed",
+          message: "Run execution ended without a terminal result",
+        });
       }
     }
   }
@@ -598,6 +689,20 @@ class RunTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`Run exceeded its total timeout of ${timeoutMs}ms`);
     this.name = "RunTimeoutError";
+  }
+}
+
+class RunCancelledError extends Error {
+  constructor() {
+    super("Run was cancelled");
+    this.name = "RunCancelledError";
+  }
+}
+
+class WorkspaceLeaseLostError extends Error {
+  constructor() {
+    super("Workspace lease was lost");
+    this.name = "WorkspaceLeaseLostError";
   }
 }
 

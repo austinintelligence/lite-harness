@@ -2314,7 +2314,7 @@
       },
       "regression": {
         "testId": "BD-061-REGRESSION",
-        "path": "scripts/generate-openapi.ts",
+        "path": "test/openapi-sdk-contracts.test.ts",
         "result": "pass",
         "evidenceArtifact": {
           "path": "evidence/m11/release-validation.json"

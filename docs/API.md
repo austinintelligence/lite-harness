@@ -26,6 +26,7 @@ these claims from trusted app identity rather than accepting arbitrary headers.
 - `GET /v1/agents/{agentId}` - get an owned agent profile
 - `POST /v1/workspaces` / `GET /v1/workspaces` - create and list managed workspaces
 - `GET /v1/workspaces/{workspaceId}` - get an owned workspace
+- `POST /v1/tokens` / `DELETE /v1/tokens/{tokenId}` - mint and revoke resource-bound run tokens
 
 Errors use the versioned envelope `{ "error": { "version": 1, "code": "...",
 "message": "...", "retryable": false } }`, with optional `retryAfterMs` and
@@ -50,7 +51,14 @@ session execute serially, and every execution is recorded as a run attempt.
 The TypeScript SDK exposes the same operations through `LiteHarnessClient`.
 The prerelease Python client under `sdks/python` covers the same run, replay,
 session, artifact, agent, and workspace surface.
-The machine-readable contract is [`openapi.json`](openapi.json).
+The machine-readable contract is [`openapi.json`](openapi.json). It is generated
+from the public TypeBox schemas in `packages/contracts/src/index.ts` with
+`pnpm generate:openapi`; `pnpm check:openapi` fails on drift. The generated
+TypeScript model and operation inventory is
+`packages/sdk-typescript/src/generated-api.ts`, and the Python TypedDict model
+inventory is `sdks/python/src/lite_harness/generated_api.py`. Release checks
+require every public operation to expose a typed request (when applicable), a
+typed success response, and matching SDK operation/model inventories.
 
 The webhook route does not use the app bearer token. It requires
 `X-Lite-Signature` and resolves a preconfigured account/sender binding inside

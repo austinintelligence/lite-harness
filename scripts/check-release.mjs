@@ -143,8 +143,18 @@ function validateOpenApiSemantics() {
     return;
   }
   const document = JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "utf8"));
-  if (!/^3\.1\./.test(document.openapi ?? "") || !document["x-lite-generated-from-contracts"]) {
-    failures.push("OpenAPI lacks its 3.1 contract-generation marker");
+  if (!/^3\.1\./.test(document.openapi ?? "") || document["x-lite-generated-from-contracts"]?.version !== 2) {
+    failures.push("OpenAPI lacks its versioned 3.1 contract-generation marker");
+  }
+  const schemaNames = Object.keys(document.components?.schemas ?? {});
+  if (!schemaNames.length || JSON.stringify(document["x-lite-contract-schemas"] ?? []) !== JSON.stringify(schemaNames)) {
+    failures.push("OpenAPI schema inventory is not the generated public contract inventory");
+  }
+  const generatedTypescript = readFileSync(resolve(root, "packages/sdk-typescript/src/generated-api.ts"), "utf8");
+  const generatedPython = readFileSync(resolve(root, "sdks/python/src/lite_harness/generated_api.py"), "utf8");
+  for (const schemaName of schemaNames) {
+    if (!new RegExp(`^export type ${schemaName}\\s*=`, "m").test(generatedTypescript)) failures.push(`TypeScript SDK is missing generated model ${schemaName}`);
+    if (!new RegExp(`(?:^class ${schemaName}\\(|^${schemaName}: TypeAlias)`, "m").test(generatedPython)) failures.push(`Python SDK is missing generated model ${schemaName}`);
   }
   const operationIds = new Set();
   for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
@@ -154,9 +164,22 @@ function validateOpenApiSemantics() {
       if (!operation || typeof operation !== "object" || !Object.keys(operation.responses ?? {}).length) {
         failures.push(`OpenAPI operation ${method.toUpperCase()} ${path} has no response contract`);
       }
-      if (operation.operationId) {
+      if (!operation.operationId) {
+        failures.push(`OpenAPI operation ${method.toUpperCase()} ${path} has no operationId`);
+      } else {
         if (operationIds.has(operation.operationId)) failures.push(`duplicate OpenAPI operationId ${operation.operationId}`);
         operationIds.add(operation.operationId);
+        if (!generatedTypescript.includes(JSON.stringify(operation.operationId)) || !generatedPython.includes(JSON.stringify(operation.operationId))) {
+          failures.push(`generated SDK operation inventory is missing ${operation.operationId}`);
+        }
+      }
+      for (const [status, response] of Object.entries(operation.responses ?? {})) {
+        const media = response?.content?.["application/json"] ?? response?.content?.["text/event-stream"];
+        if (/^2\d\d$/.test(status) && !media?.schema?.$ref) failures.push(`OpenAPI success ${method.toUpperCase()} ${path} ${status} has no typed schema`);
+        if (/^[45]\d\d$/.test(status) && !media?.schema?.$ref) failures.push(`OpenAPI error ${method.toUpperCase()} ${path} ${status} has no typed schema`);
+      }
+      if (operation.requestBody && !operation.requestBody.content?.["application/json"]?.schema?.$ref) {
+        failures.push(`OpenAPI request ${method.toUpperCase()} ${path} has no typed JSON schema`);
       }
     }
   }

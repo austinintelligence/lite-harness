@@ -441,6 +441,246 @@ export interface ArtifactPayloadResponse {
   dataBase64: string;
 }
 
+/** Public webhook payload accepted by the Gateway before connector/account binding is applied. */
+export const InboundEnvelopeSchema = Type.Object({
+  deliveryId: Type.String({ minLength: 1, maxLength: 512 }),
+  senderExternalId: Type.String({ minLength: 1, maxLength: 512 }),
+  conversationExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+  threadExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+  text: Type.String({ minLength: 1, maxLength: 200_000 }),
+  attachmentUrls: Type.Optional(Type.Array(Type.String({ format: "uri" }), { maxItems: 32 })),
+  receivedAt: Type.Optional(Type.String({ format: "date-time" })),
+}, { additionalProperties: false });
+
+export type InboundEnvelope = Static<typeof InboundEnvelopeSchema>;
+
+export const GatewayHealthSchema = Type.Object({
+  ok: Type.Literal(true),
+  role: Type.Literal("gateway"),
+  uptimeSeconds: Type.Integer({ minimum: 0 }),
+  rssBytes: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });
+
+export const ReadinessDependencySchema = Type.Object({
+  ok: Type.Boolean(),
+  reason: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+}, { additionalProperties: false });
+
+export const GatewayReadinessSchema = Type.Object({
+  ok: Type.Boolean(),
+  role: Type.Literal("gateway"),
+  dependencies: Type.Record(Type.String({ minLength: 1, maxLength: 128 }), ReadinessDependencySchema),
+}, { additionalProperties: false });
+
+export const WebhookIngestResponseSchema = Type.Object({
+  duplicate: Type.Boolean(),
+  runId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+}, { additionalProperties: false });
+
+export const RunBudgetSchema = Type.Object({
+  maxTurns: Type.Integer({ minimum: 1, maximum: 128 }),
+  maxToolCalls: Type.Integer({ minimum: 0, maximum: 10_000 }),
+  maxInputTokens: Type.Integer({ minimum: 1 }),
+  maxOutputTokens: Type.Integer({ minimum: 1 }),
+  maxCostUsd: Type.Number({ minimum: 0 }),
+  totalTimeoutMs: Type.Integer({ minimum: 100, maximum: 86_400_000 }),
+  modelIdleTimeoutMs: Type.Integer({ minimum: 100, maximum: 3_600_000 }),
+  commandTimeoutMs: Type.Integer({ minimum: 100, maximum: 3_600_000 }),
+}, { additionalProperties: false });
+
+export const RunUsageSchema = Type.Object({
+  inputTokens: Type.Integer({ minimum: 0 }),
+  outputTokens: Type.Integer({ minimum: 0 }),
+  costUsd: Type.Number({ minimum: 0 }),
+  toolCalls: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });
+
+export const RunRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  agentId: Type.String({ minLength: 1, maxLength: 128 }),
+  workspaceId: Type.String({ minLength: 1, maxLength: 128 }),
+  sessionId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  parentRunId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  depth: Type.Integer({ minimum: 0, maximum: 128 }),
+  deliveryAllowed: Type.Boolean(),
+  input: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+  budget: RunBudgetSchema,
+  usage: RunUsageSchema,
+  status: RunStatusSchema,
+  lastSequence: Type.Integer({ minimum: 0 }),
+  errorCode: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  errorMessage: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+  createdAt: Type.String({ format: "date-time" }),
+  updatedAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const RunAttemptRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  runId: Type.String({ minLength: 1, maxLength: 128 }),
+  attempt: Type.Integer({ minimum: 1 }),
+  status: Type.Union([
+    Type.Literal("RUNNING"), Type.Literal("SUCCEEDED"), Type.Literal("FAILED"),
+    Type.Literal("CANCELLED"), Type.Literal("TIMED_OUT"), Type.Literal("ORPHANED"),
+  ]),
+  startedAt: Type.String({ format: "date-time" }),
+  endedAt: Type.Optional(Type.String({ format: "date-time" })),
+}, { additionalProperties: false });
+
+export const CreateRunResponseSchema = Type.Object({
+  runId: Type.String({ minLength: 1, maxLength: 128 }),
+  status: RunStatusSchema,
+  eventCursor: Type.Integer({ minimum: 0 }),
+  idempotentReplay: Type.Boolean(),
+}, { additionalProperties: false });
+
+export const SessionRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  agentId: Type.String({ minLength: 1, maxLength: 128 }),
+  createdAt: Type.String({ format: "date-time" }),
+  updatedAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const SessionMessageRoleSchema = Type.Union([
+  Type.Literal("system"), Type.Literal("user"), Type.Literal("assistant"), Type.Literal("tool"),
+]);
+
+export const SessionMessageRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  sessionId: Type.String({ minLength: 1, maxLength: 128 }),
+  runId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  role: SessionMessageRoleSchema,
+  content: Type.String({ maxLength: 1_000_000 }),
+  metadata: Type.Record(Type.String(), Type.Unknown()),
+  createdAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const ArtifactRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  runId: Type.String({ minLength: 1, maxLength: 128 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  workspaceId: Type.String({ minLength: 1, maxLength: 128 }),
+  path: Type.String({ minLength: 1, maxLength: 4_096 }),
+  mediaType: Type.String({ minLength: 3, maxLength: 255 }),
+  sizeBytes: Type.Integer({ minimum: 0 }),
+  sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  createdAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const ArtifactPayloadResponseSchema = Type.Object({
+  record: ArtifactRecordSchema,
+  dataBase64: Type.String({ pattern: "^[A-Za-z0-9+/]*={0,2}$" }),
+}, { additionalProperties: false });
+
+export const ApprovalStatusSchema = Type.Union([
+  Type.Literal("PENDING"), Type.Literal("APPROVED"), Type.Literal("DENIED"), Type.Literal("EXPIRED"),
+]);
+
+export const ApprovalRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  runId: Type.String({ minLength: 1, maxLength: 128 }),
+  toolCallId: Type.String({ minLength: 1, maxLength: 128 }),
+  toolName: Type.String({ minLength: 1, maxLength: 128 }),
+  toolArgumentsDigest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  executionDigest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  workspaceId: Type.String({ minLength: 1, maxLength: 128 }),
+  policyGeneration: Type.Integer({ minimum: 0 }),
+  routeGeneration: Type.String({ minLength: 1, maxLength: 128 }),
+  status: ApprovalStatusSchema,
+  expiresAt: Type.String({ format: "date-time" }),
+  createdAt: Type.String({ format: "date-time" }),
+  resolvedAt: Type.Optional(Type.String({ format: "date-time" })),
+}, { additionalProperties: false });
+
+export const RunEventTypeSchema = Type.Union([
+  Type.Literal("run.accepted"), Type.Literal("run.queued"), Type.Literal("run.preparing"),
+  Type.Literal("run.started"), Type.Literal("run.snapshot.frozen"), Type.Literal("run.checkpointing"),
+  Type.Literal("run.timed_out"), Type.Literal("run.steered"), Type.Literal("agent.message.delta"),
+  Type.Literal("agent.message.completed"), Type.Literal("tool.call.requested"), Type.Literal("tool.call.completed"),
+  Type.Literal("usage.updated"), Type.Literal("workspace.lease.acquired"), Type.Literal("workspace.lease.released"),
+  Type.Literal("workspace.restore.started"), Type.Literal("workspace.restore.completed"),
+  Type.Literal("workspace.checkpoint.completed"), Type.Literal("workspace.checkpoint.failed"),
+  Type.Literal("approval.requested"), Type.Literal("approval.resolved"), Type.Literal("artifact.created"),
+  Type.Literal("subagent.started"), Type.Literal("subagent.completed"), Type.Literal("run.succeeded"),
+  Type.Literal("run.failed"), Type.Literal("run.cancelled"), Type.Literal("run.orphaned"),
+]);
+
+export const RunEventSchema = Type.Object({
+  runId: Type.String({ minLength: 1, maxLength: 128 }),
+  sequence: Type.Integer({ minimum: 1 }),
+  type: RunEventTypeSchema,
+  payload: Type.Record(Type.String(), Type.Unknown()),
+  createdAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const AgentProfileRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  version: Type.Integer({ minimum: 1 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  name: Type.String({ minLength: 1, maxLength: 128 }),
+  instructions: Type.String({ maxLength: 1_000_000 }),
+  modelCapabilities: Type.Array(AgentModelCapabilitySchema, { maxItems: 6, uniqueItems: true }),
+  allowedTools: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 }),
+  defaultBudget: RunBudgetSchema,
+  createdAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const WorkspaceRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  mode: Type.Union([Type.Literal("managed"), Type.Literal("registered-bind")]),
+  state: Type.Union([
+    Type.Literal("WARM"), Type.Literal("COLD"), Type.Literal("RESTORING"), Type.Literal("IN_USE"),
+    Type.Literal("SNAPSHOTTING"), Type.Literal("CORRUPT"), Type.Literal("ERROR"),
+  ]),
+  registeredPath: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+  createdAt: Type.String({ format: "date-time" }),
+  updatedAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const SteerRunRequestSchema = Type.Object({
+  instruction: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+}, { additionalProperties: false });
+
+export const ResolveApprovalRequestSchema = Type.Object({
+  approved: Type.Boolean(),
+}, { additionalProperties: false });
+
+export const RunAttemptsResponseSchema = Type.Object({
+  attempts: Type.Array(RunAttemptRecordSchema),
+}, { additionalProperties: false });
+
+export const ChildRunsResponseSchema = Type.Object({
+  runs: Type.Array(RunRecordSchema),
+}, { additionalProperties: false });
+
+export const SessionMessagesResponseSchema = Type.Object({
+  messages: Type.Array(SessionMessageRecordSchema),
+}, { additionalProperties: false });
+
+export const AgentListResponseSchema = Type.Object({
+  agents: Type.Array(AgentProfileRecordSchema),
+}, { additionalProperties: false });
+
+export const WorkspaceListResponseSchema = Type.Object({
+  workspaces: Type.Array(WorkspaceRecordSchema),
+}, { additionalProperties: false });
+
 export type StructuredError = Static<typeof StructuredErrorSchema>;
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "DENIED" | "EXPIRED";

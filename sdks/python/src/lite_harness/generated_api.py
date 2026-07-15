@@ -3,12 +3,163 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
 
+class AgentListResponse(TypedDict):
+    agents: list[AgentProfileRecord]
+
+AgentModelCapability: TypeAlias = Literal["text", "tools", "vision", "json", "reasoning", "delegated-agent"]
+
+class AgentProfileRecord(TypedDict):
+    id: str
+    version: int
+    appId: str
+    tenantId: str
+    userId: str
+    name: str
+    instructions: str
+    modelCapabilities: list[AgentModelCapability]
+    allowedTools: list[str]
+    defaultBudget: RunBudget
+    createdAt: str
+
+class ApprovalRecord(TypedDict):
+    id: str
+    runId: str
+    toolCallId: str
+    toolName: str
+    toolArgumentsDigest: str
+    executionDigest: str
+    appId: str
+    tenantId: str
+    userId: str
+    workspaceId: str
+    policyGeneration: int
+    routeGeneration: str
+    status: ApprovalStatus
+    expiresAt: str
+    createdAt: str
+    resolvedAt: NotRequired[str]
+
+ApprovalStatus: TypeAlias = Literal["PENDING", "APPROVED", "DENIED", "EXPIRED"]
+
+class ArtifactPayloadResponse(TypedDict):
+    record: ArtifactRecord
+    dataBase64: str
+
+class ArtifactRecord(TypedDict):
+    id: str
+    runId: str
+    appId: str
+    tenantId: str
+    userId: str
+    workspaceId: str
+    path: str
+    mediaType: str
+    sizeBytes: int
+    sha256: str
+    createdAt: str
+
+class ChildRunsResponse(TypedDict):
+    runs: list[RunRecord]
+
+class CreateAgent(TypedDict):
+    id: NotRequired[str]
+    name: str
+    instructions: NotRequired[str]
+    modelCapabilities: NotRequired[list[AgentModelCapability]]
+    allowedTools: NotRequired[list[str]]
+    defaultBudget: NotRequired[RunBudgetOverrides]
+
 class CreateRun(TypedDict):
     agent: str
     workspace: str
     session: NotRequired[str]
     input: str
-    budget: NotRequired[dict[str, Any]]
+    budget: NotRequired[RunBudgetOverrides]
+
+class CreateRunResponse(TypedDict):
+    runId: str
+    status: RunStatus
+    eventCursor: int
+    idempotentReplay: bool
+
+class CreateWorkspace(TypedDict):
+    id: NotRequired[str]
+    mode: NotRequired["managed"]
+
+ErrorDetail: TypeAlias = dict[str, Any]
+
+class ErrorEnvelope(TypedDict):
+    error: StructuredError
+
+class GatewayHealth(TypedDict):
+    ok: True
+    role: "gateway"
+    uptimeSeconds: int
+    rssBytes: int
+
+class GatewayReadiness(TypedDict):
+    ok: bool
+    role: "gateway"
+    dependencies: dict[str, ReadinessDependency]
+
+class InboundEnvelope(TypedDict):
+    deliveryId: str
+    senderExternalId: str
+    conversationExternalId: NotRequired[str]
+    threadExternalId: NotRequired[str]
+    text: str
+    attachmentUrls: NotRequired[list[str]]
+    receivedAt: NotRequired[str]
+
+class MintRunToken(TypedDict):
+    scopes: list[str]
+    ttlSeconds: NotRequired[int]
+    agentId: NotRequired[str]
+    workspaceId: NotRequired[str]
+    budgetCeiling: NotRequired[RunBudgetOverrides]
+
+class MintRunTokenResponse(TypedDict):
+    token: str
+    tokenId: str
+    expiresAt: str
+    scopes: list[str]
+    replayPolicy: "resource_bound_multi_use"
+
+class PublishArtifact(TypedDict):
+    path: str
+    mediaType: str
+
+class RevokeTokenResponse(TypedDict):
+    tokenId: str
+    revoked: True
+
+class ReadinessDependency(TypedDict):
+    ok: bool
+    reason: NotRequired[str]
+
+class ResolveApproval(TypedDict):
+    approved: bool
+
+class RunAttemptRecord(TypedDict):
+    id: str
+    runId: str
+    attempt: int
+    status: Literal["RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"]
+    startedAt: str
+    endedAt: NotRequired[str]
+
+class RunAttemptsResponse(TypedDict):
+    attempts: list[RunAttemptRecord]
+
+class RunBudget(TypedDict):
+    maxTurns: int
+    maxToolCalls: int
+    maxInputTokens: int
+    maxOutputTokens: int
+    maxCostUsd: float
+    totalTimeoutMs: int
+    modelIdleTimeoutMs: int
+    commandTimeoutMs: int
 
 class RunBudgetOverrides(TypedDict):
     maxTurns: NotRequired[int]
@@ -20,54 +171,96 @@ class RunBudgetOverrides(TypedDict):
     modelIdleTimeoutMs: NotRequired[int]
     commandTimeoutMs: NotRequired[int]
 
-class CreateAgent(TypedDict):
-    id: NotRequired[str]
-    name: str
-    instructions: NotRequired[str]
-    modelCapabilities: NotRequired[list[str | str | str | str | str | str]]
-    allowedTools: NotRequired[list[str]]
-    defaultBudget: NotRequired[dict[str, Any]]
+class RunEvent(TypedDict):
+    runId: str
+    sequence: int
+    type: RunEventType
+    payload: ErrorDetail
+    createdAt: str
 
-class CreateWorkspace(TypedDict):
-    id: NotRequired[str]
-    mode: NotRequired[str]
+RunEventType: TypeAlias = Literal["run.accepted", "run.queued", "run.preparing", "run.started", "run.snapshot.frozen", "run.checkpointing", "run.timed_out", "run.steered", "agent.message.delta", "agent.message.completed", "tool.call.requested", "tool.call.completed", "usage.updated", "workspace.lease.acquired", "workspace.lease.released", "workspace.restore.started", "workspace.restore.completed", "workspace.checkpoint.completed", "workspace.checkpoint.failed", "approval.requested", "approval.resolved", "artifact.created", "subagent.started", "subagent.completed", "run.succeeded", "run.failed", "run.cancelled", "run.orphaned"]
 
-class InboundEnvelope(TypedDict):
-    deliveryId: str
-    senderExternalId: str
-    conversationExternalId: NotRequired[str]
-    threadExternalId: NotRequired[str]
-    text: str
-    attachmentUrls: NotRequired[list[str]]
-    receivedAt: NotRequired[str]
+class RunRecord(TypedDict):
+    id: str
+    idempotencyKey: str
+    appId: str
+    tenantId: str
+    userId: str
+    agentId: str
+    workspaceId: str
+    sessionId: NotRequired[str]
+    parentRunId: NotRequired[str]
+    depth: int
+    deliveryAllowed: bool
+    input: str
+    budget: RunBudget
+    usage: RunUsage
+    status: RunStatus
+    lastSequence: int
+    errorCode: NotRequired[str]
+    errorMessage: NotRequired[str]
+    createdAt: str
+    updatedAt: str
 
-class Error(TypedDict):
-    error: NotRequired[dict[str, Any]]
+RunStatus: TypeAlias = Literal["ACCEPTED", "QUEUED", "PREPARING", "RUNNING", "CHECKPOINTING", "SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"]
 
-class ErrorEnvelope(TypedDict):
-    error: dict[str, Any]
+class RunUsage(TypedDict):
+    inputTokens: int
+    outputTokens: int
+    costUsd: float
+    toolCalls: int
 
-class MintRunToken(TypedDict):
-    scopes: list[str]
-    ttlSeconds: NotRequired[int]
-    agentId: NotRequired[str]
-    workspaceId: NotRequired[str]
-    budgetCeiling: NotRequired[dict[str, Any]]
+class SessionMessageRecord(TypedDict):
+    id: str
+    sessionId: str
+    runId: NotRequired[str]
+    role: SessionMessageRole
+    content: str
+    metadata: ErrorDetail
+    createdAt: str
 
-class MintRunTokenResponse(TypedDict):
-    token: str
-    tokenId: str
-    expiresAt: str
-    scopes: list[str]
-    replayPolicy: str
+SessionMessageRole: TypeAlias = Literal["system", "user", "assistant", "tool"]
 
-class RevokeTokenResponse(TypedDict):
-    tokenId: str
-    revoked: bool
+class SessionMessagesResponse(TypedDict):
+    messages: list[SessionMessageRecord]
 
-class PublishArtifact(TypedDict):
-    path: str
-    mediaType: str
+class SessionRecord(TypedDict):
+    id: str
+    appId: str
+    tenantId: str
+    userId: str
+    agentId: str
+    createdAt: str
+    updatedAt: str
+
+class SteerRun(TypedDict):
+    instruction: str
+
+class StructuredError(TypedDict):
+    version: 1
+    code: str
+    message: str
+    retryable: bool
+    retryAfterMs: NotRequired[int]
+    details: NotRequired[ErrorDetail]
+
+class WebhookIngestResponse(TypedDict):
+    duplicate: bool
+    runId: NotRequired[str]
+
+class WorkspaceListResponse(TypedDict):
+    workspaces: list[WorkspaceRecord]
+
+class WorkspaceRecord(TypedDict):
+    id: str
+    appId: str
+    tenantId: str
+    userId: str
+    mode: Literal["managed", "registered-bind"]
+    state: Literal["WARM", "COLD", "RESTORING", "IN_USE", "SNAPSHOTTING", "CORRUPT", "ERROR"]
+    registeredPath: NotRequired[str]
+    createdAt: str
+    updatedAt: str
 
 API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/healthz", "getHealthz"),
@@ -95,4 +288,4 @@ API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/workspaces/{workspaceId}", "getV1WorkspacesByWorkspaceId"),
 )
 
-__all__ = ["CreateRun","RunBudgetOverrides","CreateAgent","CreateWorkspace","InboundEnvelope","Error","ErrorEnvelope","MintRunToken","MintRunTokenResponse","RevokeTokenResponse","PublishArtifact","API_OPERATIONS"]
+__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadiness","InboundEnvelope","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]

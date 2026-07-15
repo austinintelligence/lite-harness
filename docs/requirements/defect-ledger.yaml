@@ -86,7 +86,7 @@
         "section": "Known baseline defects / 3",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-003-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -100,14 +100,16 @@
       },
       "regression": {
         "testId": "BD-003-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/agent-runtime.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m2/migrations.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "f9771e6bfa8d49657dfa651acff313f0bf335cbc"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-004",

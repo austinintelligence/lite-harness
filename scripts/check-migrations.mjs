@@ -22,6 +22,7 @@ try {
     "test/queue-deadline.test.ts",
     "test/transactional-projections.test.ts",
     "test/lifecycle-safety.test.ts",
+    "test/agent-runtime.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -64,9 +65,10 @@ function writeEvidence(output, report) {
       renewableFencedWorkspaceLease: true,
       terminalAfterCleanup: true,
       boundedManagerDrain: true,
+      nonCooperativeProviderCleanupBounded: true,
     },
     testIds: [
-      "BD-002-REGRESSION", "BD-004-REGRESSION", "BD-005-REGRESSION",
+      "BD-002-REGRESSION", "BD-003-REGRESSION", "BD-004-REGRESSION", "BD-005-REGRESSION",
       "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-012-REGRESSION", "BD-013-REGRESSION",
       "BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320",
       "BD-021-REGRESSION",

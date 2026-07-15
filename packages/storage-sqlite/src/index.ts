@@ -26,6 +26,8 @@ import type {
   RunModelUsageRecord,
   WorkspaceLease,
 } from "@lite-harness/contracts";
+
+export const SQLITE_SCHEMA_VERSION = 13;
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { isTerminalRunStatus } from "@lite-harness/contracts";
 import type { AppendRunEvent, ResourceOwner, RunStore } from "@lite-harness/domain";
@@ -751,6 +753,9 @@ export class SqliteRunStore implements RunStore {
         this.#ensureColumn("run_model_usage", "price_snapshot_json", "TEXT");
       },
     ];
+    if (migrations.length !== SQLITE_SCHEMA_VERSION) {
+      throw new Error(`Storage migration registry has ${migrations.length} entries; expected ${SQLITE_SCHEMA_VERSION}`);
+    }
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
     if (applied.some((version, index) => version !== index + 1) || applied.length > migrations.length) {

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,7 +12,7 @@ import {
   type PluginPermissions,
 } from "@lite-harness/plugin-core";
 import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
-import { SqliteRunStore } from "@lite-harness/storage-sqlite";
+import { SQLITE_SCHEMA_VERSION, SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
 
 const [command = "help", subcommand, argument, extraArgument, fifthArgument] = process.argv.slice(2);
@@ -24,7 +25,7 @@ if (command === "doctor") {
   const docker = await inspectDocker();
   const disk = statfsSync(dataDir);
   const freeBytes = disk.bavail * disk.bsize;
-  const database = inspectDatabase(join(dataDir, "lite-harness.db"));
+  const database = databaseIntegrityCheck(join(dataDir, "lite-harness.db"));
   const configuredProfile = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${process.env.LITE_HARNESS_PROVIDER ?? "fake"}_default`;
   let osCredential: { available: boolean; providerConfigured: boolean; snapshotKeyConfigured: boolean; error?: string } = {
     available: true, providerConfigured: false, snapshotKeyConfigured: false,
@@ -45,6 +46,11 @@ if (command === "doctor") {
     ? Buffer.from(environmentSnapshotKey, "base64").length === 32
     : osCredential.snapshotKeyConfigured;
   const runtimeImage = process.env.LITE_HARNESS_RUNTIME_IMAGE;
+  const mode = process.env.LITE_HARNESS_MODE ?? "development";
+  const runtime = process.env.LITE_HARNESS_RUNTIME ?? "fake";
+  const provider = process.env.LITE_HARNESS_PROVIDER ?? "fake";
+  const runtimeImageCheck = inspectRuntimeImage(runtimeImage, runtime === "docker" || mode === "production");
+  const gateway = await inspectGatewayReadiness(process.env.LITE_HARNESS_DOCTOR_GATEWAY_URL, mode === "production");
   const report = {
     node: { ok: Number(process.versions.node.split(".")[0]) >= 24, version: process.versions.node },
     docker,
@@ -57,11 +63,26 @@ if (command === "doctor") {
       providerConfigured: Boolean(process.env.LITE_HARNESS_PROVIDER_API_KEY) || osCredential.providerConfigured || (process.env.LITE_HARNESS_PROVIDER ?? "fake") === "fake",
       ...(osCredential.error ? { error: osCredential.error } : {}),
     },
-    runtimeImage: { ok: !runtimeImage || /(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(runtimeImage), configured: Boolean(runtimeImage) },
+    runtimeImage: runtimeImageCheck,
+    gateway,
     platform: { os: process.platform, arch: process.arch },
   };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  process.exitCode = report.node.ok && docker.available && docker.serverOs === "linux" && dataDirectoryWritable && report.disk.ok && database.ok ? 0 : 1;
+  const requiredChecks = [
+    report.node.ok,
+    docker.available,
+    docker.serverOs === "linux",
+    runtime === "fake" || Boolean(docker.activeContext),
+    dataDirectoryWritable,
+    report.disk.ok,
+    database.ok,
+    runtimeImageCheck.ok,
+    gateway.ok,
+    mode !== "production" || snapshotKeyValid,
+    provider === "fake" || report.credentials.providerConfigured,
+    mode !== "production" || osCredential.available,
+  ];
+  process.exitCode = requiredChecks.every(Boolean) ? 0 : 1;
 } else if (command === "workspace" && subcommand === "register") {
   if (!argument || !extraArgument) throw new Error("Usage: workspace register <id> <absolute-path>");
   const registeredPath = validateRegisteredBindRoot(extraArgument);
@@ -205,17 +226,60 @@ async function readStandardInput(maxBytes = 64 * 1024): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function inspectDatabase(path: string): { ok: boolean; path: string; result: string; error?: string } {
-  if (!existsSync(path)) return { ok: true, path, result: "not-created" };
+function databaseIntegrityCheck(path: string): {
+  ok: boolean; path: string; integrity: string; foreignKeyViolations: number; migrationVersion: number;
+  registeredMounts: Array<{ path: string; ok: boolean; error?: string }>; error?: string;
+} {
+  if (!existsSync(path)) return {
+    ok: true, path, integrity: "not-created", foreignKeyViolations: 0, migrationVersion: 0, registeredMounts: [],
+  };
   try {
     const database = new DatabaseSync(path, { readOnly: true });
     try {
-      const row = database.prepare("PRAGMA quick_check").get() as Record<string, unknown>;
-      const result = String(Object.values(row)[0] ?? "unknown");
-      return { ok: result === "ok", path, result };
+      database.exec("PRAGMA busy_timeout = 2000");
+      const row = database.prepare("PRAGMA integrity_check").get() as Record<string, unknown>;
+      const integrity = String(Object.values(row)[0] ?? "unknown");
+      const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all().length;
+      const migrationVersion = Number((database.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version ?? 0);
+      const registeredMounts = database.prepare("SELECT registered_path FROM workspaces WHERE mode = 'registered-bind'").all()
+        .map((item) => String((item as { registered_path: unknown }).registered_path ?? ""))
+        .map((registeredPath) => {
+          try { validateRegisteredBindRoot(registeredPath); return { path: registeredPath, ok: true }; }
+          catch (error) { return { path: registeredPath, ok: false, error: error instanceof Error ? error.message : String(error) }; }
+        });
+      return {
+        ok: integrity === "ok" && foreignKeyViolations === 0 && migrationVersion === SQLITE_SCHEMA_VERSION && registeredMounts.every((item) => item.ok),
+        path, integrity, foreignKeyViolations, migrationVersion, registeredMounts,
+      };
     } finally { database.close(); }
   } catch (error) {
-    return { ok: false, path, result: "error", error: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false, path, integrity: "error", foreignKeyViolations: -1, migrationVersion: -1, registeredMounts: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function inspectRuntimeImage(image: string | undefined, required: boolean): { ok: boolean; configured: boolean; image?: string; error?: string } {
+  if (!image) return { ok: !required, configured: false, ...(required ? { error: "LITE_HARNESS_RUNTIME_IMAGE is required" } : {}) };
+  if (!/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(image)) return { ok: false, configured: true, image, error: "runtime image is not immutable" };
+  try {
+    execFileSync("docker", ["image", "inspect", image], { stdio: "ignore", timeout: 5_000 });
+    return { ok: true, configured: true, image };
+  } catch (error) {
+    return { ok: false, configured: true, image, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function inspectGatewayReadiness(url: string | undefined, required: boolean): Promise<{ ok: boolean; configured: boolean; status?: number; error?: string }> {
+  if (!url) return { ok: !required, configured: false, ...(required ? { error: "LITE_HARNESS_DOCTOR_GATEWAY_URL is required in production" } : {}) };
+  try {
+    const base = new URL(url);
+    if (!(["127.0.0.1", "::1", "localhost"].includes(base.hostname))) throw new Error("doctor Gateway URL must be loopback-only");
+    const response = await fetch(new URL("/readyz", base), { signal: AbortSignal.timeout(5_000) });
+    return { ok: response.ok, configured: true, status: response.status, ...(response.ok ? {} : { error: "Gateway or Manager is not ready" }) };
+  } catch (error) {
+    return { ok: false, configured: true, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

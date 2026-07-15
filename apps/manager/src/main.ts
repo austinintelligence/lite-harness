@@ -35,7 +35,7 @@ import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesPro
 import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
-import { LocalArtifactStore } from "@lite-harness/workspace";
+import { LocalArtifactStore, validateRegisteredBindRoot } from "@lite-harness/workspace";
 import { ManagerInstanceLock } from "@lite-harness/operations";
 import { buildManagerServer } from "./server.js";
 import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
@@ -311,7 +311,9 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
     resolveRegisteredWorkspace: (workspaceId, principal) => {
       if (!principal) return undefined;
       const workspace = runStore.getWorkspace(workspaceId, principal);
-      return workspace?.mode === "registered-bind" ? workspace.registeredPath : undefined;
+      return workspace?.mode === "registered-bind" && workspace.registeredPath
+        ? validateRegisteredBindRoot(workspace.registeredPath)
+        : undefined;
     },
   });
 }

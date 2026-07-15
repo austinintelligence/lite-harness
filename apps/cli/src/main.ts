@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { accessSync, constants, existsSync, mkdirSync, realpathSync, statfsSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { OsSecretStore } from "@lite-harness/credential-store";
@@ -12,7 +12,7 @@ import {
 } from "@lite-harness/plugin-core";
 import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
-import { LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider } from "@lite-harness/workspace";
+import { LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
 
 const [command = "help", subcommand, argument, extraArgument, fifthArgument] = process.argv.slice(2);
 const dataDir = process.env.LITE_HARNESS_DATA_DIR ?? join(process.cwd(), ".lite-harness");
@@ -64,8 +64,7 @@ if (command === "doctor") {
   process.exitCode = report.node.ok && docker.available && docker.serverOs === "linux" && dataDirectoryWritable && report.disk.ok && database.ok ? 0 : 1;
 } else if (command === "workspace" && subcommand === "register") {
   if (!argument || !extraArgument) throw new Error("Usage: workspace register <id> <absolute-path>");
-  const registeredPath = realpathSync(extraArgument);
-  if (!statSync(registeredPath).isDirectory()) throw new Error("Registered workspace path must be a directory");
+  const registeredPath = validateRegisteredBindRoot(extraArgument);
   const database = new SqliteRunStore(join(dataDir, "lite-harness.db"));
   try {
     const now = new Date().toISOString();

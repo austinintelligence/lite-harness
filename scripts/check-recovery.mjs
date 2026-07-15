@@ -46,8 +46,12 @@ function writeEvidence(output, report) {
       boundedStreamingRestore: true,
       artifactOwnerIsolation: true,
       privateCacheOwnerIsolation: true,
+      registeredBindRootsCanonicalAndNonsensitive: true,
     },
-    testIds: ["BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION"],
+    testIds: [
+      "BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION", "BD-034-REGRESSION",
+      "R21-1897", "R21-1899", "R21-1900",
+    ],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

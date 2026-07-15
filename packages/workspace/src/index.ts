@@ -5,20 +5,22 @@ import {
   randomBytes,
   webcrypto,
 } from "node:crypto";
-import { availableParallelism, loadavg } from "node:os";
+import { availableParallelism, homedir, loadavg, tmpdir } from "node:os";
 import { createGunzip, createGzip } from "node:zlib";
 import {
   createReadStream,
   createWriteStream,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
   statfsSync,
 } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import { once } from "node:events";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -29,6 +31,91 @@ import { validateWorkspacePath } from "@lite-harness/runtime";
 const SNAPSHOT_MAGIC = "LHS2\n";
 const SNAPSHOT_TAG_BYTES = 16;
 const SNAPSHOT_HEADER_BYTES = 16 * 1024;
+
+const POSIX_SENSITIVE_ROOTS = [
+  "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root",
+  "/run", "/sbin", "/sys", "/usr", "/var",
+] as const;
+const POSIX_SENSITIVE_EXACT_ROOTS = ["/home", "/Users"] as const;
+const WINDOWS_SENSITIVE_SEGMENTS = [
+  "windows", "program files", "program files (x86)", "programdata",
+  "documents and settings",
+] as const;
+const HOME_SENSITIVE_CHILDREN = [
+  ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".config", ".docker",
+  ".codex", ".openclaw", "appdata", "library",
+] as const;
+
+/** Canonicalizes a registered project directory and applies the portable host-bind deny policy. */
+export function validateRegisteredBindRoot(input: string): string {
+  if (!input.trim()) throw new Error("Registered workspace path is required");
+  const canonical = realpathSync(input);
+  if (!statSync(canonical).isDirectory()) throw new Error("Registered workspace path must be a directory");
+  rejectSensitiveRegisteredRoot(canonical);
+  return canonical;
+}
+
+/** Pure policy helper used to enforce the same rules at registration and consumption time. */
+export function rejectSensitiveRegisteredRoot(input: string, homeDirectory = homedir(), temporaryDirectory = tmpdir()): void {
+  const windows = isWindowsPath(input);
+  const pathApi = windows ? win32 : posix;
+  if (!pathApi.isAbsolute(input)) throw new Error("Registered workspace path must be absolute");
+  const candidate = comparablePath(pathApi.normalize(input), windows);
+  const filesystemRoot = comparablePath(pathApi.parse(input).root, windows);
+  if (candidate === filesystemRoot) throw new Error("Registered workspace path cannot be a filesystem root");
+
+  const comparableHome = homeDirectory && isWindowsPath(homeDirectory) === windows
+    ? comparablePath(pathApi.normalize(homeDirectory), windows)
+    : undefined;
+  if (comparableHome && candidate === comparableHome) {
+    throw new Error("Registered workspace path cannot be the whole user home");
+  }
+  if (comparableHome) {
+    const comparableTemporary = temporaryDirectory && isWindowsPath(temporaryDirectory) === windows
+      ? comparablePath(pathApi.normalize(temporaryDirectory), windows)
+      : undefined;
+    for (const child of HOME_SENSITIVE_CHILDREN) {
+      if (isSameOrDescendant(candidate, comparablePath(pathApi.join(comparableHome, child), windows), pathApi.sep)) {
+        if (comparableTemporary && isSameOrDescendant(candidate, comparableTemporary, pathApi.sep)) continue;
+        throw new Error("Registered workspace path is inside a sensitive user directory");
+      }
+    }
+  }
+
+  if (windows) {
+    const root = pathApi.parse(candidate).root;
+    if (candidate === comparablePath(pathApi.join(root, "users"), true)) {
+      throw new Error("Registered workspace path is a sensitive system directory");
+    }
+    for (const segment of WINDOWS_SENSITIVE_SEGMENTS) {
+      if (isSameOrDescendant(candidate, comparablePath(pathApi.join(root, segment), true), pathApi.sep)) {
+        throw new Error("Registered workspace path is inside a sensitive system directory");
+      }
+    }
+    return;
+  }
+  if (POSIX_SENSITIVE_EXACT_ROOTS.includes(candidate as typeof POSIX_SENSITIVE_EXACT_ROOTS[number])) {
+    throw new Error("Registered workspace path is a sensitive system directory");
+  }
+  for (const sensitive of POSIX_SENSITIVE_ROOTS) {
+    if (isSameOrDescendant(candidate, sensitive, pathApi.sep)) {
+      throw new Error("Registered workspace path is inside a sensitive system directory");
+    }
+  }
+}
+
+function isWindowsPath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\]+\\[^\\]+/.test(path);
+}
+
+function comparablePath(path: string, windows: boolean): string {
+  const normalized = path.replace(/[\\/]+$/, "");
+  return windows ? normalized.toLowerCase() : normalized;
+}
+
+function isSameOrDescendant(candidate: string, root: string, separator: string): boolean {
+  return candidate === root || candidate.startsWith(`${root}${separator}`);
+}
 
 export interface SnapshotKeyProvider {
   getKey(workspaceId: string): Promise<Buffer>;

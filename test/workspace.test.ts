@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,9 @@ import {
   LocalArtifactStore,
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
+  rejectSensitiveRegisteredRoot,
   StaticSnapshotKeyProvider,
+  validateRegisteredBindRoot,
 } from "@lite-harness/workspace";
 
 const directories: string[] = [];
@@ -17,6 +19,32 @@ afterEach(() => {
 });
 
 describe("workspace durability", () => {
+  it("BD-034-REGRESSION rejects sensitive registered bind roots with portable rules", () => {
+    for (const [path, home] of [
+      ["/", "/home/alice"],
+      ["/home/alice", "/home/alice"],
+      ["/etc/project", "/home/alice"],
+      ["/home/alice/.ssh/project", "/home/alice"],
+      ["C:\\", "C:\\Users\\Alice"],
+      ["C:\\Users\\Alice", "C:\\Users\\Alice"],
+      ["C:\\Windows\\Temp\\project", "C:\\Users\\Alice"],
+      ["C:\\Users\\Alice\\AppData\\Local\\project", "C:\\Users\\Alice"],
+    ] as const) {
+      expect(() => rejectSensitiveRegisteredRoot(path, home)).toThrow(/filesystem root|whole user home|sensitive/);
+    }
+    expect(() => rejectSensitiveRegisteredRoot("/home/alice/project", "/home/alice")).not.toThrow();
+    expect(() => rejectSensitiveRegisteredRoot("C:\\Users\\Alice\\project", "C:\\Users\\Alice")).not.toThrow();
+
+    const directory = mkdtempSync(join(tmpdir(), "lite-registered-bind-"));
+    directories.push(directory);
+    expect(validateRegisteredBindRoot(directory)).toBe(directory);
+    const target = join(directory, "project");
+    const link = join(directory, "project-link");
+    mkdirSync(target);
+    symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+    expect(validateRegisteredBindRoot(link)).toBe(target);
+  });
+
   it("encrypts snapshots and falls back to the previous verified generation", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-snapshot-"));
     directories.push(directory);

@@ -1,5 +1,6 @@
 import type { ModelRunContext } from "@lite-harness/provider-core";
 import type { SqliteRunStore } from "@lite-harness/storage-sqlite";
+import { validateRegisteredBindRoot } from "@lite-harness/workspace";
 
 /** Resolves only the owned registered bind currently fenced to this run. */
 export function createDelegatedWorkspaceResolver(
@@ -23,6 +24,6 @@ export function createDelegatedWorkspaceResolver(
     if (!workspace?.registeredPath || workspace.mode !== "registered-bind") {
       throw new Error("Delegated host runtimes require the run's explicitly registered workspace bind");
     }
-    return workspace.registeredPath;
+    return validateRegisteredBindRoot(workspace.registeredPath);
   };
 }

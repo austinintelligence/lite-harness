@@ -29,6 +29,13 @@ Operational probes:
 - `pnpm lite doctor` checks Node, Docker, the data directory, and service
   configuration without printing secret values.
 
+`pnpm lite workspace register <id> <absolute-path>` is the only host-project
+bind registration surface. It resolves the canonical directory before storing
+it and rejects filesystem roots, whole user homes, system directories, and
+credential-bearing home subdirectories. Manager reapplies the same policy when
+a persisted bind is consumed, so a stale or manually altered database row does
+not bypass registration policy. Managed Docker volumes remain the default.
+
 `pnpm benchmark:kernel` performs a deterministic, model-free process/run smoke
 and updates [`performance-baseline.json`](performance-baseline.json). It is not
 a provider-quality benchmark. Model-backed tests must follow

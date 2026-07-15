@@ -12,7 +12,7 @@ const required = [
   "docs/adr/README.md", "docs/adr/RESEARCH.md", "docs/adr/0001-node-typescript-stack.md",
   "docs/adr/0032-behavior-defined-compatibility.md", "docs/adr/0052-alpha-scope-and-preview-boundaries.md",
   "docs/requirements/alpha-ledger.yaml", "docs/requirements/defect-ledger.yaml",
-  "docs/performance-baseline.json", "docs/pxpipe-evaluation.json",
+  "docs/performance-baseline.json", "docs/pxpipe-evaluation.json", "docs/pxpipe-paired-evaluation.json",
   "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json",
   "evidence/baseline/f9d522289b500174e4e387b6078f907ea4ac56fa/baseline.json",
   ".github/workflows/ci.yml", ".github/workflows/images.yml", ".gitattributes", ".gitignore",
@@ -75,6 +75,21 @@ if (existsSync(resolve(root, "docs/pxpipe-evaluation.json"))) {
   const contextEvaluation = JSON.parse(readFileSync(resolve(root, "docs/pxpipe-evaluation.json"), "utf8"));
   if (!Array.isArray(contextEvaluation.evaluations) || !contextEvaluation.evaluations.every((item) => item.exactRecoveryVerified === true) ||
       contextEvaluation.policy !== "measurement-only-disabled-by-default") failures.push("pxpipe evaluation must verify exact recovery and remain disabled by default");
+}
+if (existsSync(resolve(root, "docs/pxpipe-paired-evaluation.json"))) {
+  const paired = JSON.parse(readFileSync(resolve(root, "docs/pxpipe-paired-evaluation.json"), "utf8"));
+  if (paired.evaluationType !== "paired-model-quality-cost" || paired.testId !== "BD-050-REGRESSION" ||
+      paired.provider?.route !== "local-hermes-openai-compatible" || paired.provider?.model !== "gpt-5.6-luna" ||
+      !Array.isArray(paired.evaluations) || paired.evaluations.length < 2 ||
+      !paired.evaluations.every((item) => item.exactRecoveryVerified === true && item.text?.score !== undefined && item.optical?.score !== undefined) ||
+      paired.aggregate?.promotionEligible !== false || paired.policy !== "measurement-only-disabled-by-default") {
+    failures.push("paired pxpipe evidence is incomplete, unscored, or incorrectly promotes the preview feature");
+  }
+  if (!/^[a-f0-9]{40}$/.test(paired.sourceCommit ?? "")) failures.push("paired pxpipe evidence has no exact source commit");
+  else {
+    try { execFileSync("git", ["merge-base", "--is-ancestor", paired.sourceCommit, "HEAD"], { cwd: root }); }
+    catch { failures.push("paired pxpipe evidence source commit is not an ancestor of HEAD"); }
+  }
 }
 if (existsSync(resolve(root, "sdks/python/pyproject.toml"))) {
   const pythonManifest = readFileSync(resolve(root, "sdks/python/pyproject.toml"), "utf8");

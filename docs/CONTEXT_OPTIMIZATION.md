@@ -34,3 +34,8 @@ made. `pnpm evaluate:pxpipe:hermes` runs the paired text-versus-optical quality,
 provider-billed token, cache-token, cost, latency, recovery, and failure gate
 through the localhost-only Hermes route described in [`TESTING.md`](TESTING.md).
 The bounded result is measurement evidence, never an automatic enablement.
+The recorded Hermes evaluation in
+[`pxpipe-paired-evaluation.json`](pxpipe-paired-evaluation.json) scored exact
+text at 2/2 and optical context at 0/2. Hermes returned no authoritative usage
+fields, so token totals remain explicitly unknown. The negative result keeps
+the pack off and prohibits any cost or savings claim.

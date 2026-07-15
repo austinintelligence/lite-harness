@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-15T04:47:32.749Z",
+  "sourceCommit": "db96f60b51b31cb0ba3255f8b376209095f2e330",
+  "evaluationType": "paired-model-quality-cost",
+  "testId": "BD-050-REGRESSION",
+  "provider": {
+    "route": "local-hermes-openai-compatible",
+    "baseUrl": "http://127.0.0.1:8645/v1",
+    "model": "gpt-5.6-luna",
+    "credential": "non-empty-placeholder-only"
+  },
+  "pxpipe": {
+    "version": "0.8.0",
+    "commit": "7dd54d395d119f5f822da5c1944ba5afbb02fa88"
+  },
+  "policy": "measurement-only-disabled-by-default",
+  "evaluations": [
+    {
+      "taskId": "recovery-token",
+      "expected": "LH-RECOVER-7Q4M",
+      "exactRecoveryVerified": true,
+      "render": {
+        "pages": 1,
+        "imageBytes": 12781,
+        "milliseconds": 420.8662
+      },
+      "text": {
+        "answer": "LH-RECOVER-7Q4M",
+        "latencyMilliseconds": 1391.5553999999997,
+        "fullBill": {
+          "usageReported": false,
+          "requestBytes": 8559,
+          "inputTokens": null,
+          "outputTokens": null,
+          "cachedInputTokens": null,
+          "costUsd": 0,
+          "accountingNote": "Hermes supplied no usage fields; token counts are unknown and no savings claim is permitted."
+        },
+        "score": 1
+      },
+      "optical": {
+        "answer": "recovery-token",
+        "latencyMilliseconds": 4241.5049,
+        "fullBill": {
+          "usageReported": false,
+          "requestBytes": 17421,
+          "inputTokens": null,
+          "outputTokens": null,
+          "cachedInputTokens": null,
+          "costUsd": 0,
+          "accountingNote": "Hermes supplied no usage fields; token counts are unknown and no savings claim is permitted."
+        },
+        "score": 0
+      }
+    },
+    {
+      "taskId": "fencing-token",
+      "expected": "FENCE-2049-ZETA",
+      "exactRecoveryVerified": true,
+      "render": {
+        "pages": 1,
+        "imageBytes": 12811,
+        "milliseconds": 25.619400000000496
+      },
+      "text": {
+        "answer": "FENCE-2049-ZETA",
+        "latencyMilliseconds": 1073.687,
+        "fullBill": {
+          "usageReported": false,
+          "requestBytes": 8584,
+          "inputTokens": null,
+          "outputTokens": null,
+          "cachedInputTokens": null,
+          "costUsd": 0,
+          "accountingNote": "Hermes supplied no usage fields; token counts are unknown and no savings claim is permitted."
+        },
+        "score": 1
+      },
+      "optical": {
+        "answer": "fencing-token",
+        "latencyMilliseconds": 5651.9368,
+        "fullBill": {
+          "usageReported": false,
+          "requestBytes": 17457,
+          "inputTokens": null,
+          "outputTokens": null,
+          "cachedInputTokens": null,
+          "costUsd": 0,
+          "accountingNote": "Hermes supplied no usage fields; token counts are unknown and no savings claim is permitted."
+        },
+        "score": 0
+      }
+    }
+  ],
+  "aggregate": {
+    "textQuality": 1,
+    "opticalQuality": 0,
+    "qualityDelta": -1,
+    "textFullBill": {
+      "usageReported": false,
+      "requestBytes": 17143,
+      "inputTokens": null,
+      "outputTokens": null,
+      "cachedInputTokens": null,
+      "costUsd": 0,
+      "accountingNote": "At least one response omitted usage; aggregate token counts are intentionally null."
+    },
+    "opticalFullBill": {
+      "usageReported": false,
+      "requestBytes": 34878,
+      "inputTokens": null,
+      "outputTokens": null,
+      "cachedInputTokens": null,
+      "costUsd": 0,
+      "accountingNote": "At least one response omitted usage; aggregate token counts are intentionally null."
+    },
+    "authoritativeAccounting": false,
+    "promotionEligible": false,
+    "inputTokensIncludeProviderBilledImageTokens": false,
+    "conclusion": "Hermes returned no authoritative usage fields; quality is measured, but savings and production promotion are prohibited."
+  }
+}

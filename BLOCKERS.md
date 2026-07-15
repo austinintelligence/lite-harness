@@ -9,7 +9,7 @@
 - Required rows without verified status: 922 of 922
 - Open or unproven critical defects: 8
 - Open or unproven high defects: 56
-- Missing required test command surfaces: 13
+- Missing required test command surfaces: 0
 
 ## Highest-priority local blockers
 
@@ -24,19 +24,7 @@
 
 ## Required test commands not yet present
 
-- `test:unit`
-- `test:contracts`
-- `test:ipc`
-- `test:sdk`
-- `test:skills`
-- `test:mcp`
-- `test:automation`
-- `test:subagents`
-- `test:security`
-- `test:chaos`
-- `test:install`
-- `test:performance`
-- `test:release`
+- None.
 
 ## External evidence and owner inputs still required
 

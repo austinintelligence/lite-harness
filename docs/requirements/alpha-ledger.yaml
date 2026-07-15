@@ -13424,14 +13424,23 @@
         "lineStart": 2069,
         "lineEnd": 2069
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/runtime/src/index.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-035-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R24-2070",
@@ -13446,14 +13455,21 @@
         "lineStart": 2070,
         "lineEnd": 2070
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-035-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R24-2071",
@@ -13820,14 +13836,21 @@
         "lineStart": 2100,
         "lineEnd": 2100
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-035-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R25-2101",

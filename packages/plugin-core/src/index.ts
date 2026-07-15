@@ -59,6 +59,56 @@ export interface PluginWorker {
   stop(): Promise<void>;
 }
 
+export interface ExecutablePluginWorker extends PluginWorker {
+  migrate(from: string, to: string): Promise<unknown>;
+}
+
+export interface PluginExecutionSandbox {
+  processSpec(plugin: InspectedPlugin, grants: PluginPermissions): ProcessSpec;
+}
+
+export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
+  constructor(private readonly config: {
+    image: string;
+    dockerCommand?: string;
+    memory?: string;
+    cpus?: string;
+    pidsLimit?: number;
+  }) {
+    if (!/^(?:sha256:[a-f0-9]{64}|[^@\s]+@sha256:[a-f0-9]{64})$/.test(config.image)) {
+      throw new Error("Plugin sandbox image must be pinned by sha256 digest");
+    }
+    if (config.pidsLimit !== undefined && (!Number.isSafeInteger(config.pidsLimit) || config.pidsLimit < 16)) {
+      throw new Error("Plugin sandbox PID limit must be an integer of at least 16");
+    }
+  }
+
+  processSpec(plugin: InspectedPlugin, _grants: PluginPermissions): ProcessSpec {
+    const host = realpathSync(resolve(import.meta.dirname, "openclaw-host.mjs"));
+    const entry = relative(plugin.root, plugin.entryPath).replaceAll("\\", "/");
+    if (!entry || entry.startsWith("../") || entry.includes("\0")) throw new Error("Plugin entry escapes the sandbox package root");
+    return {
+      command: this.config.dockerCommand ?? "docker",
+      args: [
+        "run", "--rm", "--interactive", "--init",
+        "--network", "none", "--read-only", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges=true", "--user", "1000:1000",
+        "--pids-limit", String(this.config.pidsLimit ?? 64),
+        "--memory", this.config.memory ?? "256m",
+        "--cpus", this.config.cpus ?? "1",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777",
+        "--mount", dockerReadOnlyBind(plugin.root, "/plugin"),
+        "--mount", dockerReadOnlyBind(host, "/lite/openclaw-host.mjs"),
+        "--workdir", "/plugin",
+        "--env", `LITE_PLUGIN_ENTRY=/plugin/${entry}`,
+        this.config.image,
+        "node", "/lite/openclaw-host.mjs",
+      ],
+      inheritEnv: ["PATH", "Path", "SystemRoot", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"],
+    };
+  }
+}
+
 export interface PluginLockEntry {
   id: string;
   version: string;
@@ -113,6 +163,7 @@ export class PluginInstallLock {
   }
 
   setEnabled(id: string, version: string, enabled: boolean): PluginLockEntry {
+    validatePackageCoordinates(id, version);
     const lock = this.read();
     const key = `${id}@${version}`;
     const existing = lock.plugins[key];
@@ -123,6 +174,7 @@ export class PluginInstallLock {
   }
 
   uninstall(id: string, version: string): boolean {
+    validatePackageCoordinates(id, version);
     const lock = this.read();
     const key = `${id}@${version}`;
     if (!lock.plugins[key]) return false;
@@ -143,7 +195,10 @@ export class PluginPackageInstaller {
     private readonly root: string,
     private readonly lock: PluginInstallLock,
     private readonly limits: { maxFiles?: number; maxBytes?: number } = {},
-  ) { mkdirSync(root, { recursive: true }); }
+  ) {
+    mkdirSync(root, { recursive: true });
+    this.root = realpathSync(root);
+  }
 
   stage(sourceRoot: string, manifestName = "lite-plugin.json"): InspectedPlugin {
     const source = realpathSync(sourceRoot);
@@ -157,6 +212,7 @@ export class PluginPackageInstaller {
         throw new Error("Staged plugin identity changed during copy");
       }
       const target = resolve(this.root, staged.manifest.id, staged.manifest.version);
+      if (!isWithin(this.root, target)) throw new Error("Plugin version escapes the install root");
       if (isWithin(target, staging) || isWithin(staging, target)) throw new Error("Plugin staging path is invalid");
       mkdirSync(dirname(target), { recursive: true });
       try { statSync(target); throw new Error(`Plugin package already exists: ${staged.manifest.id}@${staged.manifest.version}`); }
@@ -195,8 +251,11 @@ export class PluginPackageInstaller {
   }
 
   uninstall(id: string, version: string): boolean {
+    validatePackageCoordinates(id, version);
+    const target = resolve(this.root, id, version);
+    if (!isWithin(this.root, target)) throw new Error("Plugin uninstall path escapes the install root");
     const removed = this.lock.uninstall(id, version);
-    if (removed) rmSync(resolve(this.root, id, version), { recursive: true, force: true });
+    if (removed) rmSync(target, { recursive: true, force: true });
     return removed;
   }
 }
@@ -258,17 +317,25 @@ export function createOpenClawCompatibilityWorker(
   plugin: InspectedPlugin,
   grants: PluginPermissions,
   config: unknown = {},
-  options: { timeoutMs?: number; maxPayloadBytes?: number } = {},
-): ProcessPluginWorker {
+  options: { timeoutMs?: number; maxPayloadBytes?: number; sandbox?: PluginExecutionSandbox } = {},
+): ExecutablePluginWorker {
   if (plugin.manifest.trust !== "openclaw-compat" && plugin.manifest.trust !== "isolated" && plugin.manifest.trust !== "official") {
     throw new Error(`Plugin trust class cannot execute code: ${plugin.manifest.trust}`);
   }
-  return new ProcessPluginWorker({
-    command: process.execPath,
-    args: [resolve(import.meta.dirname, "openclaw-host.mjs")],
-    cwd: plugin.root,
-    env: { LITE_PLUGIN_ENTRY: plugin.manifest.entry },
-  }, { manifest: plugin.manifest, config, grants }, options);
+  if (!options.sandbox) return new SandboxRequiredPluginWorker();
+  return new ProcessPluginWorker(
+    options.sandbox.processSpec(plugin, grants),
+    { manifest: plugin.manifest, config, grants },
+    { timeoutMs: options.timeoutMs, maxPayloadBytes: options.maxPayloadBytes },
+  );
+}
+
+class SandboxRequiredPluginWorker implements ExecutablePluginWorker {
+  readonly #error = new Error("Executable plugin denied: an enforceable execution sandbox is required");
+  async start(): Promise<void> { throw this.#error; }
+  async invoke(): Promise<unknown> { throw this.#error; }
+  async migrate(): Promise<unknown> { throw this.#error; }
+  async stop(): Promise<void> { /* no process was started */ }
 }
 
 export class LazyPluginSupervisor {
@@ -387,6 +454,7 @@ function validateManifest(value: unknown): PluginManifest {
     if (typeof record[key] !== "string" || !record[key]) throw new Error(`Plugin manifest ${key} is required`);
   }
   if (!/^[a-z0-9][a-z0-9._-]{1,127}$/.test(record.id as string)) throw new Error("Plugin id is invalid");
+  if (!isSafePluginVersion(record.version as string)) throw new Error("Plugin version is invalid");
   if (!["data-only", "official", "isolated", "openclaw-compat"].includes(record.trust as string)) {
     throw new Error("Plugin trust class is invalid");
   }
@@ -409,6 +477,20 @@ function validateManifest(value: unknown): PluginManifest {
     trust: record.trust as PluginTrustClass,
     permissions: normalized,
   };
+}
+
+function validatePackageCoordinates(id: string, version: string): void {
+  if (!/^[a-z0-9][a-z0-9._-]{1,127}$/.test(id)) throw new Error("Plugin id is invalid");
+  if (!isSafePluginVersion(version)) throw new Error("Plugin version is invalid");
+}
+
+function isSafePluginVersion(version: string): boolean {
+  return /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version);
+}
+
+function dockerReadOnlyBind(source: string, destination: string): string {
+  if (/[\r\n,]/.test(source)) throw new Error("Plugin sandbox bind source contains unsupported characters");
+  return `type=bind,src=${source},dst=${destination},readonly`;
 }
 
 function intersect(declared: readonly string[], granted: readonly string[] | undefined): string[] {

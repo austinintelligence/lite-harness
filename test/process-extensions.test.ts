@@ -7,7 +7,9 @@ import { CodexAppServerGateway, ClaudeCodeGateway } from "@lite-harness/delegate
 import { McpSupervisor, StdioMcpTransport } from "@lite-harness/mcp";
 import {
   LazyPluginSupervisor,
+  DockerPluginExecutionSandbox,
   PluginInstallLock,
+  PluginPackageInstaller,
   ProcessPluginWorker,
   createOpenClawCompatibilityWorker,
   inspectPluginManifest,
@@ -93,7 +95,25 @@ describe("process-backed extensions", () => {
     await worker.stop();
   });
 
-  it("loads the bounded OpenClaw compatibility ABI only inside its child host", async () => {
+  it("BD-007-REGRESSION rejects a plugin version before it can escape install or uninstall roots", () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-plugin-version-"));
+    cleanup.push(root);
+    const source = join(root, "source");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "worker.mjs"), "export default {};\n");
+    writeFileSync(join(source, "lite-plugin.json"), JSON.stringify({
+      schemaVersion: 1, id: "example.escape", version: "../../escaped", entry: "worker.mjs", trust: "isolated",
+      permissions: { tools: [], secrets: [], events: [], files: [], networkOrigins: [] },
+    }));
+    const installer = new PluginPackageInstaller(
+      join(root, "installed"),
+      new PluginInstallLock(join(root, "state", "plugins.json")),
+    );
+    expect(() => installer.stage(source)).toThrow(/version.*invalid/i);
+    expect(() => installer.uninstall("example.escape", "../../escaped")).toThrow(/version.*invalid/i);
+  });
+
+  it("BD-008-REGRESSION denies executable plugins unless an enforceable sandbox is supplied", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-compat-plugin-"));
     cleanup.push(root);
     writeFileSync(join(root, "worker.mjs"), `export default {
@@ -109,9 +129,18 @@ describe("process-backed extensions", () => {
       tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [],
     });
     try {
-      await worker.start();
-      await expect(worker.invoke("echo", { value: 1 })).resolves.toMatchObject({ action: "echo", input: { value: 1 } });
-      await expect(worker.migrate("1.0.0", "2.0.0")).resolves.toEqual({ from: "1.0.0", to: "2.0.0" });
+      await expect(worker.invoke("echo", { value: 1 })).rejects.toThrow(/denied.*sandbox/i);
     } finally { await worker.stop(); }
+
+    const sandbox = new DockerPluginExecutionSandbox({ image: `node@sha256:${"a".repeat(64)}` });
+    const spec = sandbox.processSpec(plugin, {
+      tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [],
+    });
+    expect(spec.command).toBe("docker");
+    expect(spec.args).toEqual(expect.arrayContaining([
+      "--network", "none", "--read-only", "--cap-drop", "ALL", "no-new-privileges=true", "--user", "1000:1000",
+    ]));
+    expect(spec.args?.join(" ")).toContain("readonly");
+    expect(spec.env).toBeUndefined();
   });
 });

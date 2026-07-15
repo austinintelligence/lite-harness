@@ -411,14 +411,12 @@
         "lineStart": 200,
         "lineEnd": 201
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "D19",
@@ -12902,14 +12900,12 @@
         "lineStart": 2014,
         "lineEnd": 2016
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2020",
@@ -12924,14 +12920,12 @@
         "lineStart": 2020,
         "lineEnd": 2020
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2021",
@@ -12946,14 +12940,12 @@
         "lineStart": 2021,
         "lineEnd": 2021
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2022",
@@ -12968,14 +12960,12 @@
         "lineStart": 2022,
         "lineEnd": 2022
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2023",
@@ -13012,14 +13002,12 @@
         "lineStart": 2024,
         "lineEnd": 2024
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2025",
@@ -13034,14 +13022,12 @@
         "lineStart": 2025,
         "lineEnd": 2025
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2026",
@@ -13056,14 +13042,12 @@
         "lineStart": 2026,
         "lineEnd": 2026
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2027",
@@ -13100,14 +13084,12 @@
         "lineStart": 2031,
         "lineEnd": 2031
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2032",
@@ -13122,14 +13104,12 @@
         "lineStart": 2032,
         "lineEnd": 2032
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2033",
@@ -13144,14 +13124,12 @@
         "lineStart": 2033,
         "lineEnd": 2033
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2034",
@@ -13188,14 +13166,12 @@
         "lineStart": 2035,
         "lineEnd": 2035
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R23-2037",
@@ -13798,14 +13774,12 @@
         "lineStart": 2099,
         "lineEnd": 2099
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R25-2100",
@@ -15103,14 +15077,12 @@
         "lineStart": 2182,
         "lineEnd": 2182
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2183",
@@ -15455,14 +15427,12 @@
         "lineStart": 2207,
         "lineEnd": 2207
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2208",
@@ -18538,14 +18508,12 @@
         "lineStart": 2875,
         "lineEnd": 2875
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2876",
@@ -19106,14 +19074,12 @@
         "lineStart": 2903,
         "lineEnd": 2903
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2904",
@@ -19808,14 +19774,12 @@
         "lineStart": 2941,
         "lineEnd": 2941
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/workspace/src/index.ts"],
+      "testIds": ["BD-046-REGRESSION"],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R34-2942",

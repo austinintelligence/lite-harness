@@ -20,6 +20,59 @@ export const OPENAI_COMPATIBLE_PRESETS: Readonly<Record<OpenAICompatiblePreset["
   gemini: Object.freeze({ providerId: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", allowedOrigins: ["https://generativelanguage.googleapis.com"] }),
 });
 
+/** Native OpenAI direct route. Generic compatible endpoints remain on Chat Completions below. */
+export class OpenAIResponsesProvider implements ProviderAdapter {
+  readonly providerId = "openai";
+  readonly apiOperation = "responses.create";
+  readonly #fetch: typeof globalThis.fetch;
+
+  constructor(options: { fetch?: typeof globalThis.fetch } = {}) {
+    this.#fetch = options.fetch ?? globalThis.fetch;
+  }
+
+  async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
+    const response = await this.#fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: params.credential.authorizationHeader,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: params.model.id,
+        stream: true,
+        store: false,
+        truncation: "disabled",
+        input: toResponsesInput(params.messages),
+        ...(params.tools?.length ? {
+          tools: params.tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+            strict: true,
+          })),
+          tool_choice: "auto",
+        } : {}),
+      }),
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
+    if (!response.ok) {
+      throw new ProviderError(
+        classifyStatus(response.status),
+        `OpenAI Responses returned HTTP ${response.status}`,
+        response.status === 408 || response.status === 429 || response.status >= 500,
+        response.status,
+      );
+    }
+    yield { type: "request.accepted" };
+    if (response.headers.get("content-type")?.includes("text/event-stream")) {
+      yield* streamOpenAiResponses(response, params.signal);
+      return;
+    }
+    yield* normalizeOpenAiResponse(await readProviderJson(response) as OpenAIResponsesBody);
+  }
+}
+
 export class OpenAICompatibleProvider implements ProviderAdapter {
   readonly providerId: string;
   readonly #baseUrl: URL;
@@ -137,6 +190,212 @@ async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIte
     yield { type: "tool.call", call: { id: tool.id, name: tool.name, arguments: args } };
   }
   yield { type: "completed", finishReason: tools.size > 0 || finishReason === "tool_calls" ? "tool_calls" : "stop" };
+}
+
+type ResponsesInputItem =
+  | { type: "message"; role: "system" | "user" | "assistant"; content: string }
+  | { type: "function_call"; call_id: string; name: string; arguments: string }
+  | { type: "function_call_output"; call_id: string; output: string };
+
+function toResponsesInput(messages: Parameters<ProviderAdapter["stream"]>[0]["messages"]): ResponsesInputItem[] {
+  const input: ResponsesInputItem[] = [];
+  for (const message of messages) {
+    if (message.role === "tool") {
+      if (!message.toolCallId) {
+        throw new ProviderError("invalid_request", "A tool result requires its function call id", false);
+      }
+      input.push({ type: "function_call_output", call_id: message.toolCallId, output: message.content });
+      continue;
+    }
+    if (message.content) input.push({ type: "message", role: message.role, content: message.content });
+    for (const call of message.role === "assistant" ? message.toolCalls ?? [] : []) {
+      input.push({
+        type: "function_call",
+        call_id: call.id,
+        name: call.name,
+        arguments: JSON.stringify(call.arguments),
+      });
+    }
+  }
+  return input;
+}
+
+interface OpenAIResponsesBody {
+  id?: string;
+  status?: "completed" | "failed" | "incomplete" | "cancelled" | "queued" | "in_progress";
+  error?: { code?: string; message?: string } | null;
+  incomplete_details?: { reason?: string } | null;
+  output?: OpenAIResponseOutputItem[];
+  usage?: { input_tokens?: number; output_tokens?: number } | null;
+}
+
+interface OpenAIResponseOutputItem {
+  id?: string;
+  type?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  content?: Array<{ type?: string; text?: string; refusal?: string }>;
+}
+
+interface OpenAIResponseStreamEvent {
+  type?: string;
+  sequence_number?: number;
+  delta?: string;
+  arguments?: string;
+  call_id?: string;
+  item_id?: string;
+  name?: string;
+  output_index?: number;
+  item?: OpenAIResponseOutputItem;
+  response?: OpenAIResponsesBody;
+  code?: string;
+  message?: string;
+}
+
+interface PendingResponseCall {
+  itemId?: string;
+  callId?: string;
+  name?: string;
+  arguments: string;
+}
+
+async function* streamOpenAiResponses(response: Response, signal?: AbortSignal): AsyncIterable<ModelEvent> {
+  const calls = new Map<number, PendingResponseCall>();
+  let lastSequence = -1;
+  let terminal = false;
+  for await (const data of readSseData(response.body, signal)) {
+    let event: OpenAIResponseStreamEvent;
+    try { event = JSON.parse(data) as OpenAIResponseStreamEvent; }
+    catch { throw new ProviderError("invalid_response", "OpenAI Responses returned an invalid SSE payload", false); }
+    if (!event.type) throw new ProviderError("invalid_response", "OpenAI Responses event omitted its type", false);
+    if (event.sequence_number !== undefined) {
+      if (!Number.isSafeInteger(event.sequence_number) || event.sequence_number <= lastSequence) {
+        throw new ProviderError("invalid_response", "OpenAI Responses event sequence was invalid", false);
+      }
+      lastSequence = event.sequence_number;
+    }
+    if (event.type === "response.output_text.delta" || event.type === "response.refusal.delta") {
+      if (typeof event.delta !== "string") throw new ProviderError("invalid_response", "OpenAI Responses text event omitted its delta", false);
+      if (event.delta) yield { type: "text.delta", delta: event.delta };
+      continue;
+    }
+    if (event.type === "response.output_item.added" || event.type === "response.output_item.done") {
+      if (event.item?.type === "function_call") mergeResponseCall(calls, event.output_index, event.item);
+      continue;
+    }
+    if (event.type === "response.function_call_arguments.delta") {
+      const call = responseCall(calls, event.output_index);
+      call.itemId = event.item_id ?? call.itemId;
+      call.arguments += event.delta ?? "";
+      continue;
+    }
+    if (event.type === "response.function_call_arguments.done") {
+      const call = responseCall(calls, event.output_index);
+      call.itemId = event.item_id ?? call.itemId;
+      call.callId = event.call_id ?? call.callId;
+      call.name = event.name ?? call.name;
+      call.arguments = event.arguments ?? call.arguments;
+      continue;
+    }
+    if (event.type === "response.completed") {
+      terminal = true;
+      mergeResponseOutput(calls, event.response?.output);
+      yield* emitResponseCalls(calls);
+      yield* emitResponsesUsage(event.response?.usage);
+      yield { type: "completed", finishReason: calls.size ? "tool_calls" : "stop" };
+      continue;
+    }
+    if (event.type === "response.incomplete") {
+      terminal = true;
+      yield* emitResponsesUsage(event.response?.usage);
+      throw responseTerminalError("response_incomplete", event.response);
+    }
+    if (event.type === "response.failed") {
+      terminal = true;
+      yield* emitResponsesUsage(event.response?.usage);
+      throw responseTerminalError("provider_response_failed", event.response);
+    }
+    if (event.type === "error") {
+      terminal = true;
+      throw new ProviderError(event.code ?? "provider_stream_error", event.message ?? "OpenAI Responses stream reported an error", false);
+    }
+  }
+  if (!terminal) throw new ProviderError("invalid_response", "OpenAI Responses stream ended without a terminal event", false);
+}
+
+async function* normalizeOpenAiResponse(body: OpenAIResponsesBody): AsyncIterable<ModelEvent> {
+  if (body.status === "failed" || body.status === "incomplete" || body.status === "cancelled" || body.error) {
+    yield* emitResponsesUsage(body.usage);
+    throw responseTerminalError(body.status === "incomplete" ? "response_incomplete" : "provider_response_failed", body);
+  }
+  if (body.status !== "completed") {
+    throw new ProviderError("invalid_response", "OpenAI Responses returned a non-terminal response", false);
+  }
+  const calls = new Map<number, PendingResponseCall>();
+  for (const [index, item] of (body.output ?? []).entries()) {
+    if (item.type === "message") {
+      for (const content of item.content ?? []) {
+        const text = content.type === "refusal" ? content.refusal : content.text;
+        if (text) yield { type: "text.delta", delta: text };
+      }
+    } else if (item.type === "function_call") {
+      mergeResponseCall(calls, index, item);
+    }
+  }
+  yield* emitResponseCalls(calls);
+  yield* emitResponsesUsage(body.usage);
+  yield { type: "completed", finishReason: calls.size ? "tool_calls" : "stop" };
+}
+
+function responseCall(calls: Map<number, PendingResponseCall>, index = 0): PendingResponseCall {
+  const existing = calls.get(index);
+  if (existing) return existing;
+  const created: PendingResponseCall = { arguments: "" };
+  calls.set(index, created);
+  return created;
+}
+
+function mergeResponseCall(calls: Map<number, PendingResponseCall>, index = 0, item: OpenAIResponseOutputItem): void {
+  const call = responseCall(calls, index);
+  call.itemId = item.id ?? call.itemId;
+  call.callId = item.call_id ?? call.callId;
+  call.name = item.name ?? call.name;
+  if (item.arguments !== undefined) call.arguments = item.arguments;
+}
+
+function mergeResponseOutput(calls: Map<number, PendingResponseCall>, output: OpenAIResponsesBody["output"]): void {
+  for (const [index, item] of (output ?? []).entries()) {
+    if (item.type === "function_call") mergeResponseCall(calls, index, item);
+  }
+}
+
+async function* emitResponseCalls(calls: Map<number, PendingResponseCall>): AsyncIterable<ModelEvent> {
+  for (const [, call] of [...calls.entries()].sort(([left], [right]) => left - right)) {
+    if (!call.callId || !call.name) {
+      throw new ProviderError("invalid_response", "OpenAI Responses returned an incomplete function call", false);
+    }
+    let args: Record<string, unknown>;
+    try { args = JSON.parse(call.arguments || "{}") as Record<string, unknown>; }
+    catch { throw new ProviderError("invalid_tool_arguments", "OpenAI Responses returned invalid JSON function arguments", false); }
+    if (!args || Array.isArray(args) || typeof args !== "object") {
+      throw new ProviderError("invalid_tool_arguments", "OpenAI Responses function arguments must be a JSON object", false);
+    }
+    yield { type: "tool.call", call: { id: call.callId, name: call.name, arguments: args } };
+  }
+}
+
+async function* emitResponsesUsage(usage: OpenAIResponsesBody["usage"]): AsyncIterable<ModelEvent> {
+  if (!usage) return;
+  if (!Number.isSafeInteger(usage.input_tokens) || !Number.isSafeInteger(usage.output_tokens)) {
+    throw new ProviderError("invalid_usage", "OpenAI Responses returned invalid token usage", false);
+  }
+  yield { type: "usage", inputTokens: usage.input_tokens as number, outputTokens: usage.output_tokens as number };
+}
+
+function responseTerminalError(code: string, response: OpenAIResponsesBody | undefined): ProviderError {
+  const reason = response?.error?.message ?? response?.incomplete_details?.reason;
+  return new ProviderError(response?.error?.code ?? code, reason ? `OpenAI Responses did not complete: ${reason}` : "OpenAI Responses did not complete", false);
 }
 
 interface OpenAIResponse {

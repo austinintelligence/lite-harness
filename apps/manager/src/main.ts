@@ -31,7 +31,7 @@ import {
   type CredentialBroker,
   type ModelGateway,
 } from "@lite-harness/provider-core";
-import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
+import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
 import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
@@ -519,7 +519,9 @@ function resolveModelGateway(
     ]);
     return new RoutedModelGateway(
       registry.plan({ requiredCapabilities: ["text"] }),
-      [new OpenAICompatibleProvider({ providerId, baseUrl, allowedOrigins })],
+      [provider === "openai"
+        ? new OpenAIResponsesProvider()
+        : new OpenAICompatibleProvider({ providerId, baseUrl, allowedOrigins })],
       broker,
     );
   }

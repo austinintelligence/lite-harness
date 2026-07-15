@@ -4,9 +4,15 @@ Agent Runtime speaks one normalized model protocol. Model Registry filters
 routes by required capabilities before cost scoring. A frozen Route Plan names
 the selected model, fallbacks, registry generation, and credential profile.
 
-Direct alpha routes:
+Direct routes:
 
-- OpenAI and explicitly allowlisted OpenAI-compatible HTTP endpoints
+- OpenAI uses the first-class Responses API at the fixed official origin. It
+  emits typed streaming, function-call, usage, incomplete, and error states;
+  requests explicitly disable response storage and automatic truncation.
+- Explicitly allowlisted OpenAI-compatible endpoints use Chat Completions as a
+  separate compatibility route. This is also the route used by the local
+  Hermes test proxy; selecting `openai-compatible` never silently switches to
+  the native OpenAI endpoint.
 - Anthropic Messages HTTP endpoint
 - OpenRouter, Gemini OpenAI compatibility, xAI/Grok, Moonshot/Kimi, and MiniMax
   presets with fixed official origins

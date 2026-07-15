@@ -53,10 +53,14 @@ function writeEvidence(output, report) {
       unknownPricingRejectedUnderCostCeiling: true,
       omittedAdapterCostCalculatedFromFrozenRates: true,
       conservativeHigherCostEnforced: true,
+      nativeOpenAiUsesResponsesApi: true,
+      responsesTerminalStatesNormalized: true,
+      openAiCompatibleRemainsSeparate: true,
     },
     testIds: [
-      "BD-030-REGRESSION", "BD-031-REGRESSION",
+      "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION",
       "R14-1251", "R27-2223", "R34-2883",
+      "R14-1052", "R14-1281",
     ],
   };
   const absolute = resolve(root, output);

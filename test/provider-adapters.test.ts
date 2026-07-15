@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
-import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
+import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
 import type { ModelDescriptor } from "@lite-harness/provider-core";
 
 const model = (id: string, providerId: string): ModelDescriptor => ({
@@ -47,7 +47,7 @@ describe("direct provider adapters", () => {
     ]);
   });
 
-  it.each(Object.values(OPENAI_COMPATIBLE_PRESETS))(
+  it.each(Object.values(OPENAI_COMPATIBLE_PRESETS).filter((preset) => preset.providerId !== "openai"))(
     "streams normalized events through the fixed $providerId endpoint",
     async (preset) => {
       const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -74,6 +74,84 @@ describe("direct provider adapters", () => {
       ]);
     },
   );
+
+  it("uses native OpenAI Responses input, tool, output, and usage contracts", async () => {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.openai.com/v1/responses");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: "gpt-fixture",
+        stream: true,
+        store: false,
+        truncation: "disabled",
+        input: [
+          { type: "message", role: "user", content: "work" },
+          { type: "function_call", call_id: "call-old", name: "read_file", arguments: "{\"path\":\"a\"}" },
+          { type: "function_call_output", call_id: "call-old", output: "contents" },
+        ],
+        tools: [{ type: "function", name: "write_file", parameters: { type: "object" }, strict: true }],
+        tool_choice: "auto",
+      });
+      return sseResponse([
+        { type: "response.created", sequence_number: 0, response: { id: "resp-1", status: "in_progress" } },
+        { type: "response.output_text.delta", sequence_number: 1, delta: "working" },
+        { type: "response.output_item.added", sequence_number: 2, output_index: 1, item: { id: "fc-1", type: "function_call", call_id: "call-new", name: "write_file", arguments: "" } },
+        { type: "response.function_call_arguments.delta", sequence_number: 3, output_index: 1, item_id: "fc-1", delta: "{\"path\":" },
+        { type: "response.function_call_arguments.done", sequence_number: 4, output_index: 1, item_id: "fc-1", name: "write_file", arguments: "{\"path\":\"b\"}" },
+        { type: "response.completed", sequence_number: 5, response: { status: "completed", usage: { input_tokens: 11, output_tokens: 4 } } },
+      ]);
+    });
+    const adapter = new OpenAIResponsesProvider({ fetch });
+    expect(adapter.apiOperation).toBe("responses.create");
+    const events = [];
+    for await (const event of adapter.stream({
+      model: model("gpt-fixture", "openai"),
+      messages: [
+        { role: "user", content: "work" },
+        { role: "assistant", content: "", toolCalls: [{ id: "call-old", name: "read_file", arguments: { path: "a" } }] },
+        { role: "tool", content: "contents", toolCallId: "call-old" },
+      ],
+      tools: [{ name: "write_file", description: "Write", inputSchema: { type: "object" } }],
+      credential: { authorizationHeader: "Bearer fixture-secret" },
+    })) events.push(event);
+    expect(events).toEqual([
+      { type: "request.accepted" },
+      { type: "text.delta", delta: "working" },
+      { type: "tool.call", call: { id: "call-new", name: "write_file", arguments: { path: "b" } } },
+      { type: "usage", inputTokens: 11, outputTokens: 4 },
+      { type: "completed", finishReason: "tool_calls" },
+    ]);
+  });
+
+  it("normalizes non-streamed OpenAI Responses and rejects incomplete terminal states", async () => {
+    const completed = new OpenAIResponsesProvider({
+      fetch: vi.fn(async () => new Response(JSON.stringify({
+        id: "resp-json",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "output_text", text: "done" }] }],
+        usage: { input_tokens: 2, output_tokens: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } })),
+    });
+    const completedEvents = [];
+    for await (const event of completed.stream({
+      model: model("gpt-fixture", "openai"), messages: [{ role: "user", content: "go" }],
+      credential: { authorizationHeader: "Bearer fixture-secret" },
+    })) completedEvents.push(event);
+    expect(completedEvents).toContainEqual({ type: "text.delta", delta: "done" });
+
+    const incomplete = new OpenAIResponsesProvider({
+      fetch: vi.fn(async () => sseResponse([
+        { type: "response.incomplete", sequence_number: 0, response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 5, output_tokens: 2 } } },
+      ])),
+    });
+    const iterator = incomplete.stream({
+      model: model("gpt-fixture", "openai"), messages: [{ role: "user", content: "go" }],
+      credential: { authorizationHeader: "Bearer fixture-secret" },
+    })[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({ value: { type: "request.accepted" }, done: false });
+    expect(await iterator.next()).toEqual({ value: { type: "usage", inputTokens: 5, outputTokens: 2 }, done: false });
+    await expect(iterator.next()).rejects.toMatchObject({ code: "response_incomplete" });
+  });
 
   it("preserves tool-call and tool-result pairing in OpenAI-compatible requests", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {

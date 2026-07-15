@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface ProcessSpec {
   command: string;
@@ -40,6 +43,8 @@ export class JsonLineRpcClient {
   #stderr = "";
   #nextId = 1;
   #stopping = false;
+  #cleanupEnvironment: (() => void) | undefined;
+  #stopPromise: Promise<void> | undefined;
 
   constructor(
     private readonly spec: ProcessSpec,
@@ -59,9 +64,11 @@ export class JsonLineRpcClient {
   start(): void {
     if (this.running) return;
     this.#stopping = false;
+    const environment = buildEnvironment(this.spec);
+    this.#cleanupEnvironment = environment.cleanup;
     const child = spawn(this.spec.command, [...(this.spec.args ?? [])], {
       cwd: this.spec.cwd,
-      env: buildEnvironment(this.spec),
+      env: environment.env,
       shell: false,
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
@@ -74,10 +81,14 @@ export class JsonLineRpcClient {
       const limit = this.options.maxStderrBytes ?? 64 * 1024;
       this.#stderr = `${this.#stderr}${chunk}`.slice(-limit);
     });
-    child.once("error", (error) => this.#fail(error));
+    child.once("error", (error) => {
+      this.#releaseEnvironment();
+      this.#fail(error);
+    });
     child.once("exit", (code, signal) => {
       const expected = this.#stopping;
       this.#child = undefined;
+      this.#releaseEnvironment();
       if (!expected) {
         this.#fail(new ProcessRpcError(
           "process_exited",
@@ -94,16 +105,19 @@ export class JsonLineRpcClient {
   }
 
   async request<T>(method: string, params?: unknown, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
+    options.signal?.throwIfAborted();
     this.start();
     const id = this.#nextId++;
     const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? 30_000;
     return await new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(id);
-        reject(new ProcessRpcError("request_timeout", `RPC request timed out: ${method}`));
-      }, timeoutMs);
+      let pending: PendingRequest;
+      const timer = setTimeout(() => void this.#cancelAndStop(
+        id,
+        pending,
+        new ProcessRpcError("request_timeout", `RPC request timed out and its process was reaped: ${method}`),
+      ), timeoutMs);
       timer.unref?.();
-      const pending: PendingRequest = {
+      pending = {
         resolve: (value) => resolve(value as T),
         reject,
         timer,
@@ -111,13 +125,15 @@ export class JsonLineRpcClient {
       };
       if (options.signal) {
         pending.abort = () => {
-          clearTimeout(timer);
-          this.#pending.delete(id);
-          reject(abortError(options.signal));
+          void this.#cancelAndStop(id, pending, abortError(options.signal));
         };
         options.signal.addEventListener("abort", pending.abort, { once: true });
       }
       this.#pending.set(id, pending);
+      if (options.signal?.aborted) {
+        pending.abort?.();
+        return;
+      }
       try {
         this.#send({ method, id, ...(params === undefined ? {} : { params }) });
       } catch (error) {
@@ -132,18 +148,51 @@ export class JsonLineRpcClient {
   }
 
   async stop(graceMs = 2_000): Promise<void> {
+    if (this.#stopPromise) return await this.#stopPromise;
+    const operation = this.#stopChild(graceMs);
+    this.#stopPromise = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.#stopPromise === operation) this.#stopPromise = undefined;
+    }
+  }
+
+  async #stopChild(graceMs: number): Promise<void> {
     const child = this.#child;
     if (!child) return;
     this.#stopping = true;
     child.stdin.end();
     child.kill("SIGTERM");
-    await Promise.race([
-      new Promise<void>((resolve) => child.once("exit", () => resolve())),
-      new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
-    ]);
-    if (child.exitCode === null) child.kill("SIGKILL");
-    this.#child = undefined;
+    await waitForExit(child, Math.max(0, graceMs));
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      if (!await waitForExit(child, 2_000)) {
+        throw new ProcessRpcError("process_reap_failed", "RPC process could not be reaped after SIGKILL");
+      }
+    }
+    if (this.#child === child) this.#child = undefined;
+    this.#releaseEnvironment();
     this.#fail(new ProcessRpcError("process_stopped", "RPC process stopped"));
+  }
+
+  async #cancelAndStop(id: string | number, pending: PendingRequest, error: Error): Promise<void> {
+    if (this.#pending.get(id) !== pending) return;
+    this.#pending.delete(id);
+    clearTimeout(pending.timer);
+    if (pending.signal && pending.abort) pending.signal.removeEventListener("abort", pending.abort);
+    try {
+      await this.stop(0);
+      pending.reject(error);
+    } catch (stopError) {
+      pending.reject(new AggregateError([error, stopError], "RPC cancellation could not verify process reap"));
+    }
+  }
+
+  #releaseEnvironment(): void {
+    const cleanup = this.#cleanupEnvironment;
+    this.#cleanupEnvironment = undefined;
+    cleanup?.();
   }
 
   #send(message: unknown): void {
@@ -176,6 +225,10 @@ export class JsonLineRpcClient {
       }
       if (line.trim()) this.#acceptMessage(line);
       newline = this.#stdout.indexOf("\n");
+    }
+    if (Buffer.byteLength(this.#stdout) > max) {
+      this.#fail(new ProcessRpcError("line_too_large", "RPC process emitted an oversized partial line"));
+      void this.stop(0).catch(() => undefined);
     }
   }
 
@@ -253,9 +306,11 @@ export async function runJsonLineProcess(
     onMessage(message: unknown): void;
   },
 ): Promise<{ code: number; stderr: string }> {
+  options.signal?.throwIfAborted();
+  const environment = buildEnvironment(spec);
   const child = spawn(spec.command, [...(spec.args ?? [])], {
     cwd: spec.cwd,
-    env: buildEnvironment(spec),
+    env: environment.env,
     shell: false,
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
@@ -267,7 +322,14 @@ export async function runJsonLineProcess(
   let outputBytes = 0;
   const maxLine = options.maxLineBytes ?? 4 * 1024 * 1024;
   const maxOutput = options.maxOutputBytes ?? 16 * 1024 * 1024;
+  let terminalError: Error | undefined;
+  const terminate = (error: Error) => {
+    if (terminalError) return;
+    terminalError = error;
+    child.kill("SIGKILL");
+  };
   child.stdout.on("data", (chunk: string) => {
+    if (terminalError) return;
     stdout += chunk;
     let newline = stdout.indexOf("\n");
     while (newline >= 0) {
@@ -276,29 +338,40 @@ export async function runJsonLineProcess(
       const size = Buffer.byteLength(line);
       outputBytes += size;
       if (size > maxLine || outputBytes > maxOutput) {
-        child.kill("SIGKILL");
+        terminate(new ProcessRpcError(
+          size > maxLine ? "line_too_large" : "output_too_large",
+          "Process stdout exceeded its configured JSONL boundary",
+        ));
         return;
       }
       if (line.trim()) {
         try { options.onMessage(JSON.parse(line)); }
-        catch { child.kill("SIGKILL"); }
+        catch { terminate(new ProcessRpcError("invalid_json", "Process emitted invalid JSONL output")); }
       }
       newline = stdout.indexOf("\n");
+    }
+    if (Buffer.byteLength(stdout) > maxLine) {
+      terminate(new ProcessRpcError("line_too_large", "Process emitted an oversized partial JSONL line"));
     }
   });
   child.stderr.on("data", (chunk: string) => {
     stderr = `${stderr}${chunk}`.slice(-(options.maxStderrBytes ?? 64 * 1024));
   });
-  const timeout = setTimeout(() => child.kill("SIGKILL"), options.timeoutMs ?? 15 * 60_000);
+  const timeout = setTimeout(() => terminate(new ProcessRpcError(
+    "process_timeout",
+    "Process timed out and was forcefully reaped",
+  )), options.timeoutMs ?? 15 * 60_000);
   timeout.unref?.();
-  const abort = () => child.kill("SIGKILL");
+  const abort = () => terminate(abortError(options.signal));
   options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
   if (options.input !== undefined) child.stdin.end(options.input);
   else child.stdin.end();
   try {
     return await new Promise((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (code, signal) => {
+        if (terminalError) return reject(terminalError);
         if (options.signal?.aborted) return reject(abortError(options.signal));
         if (code !== 0) return reject(new ProcessRpcError("process_failed", `Process failed (code=${code ?? "null"}, signal=${signal ?? "none"}): ${redact(stderr.trim())}`));
         resolve({ code: 0, stderr: redact(stderr) });
@@ -307,15 +380,47 @@ export async function runJsonLineProcess(
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abort);
+    environment.cleanup();
   }
 }
 
-function buildEnvironment(spec: ProcessSpec): NodeJS.ProcessEnv {
+function buildEnvironment(spec: ProcessSpec): { env: NodeJS.ProcessEnv; cleanup(): void } {
   const inherited: NodeJS.ProcessEnv = {};
-  for (const name of spec.inheritEnv ?? ["PATH", "Path", "SystemRoot", "HOME", "USERPROFILE", "TEMP", "TMP"]) {
+  const inheritEnv = spec.inheritEnv ?? ["PATH", "Path", "SystemRoot", "TEMP", "TMP"];
+  for (const name of inheritEnv) {
     if (process.env[name] !== undefined) inherited[name] = process.env[name];
   }
-  return { ...inherited, ...(spec.env ?? {}) };
+  const explicitlyInheritedHome = inheritEnv.includes("HOME") || inheritEnv.includes("USERPROFILE");
+  const configuredHome = spec.env?.HOME ?? spec.env?.USERPROFILE ??
+    (explicitlyInheritedHome ? process.env.HOME ?? process.env.USERPROFILE : undefined);
+  const isolatedChildHome = configuredHome ?? mkdtempSync(join(tmpdir(), "lite-process-home-"));
+  let cleaned = false;
+  return {
+    env: {
+      ...inherited,
+      HOME: isolatedChildHome,
+      USERPROFILE: isolatedChildHome,
+      ...(spec.env ?? {}),
+    },
+    cleanup: () => {
+      if (cleaned || configuredHome) return;
+      cleaned = true;
+      rmSync(isolatedChildHome, { recursive: true, force: true });
+    },
+  };
+}
+
+function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const onExit = () => { cleanup(); resolve(true); };
+    const timer = setTimeout(() => { cleanup(); resolve(false); }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off("exit", onExit);
+    };
+    child.once("exit", onExit);
+  });
 }
 
 function abortError(signal: AbortSignal | undefined): Error {

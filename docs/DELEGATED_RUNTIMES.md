@@ -36,6 +36,10 @@ process argument vector.
 
 Both adapters use direct process spawning without a shell, bounded JSONL lines,
 bounded diagnostics, a minimal inherited environment, deadlines, abort
-propagation, and forceful cleanup after the graceful deadline. For multi-user
+propagation, and forceful cleanup after the graceful deadline. Child HOME and
+USERPROFILE point to a fresh temporary directory that is removed after verified
+process exit unless an operator explicitly supplies an isolated profile. A
+request timeout or cancellation is not returned until the child has been reaped.
+For multi-user
 or remotely exposed applications, use documented provider API credentials
 unless the provider expressly authorizes delegated subscription automation.

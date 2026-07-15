@@ -1,7 +1,30 @@
 import { createInterface } from "node:readline";
+import { writeFileSync } from "node:fs";
 
 const mode = process.argv[2] ?? "rpc";
 const lines = createInterface({ input: process.stdin });
+
+if (mode === "process-partial") {
+  process.stdout.write("x".repeat(8 * 1024));
+  setInterval(() => {}, 1_000);
+}
+
+if (mode === "process-home") {
+  process.stdout.write(`${JSON.stringify({ home: process.env.HOME, userProfile: process.env.USERPROFILE })}\n`);
+  process.exit(0);
+}
+
+if (mode === "process-side-effect") {
+  setTimeout(() => writeFileSync(process.argv[3], "late side effect"), 250);
+  setInterval(() => {}, 1_000);
+}
+
+if (mode === "rpc-side-effect") {
+  lines.once("line", () => {
+    setTimeout(() => writeFileSync(process.argv[3], "late rpc side effect"), 250);
+  });
+  setInterval(() => {}, 1_000);
+}
 
 if (mode === "claude") {
   process.stdout.write(`${JSON.stringify({
@@ -15,7 +38,7 @@ if (mode === "claude") {
 }
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
-lines.on("line", (line) => {
+if (mode !== "rpc-side-effect") lines.on("line", (line) => {
   const message = JSON.parse(line);
   const response = (result) => send({ ...(message.jsonrpc ? { jsonrpc: "2.0" } : {}), id: message.id, result });
 

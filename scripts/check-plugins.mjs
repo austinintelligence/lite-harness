@@ -16,7 +16,7 @@ try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
     "run",
-    "test/process-extensions.test.ts",
+    "test/process-extensions.test.ts", "test/process-rpc-safety.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -55,8 +55,16 @@ function writeEvidence(output, report) {
       delegatedWorkspaceOwnedAndFenced: true,
       delegatedManagedVolumesFailClosed: true,
       claudePromptUsesStdinNotArgv: true,
+      preAbortedProcessNeverSpawns: true,
+      timeoutReapsBeforeRejecting: true,
+      partialJsonlBoundedBeforeNewline: true,
+      abortListenersRemoved: true,
+      childHomeIsolatedAndRemoved: true,
     },
-    testIds: ["BD-007-REGRESSION", "BD-008-REGRESSION", "BD-025-REGRESSION", "BD-026-REGRESSION"],
+    testIds: [
+      "BD-007-REGRESSION", "BD-008-REGRESSION", "BD-025-REGRESSION",
+      "BD-026-REGRESSION", "BD-027-REGRESSION",
+    ],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

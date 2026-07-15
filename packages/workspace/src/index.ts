@@ -12,6 +12,7 @@ import {
   createReadStream,
   createWriteStream,
   appendFileSync,
+  chmodSync,
   closeSync,
   fstatSync,
   fsyncSync,
@@ -20,6 +21,7 @@ import {
   openSync,
   readFileSync,
   readSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -28,7 +30,7 @@ import {
   statfsSync,
 } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
-import { dirname, join, posix, win32 } from "node:path";
+import { dirname, join, posix, relative, win32 } from "node:path";
 import { once } from "node:events";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -843,44 +845,387 @@ export type CacheClass = "global-immutable" | "tenant-private" | "workspace-priv
 
 export interface CacheDescriptor {
   class: CacheClass;
+  kind: string;
   logicalKey: string;
+  sourceDigest: string;
   imageDigest: string;
-  toolchain: string;
   lockDigest: string;
+  toolVersions: Readonly<Record<string, string>>;
+  frameworkVersions: Readonly<Record<string, string>>;
+  runtimeVersion: string;
+  operatingSystem: string;
+  architecture: string;
+  configDigest: string;
+  policyVersion: number;
   tenantId?: string;
   workspaceId?: string;
 }
 
-export class LocalCacheCatalog {
-  constructor(private readonly root: string) {}
+export interface CachePublisher {
+  id: string;
+  trusted: boolean;
+  provenance: string;
+  tenantId?: string;
+  workspaceId?: string;
+}
 
-  resolve(descriptor: CacheDescriptor): { key: string; path: string; class: CacheClass } {
+export interface CachePopulationLease {
+  key: string;
+  class: CacheClass;
+  ownerId: string;
+  fencingToken: number;
+  stagingPath: string;
+  expiresAt: string;
+}
+
+export interface CacheReadLease {
+  id: string;
+  key: string;
+  path: string;
+  readOnly: true;
+  expiresAt: string;
+}
+
+export interface CacheGarbageCollectionResult {
+  expiredPopulations: number;
+  expiredReaders: number;
+  evictedEntries: number;
+  reclaimedBytes: number;
+}
+
+export class LocalCacheCatalog {
+  constructor(
+    private readonly root: string,
+    private readonly limits: { maxEntryBytes?: number; maxFiles?: number } = {},
+  ) {}
+
+  resolve(descriptor: CacheDescriptor): { key: string; path: string; class: CacheClass; state: "MISSING" | "STAGING" | "READY" | "QUARANTINED" } {
     validateCacheDescriptor(descriptor);
-    const canonical = JSON.stringify({
-      class: descriptor.class, logicalKey: descriptor.logicalKey, imageDigest: descriptor.imageDigest,
-      toolchain: descriptor.toolchain, lockDigest: descriptor.lockDigest,
+    const key = cacheKey(descriptor);
+    const database = this.#database();
+    try {
+      const row = database.prepare("SELECT state FROM cache_entries WHERE cache_key = ?").get(key) as { state: "STAGING" | "READY" | "QUARANTINED" } | undefined;
+      const state = row?.state ?? "MISSING";
+      return { key, path: state === "QUARANTINED" ? this.#quarantinePath(descriptor.class, key) : this.#entryPath(descriptor.class, key), class: descriptor.class, state };
+    } finally { database.close(); }
+  }
+
+  acquirePopulation(descriptor: CacheDescriptor, publisher: CachePublisher, ttlMs = 60_000): CachePopulationLease {
+    validateCacheDescriptor(descriptor);
+    validateCachePublisher(descriptor, publisher);
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 3_600_000) throw new Error("Cache population lease TTL is invalid");
+    const key = cacheKey(descriptor);
+    const ownerId = boundedCacheIdentity(publisher.id, "cache publisher id");
+    const database = this.#database();
+    const now = Date.now();
+    const expiresAt = new Date(now + ttlMs).toISOString();
+    let fencingToken = 1;
+    let stagingPath = "";
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      const entry = database.prepare("SELECT state, fencing_token FROM cache_entries WHERE cache_key = ?").get(key) as { state: string; fencing_token: number } | undefined;
+      if (entry?.state === "READY") throw new Error("Cache entry is already ready");
+      const active = database.prepare("SELECT owner_id, expires_at, staging_path FROM cache_population_leases WHERE cache_key = ?").get(key) as { owner_id: string; expires_at: string; staging_path: string } | undefined;
+      if (active && Date.parse(active.expires_at) > now && active.owner_id !== ownerId) throw new Error("Cache population is leased by another publisher");
+      if (active) rmSync(active.staging_path, { recursive: true, force: true });
+      fencingToken = (entry?.fencing_token ?? 0) + 1;
+      stagingPath = this.#stagingPath(key, fencingToken);
+      rmSync(stagingPath, { recursive: true, force: true });
+      mkdirSync(stagingPath, { recursive: true, mode: 0o700 });
+      database.prepare(`
+        INSERT INTO cache_entries (
+          cache_key, class, descriptor_json, state, publisher_id, provenance,
+          manifest_sha256, size_bytes, file_count, active_readers, fencing_token,
+          created_at, updated_at, last_used_at
+        ) VALUES (?, ?, ?, 'STAGING', ?, ?, NULL, 0, 0, 0, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          state='STAGING', publisher_id=excluded.publisher_id, provenance=excluded.provenance,
+          fencing_token=excluded.fencing_token, updated_at=excluded.updated_at
+      `).run(key, descriptor.class, JSON.stringify(descriptor), ownerId, publisher.provenance, fencingToken,
+        new Date(now).toISOString(), new Date(now).toISOString(), new Date(now).toISOString());
+      database.prepare(`
+        INSERT INTO cache_population_leases (cache_key, owner_id, fencing_token, staging_path, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET owner_id=excluded.owner_id, fencing_token=excluded.fencing_token,
+          staging_path=excluded.staging_path, expires_at=excluded.expires_at
+      `).run(key, ownerId, fencingToken, stagingPath, expiresAt);
+      database.exec("COMMIT");
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch { /* no transaction */ }
+      if (stagingPath) rmSync(stagingPath, { recursive: true, force: true });
+      throw error;
+    } finally { database.close(); }
+    return { key, class: descriptor.class, ownerId, fencingToken, stagingPath, expiresAt };
+  }
+
+  stageFile(lease: CachePopulationLease, relativePath: string, data: Buffer): void {
+    validateWorkspacePath(relativePath);
+    if (data.length > (this.limits.maxEntryBytes ?? 512 * 1024 * 1024)) throw new Error("Cache staged file exceeds the entry limit");
+    this.#assertPopulationLease(lease);
+    const target = join(lease.stagingPath, relativePath);
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+    writeFileSync(target, data, { flag: "wx", mode: 0o600 });
+  }
+
+  promote(lease: CachePopulationLease): { key: string; path: string; manifestSha256: string; sizeBytes: number; fileCount: number; readOnly: true } {
+    this.#assertPopulationLease(lease);
+    const manifest = inspectCacheTree(lease.stagingPath, this.limits.maxEntryBytes ?? 512 * 1024 * 1024, this.limits.maxFiles ?? 100_000);
+    const target = this.#entryPath(lease.class, lease.key);
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+    if (lstatExists(target)) throw new Error("Cache promotion target already exists");
+    renameSync(lease.stagingPath, target);
+    chmodCacheTreeReadOnly(target);
+    const database = this.#database();
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      const updated = database.prepare(`
+        UPDATE cache_entries SET state='READY', manifest_sha256=?, size_bytes=?, file_count=?, updated_at=?, last_used_at=?
+        WHERE cache_key=? AND state='STAGING' AND fencing_token=?
+      `).run(manifest.sha256, manifest.sizeBytes, manifest.fileCount, new Date().toISOString(), new Date().toISOString(), lease.key, lease.fencingToken);
+      if (updated.changes !== 1) throw new Error("Cache population lease lost its fencing authority");
+      database.prepare("DELETE FROM cache_population_leases WHERE cache_key=? AND fencing_token=?").run(lease.key, lease.fencingToken);
+      database.exec("COMMIT");
+      return { key: lease.key, path: target, manifestSha256: manifest.sha256, sizeBytes: manifest.sizeBytes, fileCount: manifest.fileCount, readOnly: true };
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch { /* no transaction */ }
+      rmSync(target, { recursive: true, force: true });
+      throw error;
+    } finally { database.close(); }
+  }
+
+  attachReadOnly(descriptor: CacheDescriptor, scope: { tenantId?: string; workspaceId?: string }, ttlMs = 300_000): CacheReadLease {
+    validateCacheDescriptor(descriptor);
+    assertCacheScope(descriptor, scope);
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 3_600_000) throw new Error("Cache read lease TTL is invalid");
+    const key = cacheKey(descriptor);
+    this.verify(key);
+    const id = `cache_read_${randomBytes(16).toString("hex")}`;
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    const database = this.#database();
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      const updated = database.prepare(`
+        UPDATE cache_entries SET active_readers=active_readers+1, last_used_at=?, updated_at=?
+        WHERE cache_key=? AND state='READY'
+      `).run(new Date().toISOString(), new Date().toISOString(), key);
+      if (updated.changes !== 1) throw new Error("Cache entry is not ready");
+      database.prepare("INSERT INTO cache_read_leases (id, cache_key, expires_at) VALUES (?, ?, ?)").run(id, key, expiresAt);
+      database.exec("COMMIT");
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch { /* no transaction */ }
+      throw error;
+    } finally { database.close(); }
+    return { id, key, path: this.#entryPath(descriptor.class, key), readOnly: true, expiresAt };
+  }
+
+  releaseRead(lease: Pick<CacheReadLease, "id" | "key">): void {
+    const database = this.#database();
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      const removed = database.prepare("DELETE FROM cache_read_leases WHERE id=? AND cache_key=?").run(lease.id, lease.key);
+      if (removed.changes === 1) database.prepare("UPDATE cache_entries SET active_readers=MAX(0,active_readers-1), updated_at=? WHERE cache_key=?").run(new Date().toISOString(), lease.key);
+      database.exec("COMMIT");
+    } catch (error) { try { database.exec("ROLLBACK"); } catch { /* no transaction */ } throw error; }
+    finally { database.close(); }
+  }
+
+  verify(key: string): void {
+    if (!/^[a-f0-9]{64}$/.test(key)) throw new Error("Cache key is invalid");
+    const database = this.#database();
+    try {
+      const row = database.prepare("SELECT class, state, manifest_sha256, size_bytes, file_count FROM cache_entries WHERE cache_key=?").get(key) as {
+        class: CacheClass; state: string; manifest_sha256: string | null; size_bytes: number; file_count: number;
+      } | undefined;
+      if (!row || row.state !== "READY" || !row.manifest_sha256) throw new Error("Cache entry is not ready");
+      try {
+        const manifest = inspectCacheTree(this.#entryPath(row.class, key), this.limits.maxEntryBytes ?? 512 * 1024 * 1024, this.limits.maxFiles ?? 100_000);
+        if (manifest.sha256 === row.manifest_sha256 && manifest.sizeBytes === row.size_bytes && manifest.fileCount === row.file_count) return;
+      } catch { /* every unreadable or structurally invalid entry is poisoned */ }
+      const entryPath = this.#entryPath(row.class, key); const quarantinePath = this.#quarantinePath(row.class, key);
+      rmSync(quarantinePath, { recursive: true, force: true });
+      mkdirSync(dirname(quarantinePath), { recursive: true, mode: 0o700 });
+      if (lstatExists(entryPath)) renameSync(entryPath, quarantinePath);
+        database.prepare("UPDATE cache_entries SET state='QUARANTINED', updated_at=? WHERE cache_key=?").run(new Date().toISOString(), key);
+      throw new Error("Cache integrity verification failed and the entry was quarantined");
+    } finally { database.close(); }
+  }
+
+  garbageCollect(options: { quotaBytes: number; maxEntries: number; now?: number }): CacheGarbageCollectionResult {
+    if (!Number.isSafeInteger(options.quotaBytes) || options.quotaBytes < 0 || !Number.isSafeInteger(options.maxEntries) || options.maxEntries < 0) throw new Error("Cache GC limits are invalid");
+    const now = options.now ?? Date.now();
+    const database = this.#database();
+    let expiredPopulations = 0; let expiredReaders = 0; let evictedEntries = 0; let reclaimedBytes = 0;
+    try {
+      const populations = database.prepare("SELECT cache_key, staging_path FROM cache_population_leases WHERE expires_at <= ?").all(new Date(now).toISOString()) as Array<{ cache_key: string; staging_path: string }>;
+      for (const lease of populations) {
+        rmSync(lease.staging_path, { recursive: true, force: true });
+        database.prepare("DELETE FROM cache_population_leases WHERE cache_key=?").run(lease.cache_key);
+        database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND state='STAGING'").run(lease.cache_key);
+        expiredPopulations += 1;
+      }
+      const readers = database.prepare("SELECT id, cache_key FROM cache_read_leases WHERE expires_at <= ?").all(new Date(now).toISOString()) as Array<{ id: string; cache_key: string }>;
+      for (const lease of readers) { this.#releaseReadInDatabase(database, lease.id, lease.cache_key); expiredReaders += 1; }
+      const quarantined = database.prepare("SELECT cache_key, class, size_bytes FROM cache_entries WHERE state='QUARANTINED'").all() as Array<{ cache_key: string; class: CacheClass; size_bytes: number }>;
+      for (const entry of quarantined) {
+        rmSync(this.#quarantinePath(entry.class, entry.cache_key), { recursive: true, force: true });
+        database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND state='QUARANTINED'").run(entry.cache_key);
+        evictedEntries += 1; reclaimedBytes += entry.size_bytes;
+      }
+      const ready = database.prepare(`
+        SELECT cache_key, class, size_bytes, active_readers FROM cache_entries
+        WHERE state='READY' ORDER BY last_used_at ASC, cache_key ASC
+      `).all() as Array<{ cache_key: string; class: CacheClass; size_bytes: number; active_readers: number }>;
+      let total = ready.reduce((sum, entry) => sum + entry.size_bytes, 0); let count = ready.length;
+      for (const entry of ready) {
+        if (total <= options.quotaBytes && count <= options.maxEntries) break;
+        if (entry.active_readers > 0) continue;
+        rmSync(this.#entryPath(entry.class, entry.cache_key), { recursive: true, force: true });
+        database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND active_readers=0").run(entry.cache_key);
+        total -= entry.size_bytes; count -= 1; evictedEntries += 1; reclaimedBytes += entry.size_bytes;
+      }
+    } finally { database.close(); }
+    return { expiredPopulations, expiredReaders, evictedEntries, reclaimedBytes };
+  }
+
+  #assertPopulationLease(lease: CachePopulationLease): void {
+    const database = this.#database();
+    try {
+      const row = database.prepare(`
+        SELECT owner_id, fencing_token, staging_path, expires_at FROM cache_population_leases WHERE cache_key=?
+      `).get(lease.key) as { owner_id: string; fencing_token: number; staging_path: string; expires_at: string } | undefined;
+      if (!row || row.owner_id !== lease.ownerId || row.fencing_token !== lease.fencingToken || row.staging_path !== lease.stagingPath || Date.parse(row.expires_at) <= Date.now()) {
+        throw new Error("Cache population lease is stale or invalid");
+      }
+    } finally { database.close(); }
+  }
+
+  #releaseReadInDatabase(database: DatabaseSync, id: string, key: string): void {
+    const removed = database.prepare("DELETE FROM cache_read_leases WHERE id=? AND cache_key=?").run(id, key);
+    if (removed.changes === 1) database.prepare("UPDATE cache_entries SET active_readers=MAX(0,active_readers-1), updated_at=? WHERE cache_key=?").run(new Date().toISOString(), key);
+  }
+
+  #database(): DatabaseSync {
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    const database = new DatabaseSync(join(this.root, "cache-catalog.sqlite"));
+    database.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON");
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS cache_entries (
+        cache_key TEXT PRIMARY KEY, class TEXT NOT NULL, descriptor_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('STAGING','READY','QUARANTINED')),
+        publisher_id TEXT NOT NULL, provenance TEXT NOT NULL, manifest_sha256 TEXT,
+        size_bytes INTEGER NOT NULL, file_count INTEGER NOT NULL, active_readers INTEGER NOT NULL,
+        fencing_token INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cache_population_leases (
+        cache_key TEXT PRIMARY KEY REFERENCES cache_entries(cache_key) ON DELETE CASCADE,
+        owner_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, staging_path TEXT NOT NULL, expires_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cache_read_leases (
+        id TEXT PRIMARY KEY, cache_key TEXT NOT NULL REFERENCES cache_entries(cache_key) ON DELETE CASCADE, expires_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS cache_entries_lru_idx ON cache_entries(state,last_used_at);
+    `);
+    return database;
+  }
+
+  #entryPath(cacheClass: CacheClass, key: string): string { return join(this.root, "entries", cacheClass, key.slice(0, 2), key); }
+  #quarantinePath(cacheClass: CacheClass, key: string): string { return join(this.root, "quarantine", cacheClass, key.slice(0, 2), key); }
+  #stagingPath(key: string, token: number): string { return join(this.root, "staging", key, String(token)); }
+}
+
+function cacheKey(descriptor: CacheDescriptor): string {
+  const canonical = JSON.stringify({
+      class: descriptor.class, kind: descriptor.kind, logicalKey: descriptor.logicalKey,
+      sourceDigest: descriptor.sourceDigest, lockDigest: descriptor.lockDigest,
+      toolVersions: normalizeCacheVersionMap(descriptor.toolVersions),
+      frameworkVersions: normalizeCacheVersionMap(descriptor.frameworkVersions),
+      runtimeVersion: descriptor.runtimeVersion, imageDigest: descriptor.imageDigest,
+      operatingSystem: descriptor.operatingSystem, architecture: descriptor.architecture,
+      configDigest: descriptor.configDigest, policyVersion: descriptor.policyVersion,
       tenantId: descriptor.class === "global-immutable" ? null : descriptor.tenantId,
       workspaceId: descriptor.class === "workspace-private" ? descriptor.workspaceId : null,
     });
-    const key = createHash("sha256").update(canonical).digest("hex");
-    const path = join(this.root, descriptor.class, key.slice(0, 2), key);
-    mkdirSync(path, { recursive: true, mode: 0o700 });
-    const metadataPath = join(path, ".lite-cache.json");
-    try {
-      const existing = JSON.parse(readFileSync(metadataPath, "utf8")) as CacheDescriptor;
-      if (JSON.stringify(existing) !== JSON.stringify(descriptor)) throw new Error("Cache key metadata mismatch");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      writeFileSync(metadataPath, `${JSON.stringify(descriptor)}\n`, { mode: 0o600 });
-    }
-    return { key, path, class: descriptor.class };
-  }
+  return createHash("sha256").update(canonical).digest("hex");
 }
 
+function validateCachePublisher(descriptor: CacheDescriptor, publisher: CachePublisher): void {
+  boundedCacheIdentity(publisher.id, "cache publisher id");
+  boundedCacheIdentity(publisher.provenance, "cache provenance");
+  if (descriptor.class === "global-immutable" && !publisher.trusted) throw new Error("Global cache publication requires a trusted publisher");
+  if (descriptor.class !== "global-immutable" && publisher.tenantId !== descriptor.tenantId) throw new Error("Cache publisher tenant does not match the cache scope");
+  if (descriptor.class === "workspace-private" && publisher.workspaceId !== descriptor.workspaceId) throw new Error("Cache publisher workspace does not match the cache scope");
+}
+
+function assertCacheScope(descriptor: CacheDescriptor, scope: { tenantId?: string; workspaceId?: string }): void {
+  if (descriptor.class !== "global-immutable" && descriptor.tenantId !== scope.tenantId) throw new Error("Private cache tenant scope mismatch");
+  if (descriptor.class === "workspace-private" && descriptor.workspaceId !== scope.workspaceId) throw new Error("Private cache workspace scope mismatch");
+}
+
+function inspectCacheTree(root: string, maxBytes: number, maxFiles: number): { sha256: string; sizeBytes: number; fileCount: number } {
+  const files: Array<{ path: string; size: number; sha256: string }> = [];
+  let sizeBytes = 0;
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+      const path = join(directory, entry.name); const stat = lstatSync(path);
+      if (stat.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new Error("Cache tree contains a forbidden file type");
+      if (entry.isDirectory()) visit(path);
+      else {
+        const relativePath = relative(root, path).replaceAll("\\", "/");
+        validateWorkspacePath(relativePath);
+        sizeBytes += stat.size;
+        if (files.length + 1 > maxFiles || sizeBytes > maxBytes) throw new Error("Cache tree exceeds configured limits");
+        files.push({ path: relativePath, size: stat.size, sha256: digestCacheFile(path) });
+      }
+    }
+  };
+  visit(root);
+  return { sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"), sizeBytes, fileCount: files.length };
+}
+
+function digestCacheFile(path: string): string {
+  const descriptor = openSync(path, "r"); const digest = createHash("sha256");
+  try {
+    const buffer = Buffer.alloc(64 * 1024);
+    while (true) { const bytes = readSync(descriptor, buffer, 0, buffer.length, null); if (!bytes) break; digest.update(buffer.subarray(0, bytes)); }
+  } finally { closeSync(descriptor); }
+  return digest.digest("hex");
+}
+
+function chmodCacheTreeReadOnly(root: string): void {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) { chmodCacheTreeReadOnly(path); chmodSync(path, 0o500); }
+    else chmodSync(path, 0o400);
+  }
+  chmodSync(root, 0o500);
+}
+
+function lstatExists(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; } }
+function boundedCacheIdentity(value: string, label: string): string { if (!value || value.length > 512 || /[\0\r\n]/.test(value)) throw new Error(`${label} is invalid`); return value; }
+
 function validateCacheDescriptor(descriptor: CacheDescriptor): void {
+  boundedCacheIdentity(descriptor.kind, "cache kind");
   if (!/^[A-Za-z0-9._/-]{1,256}$/.test(descriptor.logicalKey) || descriptor.logicalKey.includes("..")) throw new Error("Cache logical key is invalid");
   if (!/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(descriptor.imageDigest)) throw new Error("Cache image digest must be immutable");
-  if (!descriptor.toolchain.trim() || !/^[a-f0-9]{64}$/.test(descriptor.lockDigest)) throw new Error("Cache toolchain or lock digest is invalid");
+  for (const [label, digest] of [["source", descriptor.sourceDigest], ["lock", descriptor.lockDigest], ["configuration", descriptor.configDigest]] as const) {
+    if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error(`Cache ${label} digest is invalid`);
+  }
+  normalizeCacheVersionMap(descriptor.toolVersions);
+  normalizeCacheVersionMap(descriptor.frameworkVersions);
+  for (const [label, value] of [["runtime version", descriptor.runtimeVersion], ["operating system", descriptor.operatingSystem], ["architecture", descriptor.architecture]] as const) boundedCacheIdentity(value, `cache ${label}`);
+  if (!Number.isSafeInteger(descriptor.policyVersion) || descriptor.policyVersion < 1) throw new Error("Cache policy version is invalid");
   if (descriptor.class !== "global-immutable" && !descriptor.tenantId) throw new Error("Private cache requires a tenant");
   if (descriptor.class === "workspace-private" && !descriptor.workspaceId) throw new Error("Workspace cache requires a workspace");
+}
+
+function normalizeCacheVersionMap(value: Readonly<Record<string, string>>): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Cache version metadata is invalid");
+  const entries = Object.entries(value);
+  if (entries.length > 64) throw new Error("Cache version metadata is too large");
+  const normalized: Record<string, string> = {};
+  for (const [name, version] of entries.sort(([left], [right]) => left.localeCompare(right))) {
+    if (!/^[A-Za-z0-9._@/-]{1,128}$/.test(name)) throw new Error("Cache version name is invalid");
+    normalized[name] = boundedCacheIdentity(version, `cache version for ${name}`);
+  }
+  return normalized;
 }

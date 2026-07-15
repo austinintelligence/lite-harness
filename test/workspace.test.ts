@@ -162,8 +162,10 @@ describe("workspace durability", () => {
   it("keys private caches by tenant and workspace while requiring immutable runtime inputs", () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-cache-")); directories.push(directory);
     const catalog = new LocalCacheCatalog(directory);
-    const base = { class: "workspace-private" as const, logicalKey: "pnpm/store", imageDigest: `sha256:${"a".repeat(64)}`,
-      toolchain: "node-24-pnpm-11", lockDigest: "b".repeat(64), workspaceId: "workspace" };
+    const base = { class: "workspace-private" as const, kind: "package-store", logicalKey: "pnpm/store",
+      sourceDigest: "c".repeat(64), imageDigest: `sha256:${"a".repeat(64)}`, lockDigest: "b".repeat(64),
+      toolVersions: { node: "24.14.0", pnpm: "11.0.0" }, frameworkVersions: {}, runtimeVersion: "lite-runtime-v1",
+      operatingSystem: "linux", architecture: "amd64", configDigest: "d".repeat(64), policyVersion: 1, workspaceId: "workspace" };
     const first = catalog.resolve({ ...base, tenantId: "tenant-one" });
     const second = catalog.resolve({ ...base, tenantId: "tenant-two" });
     expect(first.key).not.toBe(second.key);

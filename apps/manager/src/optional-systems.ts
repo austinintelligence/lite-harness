@@ -283,22 +283,35 @@ function configureCacheCatalog(runtime: BrokeredToolRuntime, dataDir: string, en
     if (!(["global-immutable", "tenant-private", "workspace-private"] as const).includes(kind as never)) throw new Error("Cache class is invalid");
     const descriptor = {
       class: kind as "global-immutable" | "tenant-private" | "workspace-private",
+      kind: requiredString(params.call.arguments.kind, "kind"),
       logicalKey: requiredString(params.call.arguments.logicalKey, "logicalKey"),
+      sourceDigest: requiredString(params.call.arguments.sourceDigest, "sourceDigest"),
       imageDigest: requiredString(params.call.arguments.imageDigest, "imageDigest"),
-      toolchain: requiredString(params.call.arguments.toolchain, "toolchain"),
       lockDigest: requiredString(params.call.arguments.lockDigest, "lockDigest"),
+      toolVersions: stringRecord(params.call.arguments.toolVersions, "toolVersions"),
+      frameworkVersions: stringRecord(params.call.arguments.frameworkVersions, "frameworkVersions"),
+      runtimeVersion: requiredString(params.call.arguments.runtimeVersion, "runtimeVersion"),
+      operatingSystem: requiredString(params.call.arguments.operatingSystem, "operatingSystem"),
+      architecture: requiredString(params.call.arguments.architecture, "architecture"),
+      configDigest: requiredString(params.call.arguments.configDigest, "configDigest"),
+      policyVersion: requiredInteger(params.call.arguments.policyVersion, "policyVersion"),
       ...(kind === "global-immutable" ? {} : { tenantId: principal.tenantId }),
       ...(kind === "workspace-private" ? { workspaceId: params.workspaceId } : {}),
     };
     const resolved = catalog.resolve(descriptor);
-    return { callId: params.call.id, ok: true, content: JSON.stringify({ key: resolved.key, class: resolved.class }), metadata: { cacheKey: resolved.key } };
+    return { callId: params.call.id, ok: true, content: JSON.stringify({ key: resolved.key, class: resolved.class, state: resolved.state }), metadata: { cacheKey: resolved.key } };
   }, toolDefinition("Resolve an owner-scoped cache generation. Host paths are never disclosed.", {
     type: "object",
     properties: {
       class: { enum: ["global-immutable", "tenant-private", "workspace-private"] },
-      logicalKey: { type: "string" }, imageDigest: { type: "string" }, toolchain: { type: "string" }, lockDigest: { type: "string" },
+      kind: { type: "string" }, logicalKey: { type: "string" }, sourceDigest: { type: "string" },
+      imageDigest: { type: "string" }, lockDigest: { type: "string" },
+      toolVersions: { type: "object", additionalProperties: { type: "string" } },
+      frameworkVersions: { type: "object", additionalProperties: { type: "string" } },
+      runtimeVersion: { type: "string" }, operatingSystem: { type: "string" }, architecture: { type: "string" },
+      configDigest: { type: "string" }, policyVersion: { type: "integer", minimum: 1 },
     },
-    required: ["class", "logicalKey", "imageDigest", "toolchain", "lockDigest"], additionalProperties: false,
+    required: ["class", "kind", "logicalKey", "sourceDigest", "imageDigest", "lockDigest", "toolVersions", "frameworkVersions", "runtimeVersion", "operatingSystem", "architecture", "configDigest", "policyVersion"], additionalProperties: false,
   }));
 }
 
@@ -351,6 +364,12 @@ function csvSet(value: string | undefined): Set<string> { return new Set((value 
 function parseJson(value: string, label: string): unknown { try { return JSON.parse(value); } catch { throw new Error(`${label} must be valid JSON`); } }
 function objectRecord(value: unknown, label: string): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value as Record<string, unknown>; }
 function requiredString(value: unknown, label: string): string { if (typeof value !== "string" || !value.trim() || value.length > 4096 || /[\0\r\n]/.test(value)) throw new Error(`${label} must be a bounded single-line string`); return value.trim(); }
+function requiredInteger(value: unknown, label: string): number { if (!Number.isSafeInteger(value)) throw new Error(`${label} must be an integer`); return value as number; }
+function stringRecord(value: unknown, label: string): Record<string, string> {
+  const record = objectRecord(value, label);
+  if (Object.keys(record).length > 64) throw new Error(`${label} has too many entries`);
+  return Object.fromEntries(Object.entries(record).map(([name, entry]) => [name, requiredString(entry, `${label}.${name}`)]));
+}
 function identifier(value: unknown, label: string): string { const text = requiredString(value, label); if (!/^[a-z][a-z0-9_]{0,63}$/.test(text)) throw new Error(`${label} must be a lowercase identifier`); return text; }
 function environmentName(value: unknown, label: string): string { const text = requiredString(value, label); if (!/^LITE_HARNESS_[A-Z0-9_]+$/.test(text)) throw new Error(`${label} must name a LITE_HARNESS_ variable`); return text; }
 function optionalStringArray(value: unknown, label: string): string[] | undefined { if (value === undefined) return undefined; if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0 && item.length < 4096 && !/[\0\r\n]/.test(item))) throw new Error(`${label} must be an array of bounded strings`); return [...value]; }

@@ -11,7 +11,7 @@ const temporary = mkdtempSync(resolve(tmpdir(), "lite-optional-report-"));
 const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
-    resolve(root, "node_modules", "vitest", "vitest.mjs"), "run", "test/optional-systems-manager.test.ts", "test/skill-lifecycle.test.ts", "test/mcp-isolation.test.ts",
+    resolve(root, "node_modules", "vitest", "vitest.mjs"), "run", "test/optional-systems-manager.test.ts", "test/skill-lifecycle.test.ts", "test/mcp-isolation.test.ts", "test/cache-lifecycle.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -36,7 +36,7 @@ function writeEvidence(output, report) {
       skillsFrozenAndLazy: true, mcpWorkersLazy: true,
       snapshotsOwnedAndEncrypted: true, cacheKeysOwnerScoped: true,
     },
-    testIds: ["BD-038-REGRESSION", "BD-044-REGRESSION", "BD-045-REGRESSION"],
+    testIds: ["BD-038-REGRESSION", "BD-044-REGRESSION", "BD-045-REGRESSION", "BD-046-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

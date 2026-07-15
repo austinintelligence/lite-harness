@@ -88,8 +88,10 @@ describe("production optional-system composition", () => {
     expect(snapshot.ok).toBe(true);
     expect(JSON.parse(snapshot.content)).toMatchObject({ plaintextBytes: archive.length });
     const descriptor = {
-      class: "workspace-private", logicalKey: "pnpm/store", imageDigest: `sha256:${"a".repeat(64)}`,
-      toolchain: "node24", lockDigest: "b".repeat(64),
+      class: "workspace-private", kind: "package-store", logicalKey: "pnpm/store", sourceDigest: "c".repeat(64),
+      imageDigest: `sha256:${"a".repeat(64)}`, lockDigest: "b".repeat(64), toolVersions: { node: "24.14.0" },
+      frameworkVersions: {}, runtimeVersion: "lite-runtime-v1", operatingSystem: "linux", architecture: "amd64",
+      configDigest: "d".repeat(64), policyVersion: 1,
     };
     const first = await runtime.execute(execution("cache_resolve", descriptor, principal));
     const second = await runtime.execute(execution("cache_resolve", descriptor, { ...principal, tenantId: "tenant-b" }));

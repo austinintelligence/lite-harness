@@ -66,6 +66,7 @@ jobs:
           path: |
             docs/sbom.cdx.json
             docs/IMPLEMENTATION_STATUS.md
+            BLOCKERS.md
             docs/requirements/alpha-ledger.yaml
             docs/requirements/defect-ledger.yaml
             evidence/m3/image-promotion.json
@@ -452,3 +453,53 @@ jobs:
           path: evidence/m11/readiness.json
           if-no-files-found: error
           retention-days: 30
+
+  candidate-evidence-truth:
+    if: ${{ always() }}
+    needs:
+      - verify
+      - repository-readiness
+      - container-build
+      - required-real-runtime
+      - python-sdk
+      - packaged-python-parity
+      - migration-evidence
+      - replay-evidence
+      - plugin-evidence
+      - approval-evidence
+      - provider-evidence
+      - browser-evidence
+      - recovery-evidence
+      - integration-evidence
+      - optional-system-evidence
+      - docker-policy-evidence
+      - workspace-lifecycle-evidence
+      - run-snapshot-evidence
+      - context-optimization-evidence
+      - backpressure-evidence
+      - readiness-evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.7.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Require every candidate evidence producer
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const needs=JSON.parse(process.env.NEEDS_JSON); const failed=Object.entries(needs).filter(([, value]) => value.result !== "success"); if (failed.length) { console.error(failed.map(([name, value]) => `${name}=${value.result}`).join("\n")); process.exit(1); }'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: .candidate-evidence
+      - run: pnpm assemble:ci-evidence -- --source .candidate-evidence
+      - run: pnpm check:schemas
+      - run: pnpm check:requirements:verified
+      - run: pnpm check:defects:closed
+      - run: pnpm check:status
+      - run: pnpm check:blockers

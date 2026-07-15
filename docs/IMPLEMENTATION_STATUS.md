@@ -12,24 +12,25 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Requirement ledger
 
 - Total required rows: 922
-- Verified: 113
-- In progress: 1
-- Blocked or unverified: 808
+- Verified by current zero-skip evidence: 0
+- Declared verified in the ledger: 0
+- Declared in progress: 1
+- Currently blocked or unverified: 922
 
-| Kind | Total | Verified |
-| --- | ---: | ---: |
-| frozen-decision | 32 | 5 |
-| phase-exit | 13 | 1 |
-| alpha-gate | 22 | 3 |
-| contract-requirement | 855 | 104 |
+| Kind | Total | Current evidence | Declared verified |
+| --- | ---: | ---: | ---: |
+| frozen-decision | 32 | 0 | 0 |
+| phase-exit | 13 | 0 | 0 |
+| alpha-gate | 22 | 0 | 0 |
+| contract-requirement | 855 | 0 | 0 |
 
 ## Alpha gates
 
 | Gate | Status | Current blocker |
 | --- | --- | --- |
-| A01 Cross-platform profile | verified | none |
-| A02 Installable TypeScript SDK | verified | none |
-| A03 Reconnect and replay | verified | none |
+| A01 Cross-platform profile | blocked | external-cross-platform-evidence-missing |
+| A02 Installable TypeScript SDK | blocked | current-evidence-stale |
+| A03 Reconnect and replay | blocked | current-evidence-stale |
 | A04 Real model-plus-Docker loop | blocked | traceability-not-yet-established |
 | A05 Zero permanent container secrets | blocked | traceability-not-yet-established |
 | A06 One writer with fencing | blocked | traceability-not-yet-established |
@@ -64,14 +65,19 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | P07 Phase 7: browser capability | blocked | traceability-not-yet-established |
 | P08 Phase 8: integrations and automation | blocked | traceability-not-yet-established |
 | P09 Phase 9: subagents, memory, and provider breadth | blocked | traceability-not-yet-established |
-| P10 Phase 10: conservative context optimization | verified | none |
+| P10 Phase 10: conservative context optimization | blocked | current-evidence-stale, evidence-requirement-coverage-missing, zero-skip-evidence-missing |
 | P11 Phase 11: cross-platform hardening and alpha release | blocked | traceability-not-yet-established |
 | P12 Phase 12: legacy deletion and beta | blocked | traceability-not-yet-established |
 
 ## Open release-blocking defects
 
+- Critical: 8
+- High: 56
+
+## Defect closures lacking current evidence
+
 - Critical: 0
-- High: 4
+- High: 0
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.
 

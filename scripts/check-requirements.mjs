@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { currentCommit, requirementVerificationFailures } from "./release-truth-lib.mjs";
 import { BASELINE_COMMIT, PLAN_PATH, PLAN_SHA256, extractRequirements } from "./requirements-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -42,33 +42,11 @@ for (const [id, expectedRow] of expected) {
 for (const id of actual.keys()) if (!expected.has(id)) failures.push(`unexpected requirement row ${id}`);
 
 if (!structureOnly) {
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const head = currentCommit(root);
   for (const row of actual.values()) {
     if (!row.required) continue;
     if (verifiedOnly && row.status !== "verified") continue;
-    if (row.status !== "verified") failures.push(`${row.id} is ${row.status}, not verified`);
-    if (row.blockers.length) failures.push(`${row.id} has unresolved blockers: ${row.blockers.join(", ")}`);
-    if (!row.implementationPaths.length) failures.push(`${row.id} lacks production implementation paths`);
-    if (!row.testIds.length) failures.push(`${row.id} lacks runnable test IDs`);
-    if (!row.ciJob) failures.push(`${row.id} lacks a CI job`);
-    if (!row.evidenceArtifacts.length) failures.push(`${row.id} lacks current evidence artifacts`);
-    for (const path of row.implementationPaths) if (!existsSync(resolve(root, path))) failures.push(`${row.id} implementation path is missing: ${path}`);
-    for (const artifact of row.evidenceArtifacts) {
-      if (!artifact?.path || !existsSync(resolve(root, artifact.path))) {
-        failures.push(`${row.id} evidence artifact is missing: ${artifact?.path ?? "undefined"}`);
-        continue;
-      }
-      try {
-        const document = JSON.parse(readFileSync(resolve(root, artifact.path), "utf8"));
-        if (document.commit !== head) failures.push(`${row.id} evidence is stale: ${document.commit ?? "no commit"} != ${head}`);
-        if (document.result !== "pass" || document.skips !== 0 ||
-            (Array.isArray(document.testIds) && !document.testIds.includes(row.id))) {
-          failures.push(`${row.id} evidence is not a zero-skip pass: ${artifact.path}`);
-        }
-      } catch {
-        failures.push(`${row.id} evidence is not valid JSON: ${artifact.path}`);
-      }
-    }
+    failures.push(...requirementVerificationFailures(row, { root, head }).map((failure) => `${row.id} ${failure}`));
   }
 }
 

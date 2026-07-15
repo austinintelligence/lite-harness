@@ -210,8 +210,10 @@
           "path": "evidence/m2/packaged-auth.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "D10",
@@ -241,8 +243,10 @@
           "path": "evidence/m2/packaged-auth.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "D11",
@@ -389,12 +393,25 @@
         "lineStart": 199,
         "lineEnd": 199
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "D18",
@@ -409,12 +426,24 @@
         "lineStart": 200,
         "lineEnd": 201
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "D19",
@@ -451,12 +480,26 @@
         "lineStart": 203,
         "lineEnd": 203
       },
-      "implementationPaths": ["packages/context/src/index.ts", "packages/agent-runtime/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "D21",
@@ -955,15 +998,31 @@
         "lineStart": 2799,
         "lineEnd": 2804
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts", "scripts/evaluate-context.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "scripts/evaluate-context.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
       "evidenceArtifacts": [
-        { "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" },
-        { "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        },
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     },
     {
       "id": "P11",
@@ -1022,12 +1081,14 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": ["packages/mcp/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-045-REGRESSION"],
-      "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "implementationPaths": [],
+      "testIds": [],
+      "ciJob": null,
+      "evidenceArtifacts": [],
+      "status": "blocked",
+      "blockers": [
+        "external-cross-platform-evidence-missing"
+      ]
     },
     {
       "id": "A02",
@@ -1057,8 +1118,10 @@
           "path": "evidence/m1/packaged-artifacts.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "A03",
@@ -1087,8 +1150,10 @@
           "producer": "pnpm test:replay -- --evidence evidence/m2/reconnect-replay.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "A04",
@@ -1807,12 +1872,25 @@
         "lineStart": 488,
         "lineEnd": 488
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "packages/control-plane/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0489",
@@ -2157,12 +2235,25 @@
         "lineStart": 518,
         "lineEnd": 521
       },
-      "implementationPaths": ["packages/contracts/src/index.ts", "packages/control-plane/src/index.ts", "packages/storage-sqlite/src/index.ts"],
-      "testIds": ["BD-048-REGRESSION"],
+      "implementationPaths": [
+        "packages/contracts/src/index.ts",
+        "packages/control-plane/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "BD-048-REGRESSION"
+      ],
       "ciJob": "run-snapshot-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/run-snapshot.json",
+          "producer": "pnpm test:run-snapshot"
+        }
+      ],
       "status": "in-progress",
-      "blockers": ["integration-origin-not-frozen"]
+      "blockers": [
+        "integration-origin-not-frozen"
+      ]
     },
     {
       "id": "R07-0525",
@@ -2199,12 +2290,26 @@
         "lineStart": 526,
         "lineEnd": 526
       },
-      "implementationPaths": ["packages/contracts/src/index.ts", "packages/control-plane/src/index.ts", "packages/storage-sqlite/src/index.ts"],
-      "testIds": ["BD-048-REGRESSION"],
+      "implementationPaths": [
+        "packages/contracts/src/index.ts",
+        "packages/control-plane/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "BD-048-REGRESSION"
+      ],
       "ciJob": "run-snapshot-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/run-snapshot.json",
+          "producer": "pnpm test:run-snapshot"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0527",
@@ -2219,12 +2324,26 @@
         "lineStart": 527,
         "lineEnd": 527
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "packages/agent-runtime/src/index.ts", "packages/control-plane/src/index.ts"],
-      "testIds": ["BD-048-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-048-REGRESSION"
+      ],
       "ciJob": "run-snapshot-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/run-snapshot.json",
+          "producer": "pnpm test:run-snapshot"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0528",
@@ -2239,12 +2358,25 @@
         "lineStart": 528,
         "lineEnd": 528
       },
-      "implementationPaths": ["packages/agent-runtime/src/index.ts", "packages/control-plane/src/index.ts"],
-      "testIds": ["BD-048-REGRESSION"],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-048-REGRESSION"
+      ],
       "ciJob": "run-snapshot-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/run-snapshot.json",
+          "producer": "pnpm test:run-snapshot"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0529",
@@ -2259,12 +2391,25 @@
         "lineStart": 529,
         "lineEnd": 529
       },
-      "implementationPaths": ["packages/agent-runtime/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-048-REGRESSION"],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-048-REGRESSION"
+      ],
       "ciJob": "run-snapshot-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/run-snapshot.json", "producer": "pnpm test:run-snapshot" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/run-snapshot.json",
+          "producer": "pnpm test:run-snapshot"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0530",
@@ -2284,14 +2429,21 @@
         "packages/agent-runtime/src/index.ts",
         "apps/manager/src/main.ts"
       ],
-      "testIds": ["BD-039-REGRESSION"],
+      "testIds": [
+        "BD-039-REGRESSION"
+      ],
       "ciJob": "provider-evidence",
-      "evidenceArtifacts": [{
-        "path": "evidence/m5/provider-conformance.json",
-        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
-      }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0531",
@@ -2311,14 +2463,21 @@
         "packages/agent-runtime/src/index.ts",
         "apps/manager/src/optional-systems.ts"
       ],
-      "testIds": ["BD-039-REGRESSION"],
+      "testIds": [
+        "BD-039-REGRESSION"
+      ],
       "ciJob": "provider-evidence",
-      "evidenceArtifacts": [{
-        "path": "evidence/m5/provider-conformance.json",
-        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
-      }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0532",
@@ -2531,12 +2690,25 @@
         "lineStart": 553,
         "lineEnd": 553
       },
-      "implementationPaths": ["packages/runtime/src/index.ts", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-040-REGRESSION"],
+      "implementationPaths": [
+        "packages/runtime/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-040-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R07-0554",
@@ -5448,8 +5620,10 @@
           "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R12-0894",
@@ -5464,12 +5638,25 @@
         "lineStart": 894,
         "lineEnd": 894
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0895",
@@ -5484,12 +5671,25 @@
         "lineStart": 895,
         "lineEnd": 895
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0896",
@@ -5504,12 +5704,25 @@
         "lineStart": 896,
         "lineEnd": 896
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0897",
@@ -5524,12 +5737,26 @@
         "lineStart": 897,
         "lineEnd": 897
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts", "packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0909",
@@ -5544,12 +5771,24 @@
         "lineStart": 909,
         "lineEnd": 919
       },
-      "implementationPaths": ["packages/skills/src/index.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0921",
@@ -5564,12 +5803,25 @@
         "lineStart": 921,
         "lineEnd": 923
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0925",
@@ -5606,12 +5858,25 @@
         "lineStart": 928,
         "lineEnd": 932
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R12-0934",
@@ -5714,12 +5979,26 @@
         "lineStart": 940,
         "lineEnd": 942
       },
-      "implementationPaths": ["packages/skills/src/index.ts", "apps/manager/src/optional-systems.ts", "packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-044-REGRESSION"],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-044-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R13-0946",
@@ -6804,8 +7083,10 @@
           "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R14-1053",
@@ -7595,14 +7876,21 @@
         "packages/storage-sqlite/src/index.ts",
         "apps/manager/src/main.ts"
       ],
-      "testIds": ["BD-039-REGRESSION"],
+      "testIds": [
+        "BD-039-REGRESSION"
+      ],
       "ciJob": "provider-evidence",
-      "evidenceArtifacts": [{
-        "path": "evidence/m5/provider-conformance.json",
-        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
-      }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R14-1243",
@@ -7622,14 +7910,21 @@
         "packages/agent-runtime/src/index.ts",
         "apps/manager/src/optional-systems.ts"
       ],
-      "testIds": ["BD-039-REGRESSION"],
+      "testIds": [
+        "BD-039-REGRESSION"
+      ],
       "ciJob": "provider-evidence",
-      "evidenceArtifacts": [{
-        "path": "evidence/m5/provider-conformance.json",
-        "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
-      }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R14-1244",
@@ -7703,8 +7998,10 @@
           "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R14-1272",
@@ -7777,8 +8074,10 @@
           "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R14-1282",
@@ -8343,12 +8642,25 @@
         "lineStart": 1408,
         "lineEnd": 1408
       },
-      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1410",
@@ -8363,12 +8675,25 @@
         "lineStart": 1410,
         "lineEnd": 1410
       },
-      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1411",
@@ -8383,12 +8708,24 @@
         "lineStart": 1411,
         "lineEnd": 1411
       },
-      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1412",
@@ -8403,12 +8740,25 @@
         "lineStart": 1412,
         "lineEnd": 1412
       },
-      "implementationPaths": ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1413",
@@ -8423,12 +8773,24 @@
         "lineStart": 1413,
         "lineEnd": 1413
       },
-      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1414",
@@ -8443,12 +8805,24 @@
         "lineStart": 1414,
         "lineEnd": 1414
       },
-      "implementationPaths": ["apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-049-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-049-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R15-1416",
@@ -8837,12 +9211,25 @@
         "lineStart": 1497,
         "lineEnd": 1497
       },
-      "implementationPaths": ["packages/mcp/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-045-REGRESSION"],
+      "implementationPaths": [
+        "packages/mcp/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-045-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R16-1498",
@@ -8901,12 +9288,26 @@
         "lineStart": 1500,
         "lineEnd": 1500
       },
-      "implementationPaths": ["packages/mcp/src/index.ts", "apps/manager/src/optional-systems.ts", "packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-045-REGRESSION"],
+      "implementationPaths": [
+        "packages/mcp/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-045-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R16-1501",
@@ -9757,12 +10158,25 @@
         "lineStart": 1660,
         "lineEnd": 1661
       },
-      "implementationPaths": ["apps/manager/src/optional-systems.ts", "packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts",
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1674",
@@ -9777,12 +10191,24 @@
         "lineStart": 1674,
         "lineEnd": 1674
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1675",
@@ -9797,12 +10223,25 @@
         "lineStart": 1675,
         "lineEnd": 1675
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1676",
@@ -9839,12 +10278,26 @@
         "lineStart": 1678,
         "lineEnd": 1678
       },
-      "implementationPaths": ["apps/manager/src/optional-systems.ts", "docs/pxpipe-paired-evaluation.json"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts",
+        "docs/pxpipe-paired-evaluation.json"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     },
     {
       "id": "R18-1682",
@@ -9859,12 +10312,25 @@
         "lineStart": 1682,
         "lineEnd": 1683
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1696",
@@ -9879,12 +10345,25 @@
         "lineStart": 1696,
         "lineEnd": 1696
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1697",
@@ -9899,12 +10378,24 @@
         "lineStart": 1697,
         "lineEnd": 1697
       },
-      "implementationPaths": ["packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1698",
@@ -9919,12 +10410,24 @@
         "lineStart": 1698,
         "lineEnd": 1698
       },
-      "implementationPaths": ["packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1699",
@@ -9939,12 +10442,24 @@
         "lineStart": 1699,
         "lineEnd": 1699
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1700",
@@ -9981,12 +10496,24 @@
         "lineStart": 1701,
         "lineEnd": 1701
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1702",
@@ -10001,12 +10528,24 @@
         "lineStart": 1702,
         "lineEnd": 1702
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1708",
@@ -10021,12 +10560,25 @@
         "lineStart": 1708,
         "lineEnd": 1708
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1709",
@@ -10041,12 +10593,24 @@
         "lineStart": 1709,
         "lineEnd": 1709
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1710",
@@ -10061,12 +10625,24 @@
         "lineStart": 1710,
         "lineEnd": 1710
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1711",
@@ -10081,12 +10657,25 @@
         "lineStart": 1711,
         "lineEnd": 1711
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1718",
@@ -10101,12 +10690,26 @@
         "lineStart": 1718,
         "lineEnd": 1718
       },
-      "implementationPaths": ["scripts/evaluate-context.ts", "docs/pxpipe-paired-evaluation.json"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "scripts/evaluate-context.ts",
+        "docs/pxpipe-paired-evaluation.json"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     },
     {
       "id": "R18-1719",
@@ -10121,12 +10724,26 @@
         "lineStart": 1719,
         "lineEnd": 1719
       },
-      "implementationPaths": ["package.json", "pnpm-lock.yaml", "packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1720",
@@ -10141,12 +10758,24 @@
         "lineStart": 1720,
         "lineEnd": 1720
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1721",
@@ -10161,12 +10790,25 @@
         "lineStart": 1721,
         "lineEnd": 1721
       },
-      "implementationPaths": ["packages/context/src/index.ts", "packages/agent-runtime/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1722",
@@ -10181,15 +10823,31 @@
         "lineStart": 1722,
         "lineEnd": 1722
       },
-      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts", "scripts/evaluate-context.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "scripts/evaluate-context.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
       "evidenceArtifacts": [
-        { "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" },
-        { "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        },
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     },
     {
       "id": "R18-1723",
@@ -10204,12 +10862,24 @@
         "lineStart": 1723,
         "lineEnd": 1723
       },
-      "implementationPaths": ["packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R18-1724",
@@ -10224,12 +10894,26 @@
         "lineStart": 1724,
         "lineEnd": 1725
       },
-      "implementationPaths": ["docs/adr/0048-pxpipe-version-and-evaluation.md", "docs/pxpipe-paired-evaluation.json"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "docs/adr/0048-pxpipe-version-and-evaluation.md",
+        "docs/pxpipe-paired-evaluation.json"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     },
     {
       "id": "R18-1730",
@@ -10244,10 +10928,21 @@
         "lineStart": 1730,
         "lineEnd": 1731
       },
-      "implementationPaths": ["packages/agent-runtime/src/index.ts", "packages/provider-core/src/index.ts", "packages/context/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "packages/provider-core/src/index.ts",
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
       "status": "blocked",
       "blockers": [
         "automatic-canonical-recompile-after-fallback-selection-not-implemented"
@@ -11080,12 +11775,26 @@
         "lineStart": 1822,
         "lineEnd": 1822
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime/src/index.ts"],
-      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile",
+        "packages/runtime/src/index.ts"
+      ],
+      "testIds": [
+        "BD-040-REGRESSION",
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1824",
@@ -11100,12 +11809,26 @@
         "lineStart": 1824,
         "lineEnd": 1824
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-040-REGRESSION",
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1825",
@@ -11120,12 +11843,26 @@
         "lineStart": 1825,
         "lineEnd": 1825
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-040-REGRESSION",
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1826",
@@ -11140,12 +11877,24 @@
         "lineStart": 1826,
         "lineEnd": 1826
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile"],
-      "testIds": ["BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile"
+      ],
+      "testIds": [
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1827",
@@ -11182,12 +11931,26 @@
         "lineStart": 1828,
         "lineEnd": 1828
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-040-REGRESSION",
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1829",
@@ -11202,12 +11965,24 @@
         "lineStart": 1829,
         "lineEnd": 1829
       },
-      "implementationPaths": ["docker/tool-runtime/Dockerfile"],
-      "testIds": ["BD-041-REGRESSION"],
+      "implementationPaths": [
+        "docker/tool-runtime/Dockerfile"
+      ],
+      "testIds": [
+        "BD-041-REGRESSION"
+      ],
       "ciJob": "docker-policy-evidence",
-      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R19-1830",
@@ -11742,8 +12517,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R21-1898",
@@ -11795,8 +12572,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R21-1900",
@@ -11826,8 +12605,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R21-1902",
@@ -12084,12 +12865,25 @@
         "lineStart": 1941,
         "lineEnd": 1941
       },
-      "implementationPaths": ["packages/control-plane/src/index.ts", "packages/workspace/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1942",
@@ -12104,12 +12898,25 @@
         "lineStart": 1942,
         "lineEnd": 1942
       },
-      "implementationPaths": ["packages/runtime-docker/src/index.ts", "packages/workspace/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/runtime-docker/src/index.ts",
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1943",
@@ -12234,12 +13041,25 @@
         "lineStart": 1948,
         "lineEnd": 1948
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-015-REGRESSION", "BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-015-REGRESSION",
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1949",
@@ -12254,12 +13074,24 @@
         "lineStart": 1949,
         "lineEnd": 1949
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-016-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-016-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1950",
@@ -12274,12 +13106,24 @@
         "lineStart": 1950,
         "lineEnd": 1950
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-016-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-016-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1951",
@@ -12294,12 +13138,25 @@
         "lineStart": 1951,
         "lineEnd": 1951
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1958",
@@ -12314,12 +13171,25 @@
         "lineStart": 1958,
         "lineEnd": 1958
       },
-      "implementationPaths": ["packages/control-plane/src/index.ts", "apps/manager/src/main.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R22-1960",
@@ -12818,12 +13688,24 @@
         "lineStart": 2014,
         "lineEnd": 2016
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2020",
@@ -12838,12 +13720,25 @@
         "lineStart": 2020,
         "lineEnd": 2020
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2021",
@@ -12858,12 +13753,25 @@
         "lineStart": 2021,
         "lineEnd": 2021
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2022",
@@ -12878,12 +13786,24 @@
         "lineStart": 2022,
         "lineEnd": 2022
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2023",
@@ -12920,12 +13840,24 @@
         "lineStart": 2024,
         "lineEnd": 2024
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2025",
@@ -12940,12 +13872,24 @@
         "lineStart": 2025,
         "lineEnd": 2025
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2026",
@@ -12960,12 +13904,24 @@
         "lineStart": 2026,
         "lineEnd": 2026
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2027",
@@ -13002,12 +13958,24 @@
         "lineStart": 2031,
         "lineEnd": 2031
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2032",
@@ -13022,12 +13990,24 @@
         "lineStart": 2032,
         "lineEnd": 2032
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2033",
@@ -13042,12 +14022,25 @@
         "lineStart": 2033,
         "lineEnd": 2033
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2034",
@@ -13084,12 +14077,24 @@
         "lineStart": 2035,
         "lineEnd": 2035
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R23-2037",
@@ -13317,8 +14322,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R24-2070",
@@ -13346,8 +14353,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R24-2071",
@@ -13692,12 +14701,24 @@
         "lineStart": 2099,
         "lineEnd": 2099
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R25-2100",
@@ -13725,8 +14746,10 @@
           "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R25-2101",
@@ -14489,12 +15512,25 @@
         "lineStart": 2152,
         "lineEnd": 2152
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-016-REGRESSION", "BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-016-REGRESSION",
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R26-2153",
@@ -14971,12 +16007,26 @@
         "lineStart": 2181,
         "lineEnd": 2181
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts"],
-      "testIds": ["BD-016-REGRESSION", "BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "BD-016-REGRESSION",
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R27-2182",
@@ -14991,12 +16041,24 @@
         "lineStart": 2182,
         "lineEnd": 2182
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R27-2183",
@@ -15341,12 +16403,25 @@
         "lineStart": 2207,
         "lineEnd": 2207
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R27-2208",
@@ -15361,12 +16436,24 @@
         "lineStart": 2208,
         "lineEnd": 2208
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-016-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-016-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R27-2209",
@@ -15592,8 +16679,10 @@
           "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R27-2232",
@@ -15666,8 +16755,10 @@
           "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R27-2235",
@@ -15697,8 +16788,10 @@
           "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R27-2236",
@@ -15749,8 +16842,10 @@
           "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R27-2238",
@@ -16855,8 +17950,10 @@
           "path": "evidence/m2/migrations.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R29-2321",
@@ -17986,8 +19083,10 @@
           "producer": "pnpm test:integrations -- --evidence evidence/m8/integration-authenticity.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R32-2506",
@@ -18420,12 +19519,24 @@
         "lineStart": 2875,
         "lineEnd": 2875
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2876",
@@ -18462,12 +19573,25 @@
         "lineStart": 2877,
         "lineEnd": 2877
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-015-REGRESSION", "BD-016-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-015-REGRESSION",
+        "BD-016-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2878",
@@ -18607,8 +19731,10 @@
           "producer": "pnpm test:providers -- --evidence evidence/m5/provider-conformance.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R34-2884",
@@ -18843,12 +19969,26 @@
         "lineStart": 2897,
         "lineEnd": 2897
       },
-      "implementationPaths": ["packages/workspace/src/index.ts", "packages/runtime-docker/src/index.ts", "packages/control-plane/src/index.ts"],
-      "testIds": ["BD-047-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-047-REGRESSION"
+      ],
       "ciJob": "workspace-lifecycle-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m4/automatic-workspace-lifecycle.json", "producer": "pnpm test:workspace-lifecycle" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2898",
@@ -18922,8 +20062,10 @@
           "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
         }
       ],
-      "status": "verified",
-      "blockers": []
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale"
+      ]
     },
     {
       "id": "R34-2901",
@@ -18982,12 +20124,24 @@
         "lineStart": 2903,
         "lineEnd": 2903
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2904",
@@ -19068,12 +20222,24 @@
         "lineStart": 2907,
         "lineEnd": 2907
       },
-      "implementationPaths": ["packages/mcp/src/index.ts"],
-      "testIds": ["BD-045-REGRESSION"],
+      "implementationPaths": [
+        "packages/mcp/src/index.ts"
+      ],
+      "testIds": [
+        "BD-045-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2908",
@@ -19682,12 +20848,24 @@
         "lineStart": 2941,
         "lineEnd": 2941
       },
-      "implementationPaths": ["packages/workspace/src/index.ts"],
-      "testIds": ["BD-046-REGRESSION"],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-046-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": [{ "path": "evidence/m9/optional-composition.json", "producer": "pnpm test:optional-systems" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2942",
@@ -19878,12 +21056,25 @@
         "lineStart": 2951,
         "lineEnd": 2951
       },
-      "implementationPaths": ["packages/mcp/src/index.ts", "apps/manager/src/optional-systems.ts"],
-      "testIds": ["BD-045-REGRESSION"],
+      "implementationPaths": [
+        "packages/mcp/src/index.ts",
+        "apps/manager/src/optional-systems.ts"
+      ],
+      "testIds": [
+        "BD-045-REGRESSION"
+      ],
       "ciJob": "optional-system-evidence",
-      "evidenceArtifacts": ["evidence/m9/optional-composition.json"],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing"
+      ]
     },
     {
       "id": "R34-2952",
@@ -20316,12 +21507,27 @@
         "lineStart": 2989,
         "lineEnd": 2990
       },
-      "implementationPaths": ["scripts/evaluate-context.ts", "docs/pxpipe-paired-evaluation.json", "packages/provider-core/src/index.ts"],
-      "testIds": ["BD-050-REGRESSION"],
+      "implementationPaths": [
+        "scripts/evaluate-context.ts",
+        "docs/pxpipe-paired-evaluation.json",
+        "packages/provider-core/src/index.ts"
+      ],
+      "testIds": [
+        "BD-050-REGRESSION"
+      ],
       "ciJob": "context-optimization-evidence",
-      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
-      "status": "verified",
-      "blockers": []
+      "evidenceArtifacts": [
+        {
+          "path": "docs/pxpipe-paired-evaluation.json",
+          "producer": "pnpm evaluate:pxpipe:hermes"
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "current-evidence-stale",
+        "evidence-requirement-coverage-missing",
+        "zero-skip-evidence-missing"
+      ]
     }
   ]
 }

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "baseline-drift-0bcdb123335e-win32-x64",
+  "capturedAt": "2026-07-15T17:42:14.3262887Z",
+  "branch": "lite-main",
+  "reviewedCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa",
+  "resumedCommit": "0bcdb123335e5883d66287643b22ab707d2893bb",
+  "remoteCommit": "0bcdb123335e5883d66287643b22ab707d2893bb",
+  "cleanBeforeWork": true,
+  "reviewedCommitIsAncestor": true,
+  "commitsSinceReview": 110,
+  "openClawAncestor": "834810b3d6e367cbdf69b4c822d220f1a150b14c",
+  "openClawAncestryVerified": true,
+  "architectureContract": {
+    "path": "LITE_HARNESS_ARCHITECTURE_PLAN.md",
+    "lines": 3222,
+    "sha256": "cfdddc9214ff0192d48bf899b70947f35937945e7c1403b5b59a85f454f2408f"
+  },
+  "frozenReproductionDisposition": {
+    "result": "not-rerunnable-after-fixes",
+    "reason": "The reproduction runner requires all 64 baseline invariants to fail; fixed invariants now pass and a partial failure set is rejected.",
+    "replacementProof": "Run every mapped regression suite and capture fresh zero-skip release-candidate evidence."
+  },
+  "verification": {
+    "command": "pnpm verify",
+    "result": "fail",
+    "typecheck": "pass",
+    "boundaries": { "result": "pass", "files": 39 },
+    "repositoryHygiene": { "result": "pass", "trackedFiles": 299 },
+    "vitest": { "result": "pass", "files": 49, "tests": 162, "failures": 0, "skips": 0 },
+    "truthStructure": {
+      "result": "fail",
+      "reason": "13 alpha-ledger evidence references used a legacy string shape that violated schemas/alpha-ledger.schema.json."
+    }
+  }
+}

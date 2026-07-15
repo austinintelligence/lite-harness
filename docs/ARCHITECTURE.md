@@ -1,5 +1,11 @@
 # Architecture
 
+> **NOT YET A VERIFIED ALPHA.** This document describes the contracted target
+> architecture and partially integrated call paths. It is not evidence that a
+> capability or platform is release-supported. Current proof and blockers are
+> generated in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and
+> [../BLOCKERS.md](../BLOCKERS.md).
+
 Lite-Harness keeps five durable concepts separate: Agent, Session, Workspace,
 Run, and Runtime. A container is never the owner of conversation or workspace
 state.

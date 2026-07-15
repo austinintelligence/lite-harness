@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const required = [
-  "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "UPSTREAM.md",
+  "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "UPSTREAM.md", "BLOCKERS.md",
   "PROVENANCE.json", "THIRD_PARTY_NOTICES.md", "docs/ARCHITECTURE.md",
   "docs/API.md", "docs/BROWSER.md", "docs/INTEGRATIONS.md", "docs/THREAT_MODEL.md", "docs/RECOVERY.md",
   "docs/OPERATIONS.md", "docs/TESTING.md", "docs/CONTEXT_OPTIMIZATION.md", "docs/SUBAGENTS_AND_MEMORY.md",
@@ -12,6 +12,8 @@ const required = [
   "docs/adr/README.md", "docs/adr/RESEARCH.md", "docs/adr/0001-node-typescript-stack.md",
   "docs/adr/0032-behavior-defined-compatibility.md", "docs/adr/0052-alpha-scope-and-preview-boundaries.md",
   "docs/requirements/alpha-ledger.yaml", "docs/requirements/defect-ledger.yaml",
+  "docs/requirements/BASELINE_DRIFT.md",
+  "evidence/baseline/0bcdb123335e5883d66287643b22ab707d2893bb/drift.json",
   "docs/performance-baseline.json", "docs/pxpipe-evaluation.json", "docs/pxpipe-paired-evaluation.json",
   "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json",
   "evidence/baseline/f9d522289b500174e4e387b6078f907ea4ac56fa/baseline.json",
@@ -52,8 +54,13 @@ const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8
 for (const command of [
   "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
   "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure",
+  "pnpm check:requirements:verified", "pnpm check:defects:closed",
 ]) {
   if (!ciWorkflow.includes(command)) failures.push(`CI is missing required branch command: ${command}`);
+}
+if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("actions/download-artifact@") ||
+    !ciWorkflow.includes("Require every candidate evidence producer") || !ciWorkflow.includes("pnpm assemble:ci-evidence")) {
+  failures.push("CI lacks a fail-closed candidate evidence fan-in");
 }
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
@@ -99,6 +106,8 @@ if (existsSync(resolve(root, "sdks/python/pyproject.toml"))) {
   const pythonManifest = readFileSync(resolve(root, "sdks/python/pyproject.toml"), "utf8");
   if (!/version\s*=\s*"[^"]*(?:a|alpha|dev|rc)[^"]*"/i.test(pythonManifest)) failures.push("Python SDK must remain a prerelease");
 }
+const architecture = readFileSync(resolve(root, "docs/ARCHITECTURE.md"), "utf8");
+if (!architecture.includes("NOT YET A VERIFIED ALPHA")) failures.push("architecture documentation lacks an evidence-qualified alpha warning");
 
 validateOpenApiSemantics();
 validateArtifactInstallability();

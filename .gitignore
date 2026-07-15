@@ -38,6 +38,7 @@ junit.xml
 .codex/
 .review-artifacts/
 .audit/
+.candidate-evidence/
 .env
 .env.*
 !.env.example

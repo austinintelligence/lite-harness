@@ -2341,7 +2341,7 @@
         "section": "Known baseline defects / 62",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "fix-in-progress",
       "reproduction": {
         "testId": "BD-062-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2355,13 +2355,17 @@
       },
       "regression": {
         "testId": "BD-062-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/observability.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m11/observability.json"
+        }
       },
-      "fixCommits": [],
+      "fixCommits": [
+        "b4b0a9d772ad1903f34fcdf1c354e1d6f2f1ce01"
+      ],
       "blockers": [
-        "regression-fix-required"
+        "substantive-regression-gap"
       ]
     },
     {

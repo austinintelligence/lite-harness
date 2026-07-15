@@ -19,6 +19,7 @@ try {
     "test/idempotency.test.ts",
     "test/owner-scoped-identities.test.ts",
     "test/session-history.test.ts",
+    "test/queue-deadline.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -56,9 +57,10 @@ function writeEvidence(output, report) {
       opaqueInternalIdentityReferences: true,
       newestSessionHistoryWindow: true,
       structuredAssistantToolCalls: true,
+      acceptedToTerminalDeadline: true,
     },
     testIds: [
-      "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-013-REGRESSION",
+      "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-012-REGRESSION", "BD-013-REGRESSION",
       "BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320",
     ],
   };

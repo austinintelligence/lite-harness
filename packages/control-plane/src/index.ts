@@ -276,9 +276,29 @@ export class RunService {
   }
 
   #enqueue(run: RunRecord): void {
-    const keys = [`workspace:${run.workspaceId}`, ...(run.sessionId ? [`session:${run.sessionId}`] : [])].sort();
+    if (!this.#transitionIfActive(run.id, "QUEUED", "run.queued")) return;
+    const owner = ownerQueuePrefix(run);
+    const keys = [
+      `${owner}:workspace:${run.workspaceId}`,
+      ...(run.sessionId ? [`${owner}:session:${run.sessionId}`] : []),
+    ].sort();
     const predecessors = keys.map((key) => this.#queueTails.get(key) ?? Promise.resolve());
-    const execution = Promise.allSettled(predecessors).then(() => this.#execute(run.id));
+    const remainingMs = acceptedDeadline(run) - Date.now();
+    if (remainingMs <= 0) {
+      this.#timeoutQueuedRun(run.id, run.budget.totalTimeoutMs);
+      return;
+    }
+    const queueTimeout = setTimeout(
+      () => this.#timeoutQueuedRun(run.id, run.budget.totalTimeoutMs),
+      remainingMs,
+    );
+    queueTimeout.unref?.();
+    const execution = Promise.allSettled(predecessors).then(async () => {
+      clearTimeout(queueTimeout);
+      const current = this.getRun(run.id);
+      if (!current || isTerminalRunStatus(current.status)) return;
+      await this.#execute(run.id);
+    });
     const tail = execution.catch(() => undefined);
     for (const key of keys) this.#queueTails.set(key, tail);
     void tail.finally(() => {
@@ -293,18 +313,19 @@ export class RunService {
     let attempt: RunAttemptRecord | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      attempt = this.store.createRunAttempt(runId, createId("att"));
-      if (!this.#transitionIfActive(runId, "QUEUED", "run.queued")) return;
-      if (!this.#transitionIfActive(runId, "PREPARING", "run.preparing")) return;
-
       const run = this.getRun(runId);
-      if (!run) {
-        throw new Error(`Run disappeared: ${runId}`);
+      if (!run) throw new Error(`Run disappeared: ${runId}`);
+      const remainingMs = acceptedDeadline(run) - Date.now();
+      if (remainingMs <= 0) {
+        this.#timeoutQueuedRun(run.id, run.budget.totalTimeoutMs);
+        return;
       }
+      attempt = this.store.createRunAttempt(runId, createId("att"));
+      if (!this.#transitionIfActive(runId, "PREPARING", "run.preparing")) return;
 
       timeout = setTimeout(
         () => controller.abort(new RunTimeoutError(run.budget.totalTimeoutMs)),
-        run.budget.totalTimeoutMs,
+        remainingMs,
       );
       timeout.unref?.();
 
@@ -390,6 +411,17 @@ export class RunService {
         this.store.completeRunAttempt(attempt.id, attemptStatus);
       }
     }
+  }
+
+  #timeoutQueuedRun(runId: string, timeoutMs: number): void {
+    const run = this.getRun(runId);
+    if (!run || run.status !== "QUEUED") return;
+    this.#transition(runId, "TIMED_OUT", "run.timed_out", {
+      code: "run_timeout",
+      message: new RunTimeoutError(timeoutMs).message,
+      retryable: true,
+      phase: "queue",
+    });
   }
 
   #takeSteering(runId: string): ModelMessage[] {
@@ -570,6 +602,16 @@ class BudgetExceededError extends Error {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function acceptedDeadline(run: RunRecord): number {
+  const acceptedAt = Date.parse(run.createdAt);
+  if (!Number.isFinite(acceptedAt)) throw new Error(`Run has an invalid accepted timestamp: ${run.id}`);
+  return acceptedAt + run.budget.totalTimeoutMs;
+}
+
+function ownerQueuePrefix(run: RunRecord): string {
+  return `${run.appId.length}:${run.appId}:${run.tenantId.length}:${run.tenantId}:${run.userId.length}:${run.userId}`;
 }
 
 function remainingChildBudget(parent: RunRecord, children: readonly RunRecord[]): RunRecord["budget"] {

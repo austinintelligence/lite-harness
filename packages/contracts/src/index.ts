@@ -424,7 +424,6 @@ export interface ArtifactRecord {
 export const PublishArtifactRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4_096 }),
   mediaType: Type.String({ minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$" }),
-  dataBase64: Type.String({ minLength: 4, maxLength: 24 * 1024 * 1024, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }),
 }, { additionalProperties: false });
 
 export type PublishArtifactRequest = Static<typeof PublishArtifactRequestSchema>;
@@ -432,7 +431,6 @@ export type PublishArtifactRequest = Static<typeof PublishArtifactRequestSchema>
 export const InternalPublishArtifactRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4_096 }),
   mediaType: Type.String({ minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$" }),
-  dataBase64: Type.String({ minLength: 4, maxLength: 24 * 1024 * 1024, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }),
   principal: InternalPrincipalSchema,
 }, { additionalProperties: false });
 

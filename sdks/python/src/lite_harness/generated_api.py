@@ -68,7 +68,6 @@ class RevokeTokenResponse(TypedDict):
 class PublishArtifact(TypedDict):
     path: str
     mediaType: str
-    dataBase64: str
 
 API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/healthz", "getHealthz"),

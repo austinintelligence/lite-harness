@@ -1153,6 +1153,21 @@ export class SqliteRunStore implements RunStore {
     }
   }
 
+  getWorkspaceLease(workspaceId: string, runId: string): WorkspaceLease | undefined {
+    const row = this.#database.prepare(`
+      SELECT l.workspace_internal_id AS workspace_id, l.owner_run_id, l.fencing_token, l.expires_at
+      FROM workspace_leases l
+      JOIN runs r ON r.workspace_internal_id = l.workspace_internal_id
+      WHERE r.id = ? AND r.workspace_id = ? AND l.owner_run_id = ?
+    `).get(runId, workspaceId, runId) as LeaseRow | undefined;
+    return row ? {
+      workspaceId,
+      ownerRunId: row.owner_run_id as string,
+      fencingToken: row.fencing_token,
+      expiresAt: row.expires_at as string,
+    } : undefined;
+  }
+
   validateWorkspaceLease(lease: WorkspaceLease): boolean {
     const row = this.#database
       .prepare(`SELECT l.workspace_internal_id AS workspace_id, l.owner_run_id, l.fencing_token, l.expires_at

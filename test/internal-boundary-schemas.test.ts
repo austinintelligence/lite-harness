@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { RunService } from "@lite-harness/control-plane";
-import type { LocalArtifactStore } from "@lite-harness/workspace";
+import { LocalArtifactStore } from "@lite-harness/workspace";
 import { buildManagerServer } from "../apps/manager/src/server.js";
 
 const servers: Array<ReturnType<typeof buildManagerServer>> = [];
@@ -40,5 +43,46 @@ describe("authoritative boundary schemas", () => {
     expect(valid.statusCode).toBe(202);
     expect(createRun).toHaveBeenCalledOnce();
 
+  });
+
+  it("BD-035-REGRESSION rejects caller bytes and promotes only a reader-owned workspace path", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-artifact-boundary-"));
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["artifacts:publish"] };
+    const run = { id: "run-artifact", workspaceId: "workspace-artifact", appId: principal.appId, tenantId: principal.tenantId, userId: principal.userId };
+    const lease = { workspaceId: run.workspaceId, ownerRunId: run.id, fencingToken: 7, expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    const reader = vi.fn(async () => Buffer.from("managed workspace bytes"));
+    const runService = {
+      getRun: () => run,
+      listRunAttempts: () => [{ id: "attempt-artifact", status: "RUNNING" }],
+      getWorkspaceLease: () => lease,
+      validateWorkspaceLease: () => true,
+    } as unknown as RunService;
+    const artifactStore = new LocalArtifactStore(join(directory, "artifacts"), Buffer.alloc(32, 8));
+    const server = buildManagerServer({
+      runService,
+      internalToken: "internal-artifact-token",
+      artifactStore,
+      readWorkspaceArtifact: reader,
+      productionReadinessChecks: async () => ({}),
+    });
+    servers.push(server);
+    const headers = { "x-lite-internal-token": "internal-artifact-token", "x-lite-ipc-version": "1" };
+    const valid = await server.inject({
+      method: "POST", url: `/internal/runs/${run.id}/artifacts`, headers,
+      payload: { path: "reports/result.txt", mediaType: "text/plain", principal },
+    });
+    expect(valid.statusCode).toBe(201);
+    expect(reader).toHaveBeenCalledWith(expect.objectContaining({
+      runId: run.id, attemptId: "attempt-artifact", fencingToken: 7, path: "reports/result.txt", maxBytes: 16 * 1024 * 1024,
+    }));
+    const record = valid.json<{ id: string; sizeBytes: number }>();
+    expect(record.sizeBytes).toBe(Buffer.byteLength("managed workspace bytes"));
+    expect(artifactStore.get(record.id, principal)?.data.toString()).toBe("managed workspace bytes");
+    const forged = await server.inject({
+      method: "POST", url: `/internal/runs/${run.id}/artifacts`, headers,
+      payload: { path: "reports/forged.txt", mediaType: "text/plain", dataBase64: Buffer.from("forged").toString("base64"), principal },
+    });
+    expect(forged.statusCode).toBe(400);
+    rmSync(directory, { recursive: true, force: true });
   });
 });

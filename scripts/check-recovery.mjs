@@ -13,7 +13,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   const vitest = spawnSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/workspace.test.ts", "test/runtime.test.ts",
+    "run", "test/workspace.test.ts", "test/runtime.test.ts", "test/internal-boundary-schemas.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -30,10 +30,9 @@ try {
       requirementIds: ["R21-1897", "R21-1899", "R21-1900", "R24-2069", "R24-2070", "R25-2100"],
       regressionIds: [
         "BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION",
-        "BD-034-REGRESSION",
+        "BD-034-REGRESSION", "BD-035-REGRESSION",
       ],
       claims: {
-        knownOpenGap: "BD-035 public artifact publication still accepts caller-supplied bytes instead of only a managed workspace path",
         boundaries: {
           snapshotIdentityAuthenticatedAsAad: true,
           stagedGenerationVerifiedBeforeRotation: true,
@@ -45,6 +44,8 @@ try {
           registeredBindRootsCanonicalAndNonsensitive: true,
           artifactSourceReadFromOwnedWorkspace: true,
           artifactBlobEncryptedAndMetadataTransactional: true,
+          artifactPublicAndInternalBoundariesRejectCallerBytes: true,
+          artifactPromotionRequiresActiveWorkspaceLease: true,
         },
       },
     });

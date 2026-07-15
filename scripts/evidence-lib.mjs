@@ -317,7 +317,7 @@ function sanitizedVitestProof(root, report) {
       status: normalizedCaseStatus(suite.status),
       durationMs: finiteDuration(suite.endTime - suite.startTime),
       cases: (suite.assertionResults ?? []).map((item) => ({
-        name: item.fullName || item.title || "unnamed assertion",
+        name: sanitizeCaseName(item.fullName || item.title || "unnamed assertion"),
         status: normalizedCaseStatus(item.status),
         durationMs: finiteDuration(item.duration),
       })),
@@ -331,6 +331,15 @@ function proofCases(proof) {
     name: item.name,
     status: item.status,
   })));
+}
+
+function sanitizeCaseName(value) {
+  return String(value)
+    .replace(/(?:file:\/\/\/)?[A-Za-z]:[\\/][^\s"'<>)]*/gi, "<redacted-path>")
+    .replace(/\\\\(?:[?.]\\)?[^\\/\s]+[\\/][^\s"'<>)]*/g, "<redacted-path>")
+    .replace(/(^|[^A-Za-z0-9_])\/(?!\/)[A-Za-z0-9._~-]+(?:[\\/][^\s"'<>)]*)?/g, "$1<redacted-path>")
+    .replace(/\b(?:gh[opusr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9_-]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{32,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\b/g, "<redacted-secret>")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{20,}\b/gi, "Bearer <redacted-secret>");
 }
 
 function policyCases(assertions, caseBindings, sourcePath) {

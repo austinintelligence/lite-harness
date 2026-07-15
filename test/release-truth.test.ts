@@ -226,6 +226,31 @@ describe("release truth", () => {
     expect(validateEvidenceDocument(document)).toEqual([]);
   });
 
+  it("redacts unsafe path and token substrings from execution case names", () => {
+    const outputRoot = fixtureRoot();
+    const output = join(outputRoot, "case-name-redaction.json");
+    const document = writeVitestEvidence({
+      root: process.cwd(), output, suite: "case-name-redaction", command: "pnpm test:case-name-redaction",
+      requirementIds: ["A02"], facts: evidenceFacts({ job: "candidate-evidence" }),
+      report: {
+        numTotalTests: 1, numPassedTests: 1, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0, success: true,
+        testResults: [{
+          name: join(process.cwd(), "test", "case-name-redaction.test.ts"), status: "passed", startTime: 1, endTime: 2,
+          assertionResults: [{
+            fullName: "redaction path=[/home/alice/private.txt] token=github" + "_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890",
+            status: "passed", duration: 1,
+          }],
+        }],
+      },
+    });
+    const serialized = readFileSync(output, "utf8");
+    expect(serialized).not.toContain("/home/alice/private.txt");
+    expect(serialized).not.toContain("github_pat_");
+    expect(serialized).toContain("<redacted-path>");
+    expect(serialized).toContain("<redacted-secret>");
+    expect(validateEvidenceDocument(document)).toEqual([]);
+  });
+
   it("makes the explicit CI evidence scan reject embedded paths and current token formats", () => {
     const root = fixtureRoot();
     const path = join(root, "unsafe-evidence.json");

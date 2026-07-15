@@ -267,6 +267,14 @@ export class RunService {
     return this.store.listRunAttempts(runId);
   }
 
+  getWorkspaceLease(runId: string, workspaceId: string): WorkspaceLease | undefined {
+    return this.store.getWorkspaceLease(workspaceId, runId);
+  }
+
+  validateWorkspaceLease(lease: WorkspaceLease): boolean {
+    return this.store.validateWorkspaceLease(lease);
+  }
+
   async waitForEvents(runId: string, after: number, waitMs = 1_000, signal?: AbortSignal): Promise<RunEvent[]> {
     signal?.throwIfAborted();
     const immediate = this.listEvents(runId, after);

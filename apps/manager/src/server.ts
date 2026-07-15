@@ -36,6 +36,15 @@ export interface ManagerServerOptions {
   internalToken: string;
   instanceId?: string;
   artifactStore?: LocalArtifactStore;
+  readWorkspaceArtifact?: (params: {
+    runId: string;
+    workspaceId: string;
+    attemptId: string;
+    fencingToken: number;
+    principal: InternalPrincipal;
+    path: string;
+    maxBytes: number;
+  }) => Promise<Buffer>;
   integrationRouter?: InboundRunRouter;
   integrationStore?: SqliteIntegrationStore;
   webhookSecret?: (accountId: string) => Promise<Buffer | undefined>;
@@ -253,19 +262,24 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
 
   app.post<{ Params: { runId: string }; Body: InternalPublishArtifactRequest }>(
     "/internal/runs/:runId/artifacts",
-    { bodyLimit: 24 * 1024 * 1024 },
+    { bodyLimit: 64 * 1024 },
     async (request, reply) => {
-      if (!options.artifactStore || !Value.Check(InternalPublishArtifactRequestSchema, request.body)) {
+      if (!options.artifactStore || !options.readWorkspaceArtifact || !Value.Check(InternalPublishArtifactRequestSchema, request.body)) {
         return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
       }
       const run = options.runService.getRun(request.params.runId);
       if (!run || !samePrincipal(run, request.body.principal)) {
         return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
       }
-      const data = Buffer.from(request.body.dataBase64, "base64");
-      if (data.length > 16 * 1024 * 1024) {
-        return reply.code(413).send({ error: { code: "artifact_too_large", message: "Artifact exceeds 16 MiB" } });
+      const attempt = options.runService.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
+      const lease = options.runService.getWorkspaceLease(run.workspaceId, run.id);
+      if (!attempt || !lease || !options.runService.validateWorkspaceLease(lease)) {
+        return reply.code(409).send({ error: { code: "artifact_publish_requires_active_lease", message: "Artifacts can only be promoted from the actively fenced workspace" } });
       }
+      const data = await options.readWorkspaceArtifact({
+        runId: run.id, workspaceId: run.workspaceId, attemptId: attempt.id, fencingToken: lease.fencingToken,
+        principal: request.body.principal, path: request.body.path, maxBytes: 16 * 1024 * 1024,
+      });
       const record = options.artifactStore.publish({
         runId: run.id,
         workspaceId: run.workspaceId,

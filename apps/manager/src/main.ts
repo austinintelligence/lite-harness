@@ -1,7 +1,7 @@
 import { basename, join } from "node:path";
 import { accessSync, constants, mkdirSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import type { IntervalTrigger } from "@lite-harness/automation";
@@ -141,6 +141,14 @@ if (reconciled > 0) {
 }
 const app = buildManagerServer({
   runService: service, internalToken, instanceId: instanceLock.owner.instanceId, artifactStore,
+  readWorkspaceArtifact: ({ runId, workspaceId, attemptId, principal, path, maxBytes }) => {
+    if (!brokeredRuntime.readWorkspaceArtifact) throw new Error("The configured runtime cannot read workspace artifacts");
+    return brokeredRuntime.readWorkspaceArtifact({
+      runId, workspaceId, attemptId, principal, allowedTools: ["artifact_publish"],
+      call: { id: `artifact-read-${randomUUID()}`, name: "artifact_read", arguments: { path } },
+      signal: AbortSignal.timeout(30_000), path, maxBytes,
+    });
+  },
   productionReadinessChecks: createProductionReadinessChecks(store, baseRuntime, configuration),
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";

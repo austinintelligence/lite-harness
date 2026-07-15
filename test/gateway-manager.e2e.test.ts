@@ -143,13 +143,18 @@ describe("Gateway to Manager vertical slice", () => {
       publishArtifact: async (runId, request, principal) => {
         const run = service.getRun(runId);
         if (!run) throw new Error("Run not found");
+        const data = await runtime.readWorkspaceArtifact!({
+          workspaceId: run.workspaceId, runId, attemptId: "test-attempt", principal,
+          call: { id: "artifact-read", name: "artifact_read", arguments: { path: request.path } },
+          path: request.path, maxBytes: 16 * 1024 * 1024,
+        });
         return artifactStore.publish({
           runId,
           workspaceId: run.workspaceId,
           principal,
           path: request.path,
           mediaType: request.mediaType,
-          data: Buffer.from(request.dataBase64, "base64"),
+          data,
         });
       },
       getArtifact: async (artifactId, principal) => {
@@ -376,6 +381,11 @@ describe("Gateway to Manager vertical slice", () => {
     });
     expect(authenticatedIpc.statusCode).toBe(200);
 
+    await runtime.execute({
+      workspaceId: "workspace-a",
+      principal: { appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [] },
+      call: { id: "artifact-source", name: "write_file", arguments: { path: "output/result.txt", content: "owned result" } },
+    });
     const artifact = await gateway.inject({
       method: "POST",
       url: `/v1/runs/${firstBody.runId}/artifacts`,
@@ -388,7 +398,6 @@ describe("Gateway to Manager vertical slice", () => {
       payload: {
         path: "output/result.txt",
         mediaType: "text/plain",
-        dataBase64: Buffer.from("owned result").toString("base64"),
       },
     });
     expect(artifact.statusCode).toBe(201);

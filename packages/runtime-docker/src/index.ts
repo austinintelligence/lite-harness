@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from "@lite-harness/contracts";
 import type { ToolExecutionContext, ToolRuntime } from "@lite-harness/runtime";
-import { validateWorkspacePath, WORKSPACE_TOOL_DEFINITIONS } from "@lite-harness/runtime";
+import { CODING_TOOL_DEFINITIONS, validateWorkspacePath, WORKSPACE_TOOL_DEFINITIONS } from "@lite-harness/runtime";
 
 export interface DockerRuntimeConfig {
   image: string;
@@ -20,6 +20,7 @@ export interface DockerRuntimeConfig {
   cpus?: string;
   pidsLimit?: number;
   maxOutputBytes?: number;
+  commandTimeoutMs?: number;
   workspaceQuotaBytes?: number;
   maxArchiveFiles?: number;
   /** Stable per-data-directory identity used to scope daemon reconciliation. */
@@ -90,11 +91,14 @@ export class DockerToolRuntime implements ToolRuntime {
     if (config.maxArchiveFiles !== undefined && (!Number.isSafeInteger(config.maxArchiveFiles) || config.maxArchiveFiles < 1)) {
       throw new Error("Workspace archive file limit must be a positive integer");
     }
+    if (config.commandTimeoutMs !== undefined && (!Number.isSafeInteger(config.commandTimeoutMs) || config.commandTimeoutMs < 100 || config.commandTimeoutMs > 3_600_000)) {
+      throw new Error("Docker command timeout must be between 100 and 3600000 milliseconds");
+    }
     this.#docker = config.dockerCommand ?? "docker";
     this.#maxOutputBytes = config.maxOutputBytes ?? 4 * 1024 * 1024;
   }
 
-  listTools(): readonly ToolDefinition[] { return WORKSPACE_TOOL_DEFINITIONS; }
+  listTools(): readonly ToolDefinition[] { return [...WORKSPACE_TOOL_DEFINITIONS, ...CODING_TOOL_DEFINITIONS]; }
 
   async doctor(): Promise<DockerDoctorResult> {
     try {
@@ -172,6 +176,67 @@ export class DockerToolRuntime implements ToolRuntime {
       return commandResult(params.call.id, result, { path });
     }
 
+    if (params.call.name === "shell_exec") {
+      const script = boundedStringArgument(params.call, "script", 65_536);
+      const cwd = workspaceDirectoryArgument(params.call, "cwd");
+      const result = await this.#runTool(
+        mount, ["bash", "--noprofile", "--norc", "-o", "pipefail", "-s"], script,
+        params, "shell", this.#maxOutputBytes, false, cwd,
+      );
+      return commandResult(params.call.id, result, { cwd });
+    }
+
+    if (params.call.name === "process_exec") {
+      const argv = stringArrayArgument(params.call, "argv", 1, 256);
+      const cwd = workspaceDirectoryArgument(params.call, "cwd");
+      const result = await this.#runTool(mount, argv, undefined, params, "process", this.#maxOutputBytes, false, cwd);
+      return commandResult(params.call.id, result, { cwd, executable: argv[0] });
+    }
+
+    if (params.call.name === "search_text") {
+      const pattern = boundedStringArgument(params.call, "pattern", 4_096);
+      const paths = optionalWorkspacePaths(params.call.arguments.paths);
+      const glob = optionalBoundedString(params.call.arguments.glob, "glob", 1_024);
+      const maximum = optionalInteger(params.call.arguments.maxMatchesPerFile, "maxMatchesPerFile", 1, 10_000, 1_000);
+      const args = [
+        "rg", "--line-number", "--column", "--no-heading", "--color=never", "--max-count", String(maximum),
+        ...(params.call.arguments.fixedStrings === true ? ["--fixed-strings"] : []),
+        ...(glob ? ["--glob", glob] : []), "--", pattern, ...(paths.length ? paths : ["."]),
+      ];
+      const result = await this.#runTool(mount, args, undefined, params, "search", this.#maxOutputBytes, true);
+      return commandResult(params.call.id, result.code === 1 ? { ...result, code: 0 } : result, { matchesFound: Boolean(result.stdout) });
+    }
+
+    if (params.call.name === "patch_apply") {
+      const patch = boundedStringArgument(params.call, "patch", 1024 * 1024);
+      const git = ["git", "-c", "core.hooksPath=/dev/null", "apply", "--whitespace=nowarn", "-"];
+      const checked = await this.#runTool(mount, [...git.slice(0, -1), "--check", "-"], patch, params, "patch-check");
+      if (checked.code !== 0) return commandResult(params.call.id, checked, { applied: false });
+      const applied = await this.#runTool(mount, git, patch, params, "patch-apply");
+      return commandResult(params.call.id, applied, { applied: applied.code === 0 });
+    }
+
+    if (params.call.name === "git_exec") {
+      const args = stringArrayArgument(params.call, "args", 1, 256);
+      assertAllowedGitSubcommand(args[0] as string);
+      const result = await this.#runTool(mount, [
+        "git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "--no-optional-locks", ...args,
+      ], undefined, params, "git");
+      return commandResult(params.call.id, result, { subcommand: args[0] });
+    }
+
+    if (params.call.name === "test_run" || params.call.name === "build_run" || params.call.name === "package_run") {
+      const manager = packageManagerArgument(params.call.arguments.manager);
+      const cwd = workspaceDirectoryArgument(params.call, "cwd");
+      const args = optionalStringArray(params.call.arguments.args, "args", 64);
+      const executable = manager === "npm" ? ["npm"] : ["corepack", manager];
+      const command = params.call.name === "package_run"
+        ? [...executable, "pack", ...args]
+        : [...executable, "run", optionalBoundedString(params.call.arguments.script, "script", 128) ?? (params.call.name === "test_run" ? "test" : "build"), "--", ...args];
+      const result = await this.#runTool(mount, command, undefined, params, params.call.name, this.#maxOutputBytes, false, cwd);
+      return commandResult(params.call.id, result, { manager, cwd });
+    }
+
     return { callId: params.call.id, ok: false, content: `Unsupported tool: ${params.call.name}` };
   }
 
@@ -237,6 +302,7 @@ export class DockerToolRuntime implements ToolRuntime {
         [
           "run", "--rm", "--interactive", ...dockerMaintenanceHardeningArgs(this.config, {
             capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+            user: "0:0",
           }),
           "--volume", `${staging}:/staging`,
           this.config.image, "tar", "-C", "/staging", "-xf", "-",
@@ -305,6 +371,7 @@ export class DockerToolRuntime implements ToolRuntime {
       [
         "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+          user: "0:0",
         }),
         "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination`,
         this.config.image, "sh", "-c", "cp -a /source/. /destination/",
@@ -319,6 +386,7 @@ export class DockerToolRuntime implements ToolRuntime {
       [
         "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+          user: "0:0",
         }),
         "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination`,
         this.config.image, "sh", "-c",
@@ -372,6 +440,7 @@ export class DockerToolRuntime implements ToolRuntime {
     operation = "tool",
     maxOutputBytes = this.#maxOutputBytes,
     readOnly = false,
+    workingDirectory = ".",
   ): Promise<DockerCommandResult> {
     if (!params?.runId || !params.attemptId || !params.principal) {
       throw new Error("Docker tool execution requires owned run and attempt context");
@@ -391,6 +460,8 @@ export class DockerToolRuntime implements ToolRuntime {
       operation,
     );
     const label = (name: string, value: string) => ["--label", `lite-harness.${name}=${labelDigest(value)}`];
+    const deadline = AbortSignal.timeout(this.config.commandTimeoutMs ?? 300_000);
+    const toolSignal = params.signal ? AbortSignal.any([params.signal, deadline]) : deadline;
     const create = await this.#run(
       [
         "create",
@@ -422,11 +493,13 @@ export class DockerToolRuntime implements ToolRuntime {
         "1000:1000",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,nodev,size=64m",
+        "--workdir",
+        workingDirectory === "." ? "/workspace" : `/workspace/${workingDirectory.replaceAll("\\", "/")}`,
         ...mountArgs(mount, readOnly),
         this.config.image,
         ...command,
       ],
-      { signal: params.signal, maxOutputBytes },
+      { signal: toolSignal, maxOutputBytes },
     );
     if (create.code !== 0) throw new Error(`Could not create Docker tool container: ${create.stderr}`);
     const runtimeContainerId = create.stdout.trim();
@@ -456,7 +529,7 @@ export class DockerToolRuntime implements ToolRuntime {
       await containerStore.updateRuntimeContainerState(runtimeContainerId, "RUNNING", new Date().toISOString());
       result = await this.#run(
         ["start", "--attach", "--interactive", runtimeContainerId],
-        { ...(input === undefined ? {} : { input }), signal: params.signal, maxOutputBytes },
+        { ...(input === undefined ? {} : { input }), signal: toolSignal, maxOutputBytes },
       );
     } catch (error) {
       executionError = error;
@@ -799,6 +872,71 @@ function stringArgument(call: ToolCall, name: string): string {
     throw new TypeError(`${call.name}.${name} must be a string`);
   }
   return value;
+}
+
+function boundedStringArgument(call: ToolCall, name: string, maxBytes: number): string {
+  const value = stringArgument(call, name);
+  if (value.includes("\0") || Buffer.byteLength(value) > maxBytes) throw new Error(`${call.name}.${name} exceeds its byte limit`);
+  return value;
+}
+
+function optionalBoundedString(value: unknown, name: string, maxBytes: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value || value.includes("\0") || Buffer.byteLength(value) > maxBytes) {
+    throw new Error(`${name} must be a bounded non-empty string`);
+  }
+  return value;
+}
+
+function stringArrayArgument(call: ToolCall, name: string, minimum: number, maximum: number): string[] {
+  return checkedStringArray(call.arguments[name], `${call.name}.${name}`, minimum, maximum);
+}
+
+function optionalStringArray(value: unknown, name: string, maximum: number): string[] {
+  return value === undefined ? [] : checkedStringArray(value, name, 0, maximum);
+}
+
+function checkedStringArray(value: unknown, name: string, minimum: number, maximum: number): string[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) throw new Error(`${name} has an invalid item count`);
+  let bytes = 0;
+  const output = value.map((item) => {
+    if (typeof item !== "string" || item.includes("\0") || Buffer.byteLength(item) > 16_384) throw new Error(`${name} contains an invalid argument`);
+    bytes += Buffer.byteLength(item);
+    return item;
+  });
+  if (bytes > 65_536) throw new Error(`${name} exceeds its aggregate byte limit`);
+  return output;
+}
+
+function workspaceDirectoryArgument(call: ToolCall, name: string): string {
+  const value = call.arguments[name];
+  if (value === undefined || value === ".") return ".";
+  if (typeof value !== "string") throw new Error(`${call.name}.${name} must be a workspace-relative path`);
+  validateWorkspacePath(value);
+  return value;
+}
+
+function optionalWorkspacePaths(value: unknown): string[] {
+  const paths = optionalStringArray(value, "paths", 128);
+  for (const path of paths) if (path !== ".") validateWorkspacePath(path);
+  return paths;
+}
+
+function optionalInteger(value: unknown, name: string, minimum: number, maximum: number, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) throw new Error(`${name} is invalid`);
+  return value as number;
+}
+
+function packageManagerArgument(value: unknown): "pnpm" | "npm" | "yarn" {
+  const manager = value ?? "pnpm";
+  if (manager !== "pnpm" && manager !== "npm" && manager !== "yarn") throw new Error("Package manager is invalid");
+  return manager;
+}
+
+function assertAllowedGitSubcommand(value: string): void {
+  const allowed = new Set(["status", "diff", "log", "show", "branch", "rev-parse", "add", "commit", "restore", "rm", "mv", "apply"]);
+  if (!allowed.has(value)) throw new Error(`Git subcommand is not allowed: ${value}`);
 }
 
 function volumeName(workspaceId: string): string {

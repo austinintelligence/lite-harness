@@ -183,6 +183,60 @@ export const WORKSPACE_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.free
   }),
 ]);
 
+const workspaceDirectorySchema = { type: "string", minLength: 1, maxLength: 4_096 } as const;
+const packageManagerSchema = { enum: ["pnpm", "npm", "yarn"] } as const;
+function stringArraySchema(minItems: number, maxItems: number): Record<string, unknown> {
+  return { type: "array", items: { type: "string", maxLength: 16_384 }, minItems, maxItems };
+}
+function objectSchema(properties: Record<string, unknown>, required: readonly string[]): Record<string, unknown> {
+  return { type: "object", properties, ...(required.length ? { required: [...required] } : {}), additionalProperties: false };
+}
+function projectTaskSchema(fallback: string): Record<string, unknown> {
+  return objectSchema({
+    manager: packageManagerSchema, script: { type: "string", minLength: 1, maxLength: 128, default: fallback },
+    cwd: workspaceDirectorySchema, args: stringArraySchema(0, 64),
+  }, []);
+}
+
+export const CODING_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
+  Object.freeze({
+    name: "shell_exec", description: "Run a bounded Bash script inside the current isolated workspace container.",
+    inputSchema: objectSchema({ script: { type: "string", minLength: 1, maxLength: 65_536 }, cwd: workspaceDirectorySchema }, ["script"]),
+  }),
+  Object.freeze({
+    name: "process_exec", description: "Execute one process directly without shell parsing inside the isolated workspace container.",
+    inputSchema: objectSchema({ argv: stringArraySchema(1, 256), cwd: workspaceDirectorySchema }, ["argv"]),
+  }),
+  Object.freeze({
+    name: "search_text", description: "Search workspace text with ripgrep and bounded output.",
+    inputSchema: objectSchema({
+      pattern: { type: "string", minLength: 1, maxLength: 4_096 },
+      paths: stringArraySchema(0, 128), glob: { type: "string", minLength: 1, maxLength: 1_024 },
+      fixedStrings: { type: "boolean" }, maxMatchesPerFile: { type: "integer", minimum: 1, maximum: 10_000 },
+    }, ["pattern"]),
+  }),
+  Object.freeze({
+    name: "patch_apply", description: "Validate and apply a bounded Git-compatible patch inside the current workspace.",
+    inputSchema: objectSchema({ patch: { type: "string", minLength: 1, maxLength: 1024 * 1024 } }, ["patch"]),
+  }),
+  Object.freeze({
+    name: "git_exec", description: "Run an allowlisted local Git subcommand with hooks disabled and network unavailable.",
+    inputSchema: objectSchema({ args: stringArraySchema(1, 256) }, ["args"]),
+  }),
+  Object.freeze({
+    name: "test_run", description: "Run a bounded package-manager test script in the isolated workspace.",
+    inputSchema: projectTaskSchema("test"),
+  }),
+  Object.freeze({
+    name: "build_run", description: "Run a bounded package-manager build script in the isolated workspace.",
+    inputSchema: projectTaskSchema("build"),
+  }),
+  Object.freeze({
+    name: "package_run", description: "Create a package archive with the selected package manager in the isolated workspace.",
+    inputSchema: objectSchema({ manager: packageManagerSchema, cwd: workspaceDirectorySchema, args: stringArraySchema(0, 64) }, []),
+  }),
+]);
+
 const ARTIFACT_TOOL_DEFINITION: ToolDefinition = Object.freeze({
   name: "artifact_publish", description: "Publish a file from the current owned workspace as a downloadable run artifact.",
   inputSchema: {

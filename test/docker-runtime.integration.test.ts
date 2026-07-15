@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
+import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 const image = process.env.LITE_HARNESS_TEST_DOCKER_IMAGE;
 const suite = image ? describe : describe.skip;
@@ -7,26 +8,30 @@ const suite = image ? describe : describe.skip;
 suite("Docker runtime integration", () => {
   it("persists a named-volume workspace across containers and restores an archive", async () => {
     const workspaceId = `integration-${Date.now()}`;
-    const runtime = new DockerToolRuntime({ image: image as string });
+    const runId = `run_${Date.now()}`;
+    const principal = { appId: "integration", tenantId: "local", userId: "tester", scopes: [] };
+    const store = new SqliteRunStore(":memory:");
+    store.createOrGetRun(runId, { agent: "coder", workspace: workspaceId, input: "integration", idempotencyKey: runId, principal });
+    const attempt = store.createRunAttempt(runId, `att_${Date.now()}`);
+    const runtime = new DockerToolRuntime({ image: image as string, installationId: "docker-integration", containerStore: store });
+    const execute = (id: string, name: string, args: Record<string, unknown>) => runtime.execute({
+      runId, attemptId: attempt.id, workspaceId, principal, call: { id, name, arguments: args },
+    });
     try {
-      const write = await runtime.execute({
-        workspaceId,
-        call: { id: "write-1", name: "write_file", arguments: { path: "hello.txt", content: "hello docker" } },
-      });
+      const write = await execute("write-1", "write_file", { path: "hello.txt", content: "hello docker" });
       expect(write.ok).toBe(true);
-      const archive = await runtime.exportWorkspace(workspaceId);
-      await runtime.execute({
-        workspaceId,
-        call: { id: "write-2", name: "write_file", arguments: { path: "hello.txt", content: "changed" } },
-      });
-      await runtime.importWorkspace(workspaceId, archive);
-      const restored = await runtime.execute({
-        workspaceId,
-        call: { id: "read-1", name: "read_file", arguments: { path: "hello.txt" } },
-      });
+      const shell = await execute("shell-1", "shell_exec", { script: "node --version && git --version && rg --version" });
+      expect(shell).toMatchObject({ ok: true, content: expect.stringContaining("v24.") });
+      const search = await execute("search-1", "search_text", { pattern: "hello docker", paths: ["hello.txt"], fixedStrings: true });
+      expect(search).toMatchObject({ ok: true, content: expect.stringContaining("hello docker") });
+      const archive = await runtime.exportWorkspace(workspaceId, principal);
+      await execute("write-2", "write_file", { path: "hello.txt", content: "changed" });
+      await runtime.importWorkspace(workspaceId, archive, principal);
+      const restored = await execute("read-1", "read_file", { path: "hello.txt" });
       expect(restored.content).toBe("hello docker");
     } finally {
-      await runtime.removeWorkspace(workspaceId);
+      await runtime.removeWorkspace(workspaceId, principal);
+      store.close();
     }
   }, 60_000);
 });

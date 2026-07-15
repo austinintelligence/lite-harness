@@ -50,8 +50,10 @@ function writeEvidence(output, report) {
       toolContainerOwnershipLabelsScoped: true,
       startupContainerReconciliation: true,
       cancellationIndependentlyKillsWaitsRemovesAndVerifies: true,
+      boundedCodingToolSurface: true,
+      codingImageProfilePinnedAndNonRoot: true,
     },
-    testIds: ["BD-018-REGRESSION", "BD-019-REGRESSION", "BD-020-REGRESSION"],
+    testIds: ["BD-018-REGRESSION", "BD-019-REGRESSION", "BD-020-REGRESSION", "BD-040-REGRESSION", "BD-041-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

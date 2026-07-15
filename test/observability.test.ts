@@ -103,4 +103,67 @@ describe("structured observability", () => {
       store.close();
     }
   });
+
+  it("records run lifecycle telemetry without persisting the prompt", async () => {
+    const observability = new StructuredObservability();
+    const store = new SqliteRunStore(":memory:");
+    const service = new RunService(
+      store,
+      new AgentRunner(new FakeModelGateway(), new InMemoryToolRuntime()),
+      { observability },
+    );
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] };
+    try {
+      const created = service.createRun({
+        agent: "coder", workspace: "observability-workspace", input: "private prompt that must not be logged",
+        idempotencyKey: "observability-run", principal,
+      });
+      await expect(service.waitForTerminal(created.runId)).resolves.toMatchObject({ status: "SUCCEEDED" });
+      const snapshot = observability.snapshot();
+      expect(snapshot.events.some((event) => event.kind === "audit" && event.name === "run.accepted")).toBe(true);
+      expect(snapshot.events.some((event) => event.kind === "audit" && event.name === "run.terminal" && event.attributes.status === "SUCCEEDED")).toBe(true);
+      expect(snapshot.events.some((event) => event.kind === "trace" && event.name === "run.execute" && event.attributes.runId === created.runId && event.attributes.status === "SUCCEEDED")).toBe(true);
+      expect(snapshot.events.some((event) => event.kind === "audit" && event.name === "run.terminal" && event.traceId === snapshot.events.find((candidate) => candidate.kind === "trace" && candidate.name === "run.execute")?.traceId)).toBe(true);
+      expect(snapshot.counters["runs.accepted.total"]).toBe(1);
+      expect(snapshot.counters["runs.terminal.total"]).toBe(1);
+      expect(snapshot.histograms["run.queue_wait_ms"]?.count).toBe(1);
+      expect(JSON.stringify(snapshot)).not.toContain("private prompt that must not be logged");
+
+      const replay = service.createRun({
+        agent: "coder", workspace: "observability-workspace", input: "private prompt that must not be logged",
+        idempotencyKey: "observability-run", principal,
+      });
+      expect(replay.runId).toBe(created.runId);
+      expect(observability.snapshot().counters["runs.idempotent_replays.total"]).toBe(1);
+    } finally {
+      await service.shutdown();
+      store.close();
+    }
+  });
+
+  it("keeps run execution successful when the observability port throws", async () => {
+    const store = new SqliteRunStore(":memory:");
+    const service = new RunService(
+      store,
+      new AgentRunner(new FakeModelGateway(), new InMemoryToolRuntime()),
+      {
+        observability: {
+          startTrace: () => { throw new Error("trace sink unavailable"); },
+          counter: () => { throw new Error("counter sink unavailable"); },
+          observe: () => { throw new Error("metric sink unavailable"); },
+          audit: () => { throw new Error("audit sink unavailable"); },
+        },
+      },
+    );
+    try {
+      const created = service.createRun({
+        agent: "coder", workspace: "observability-failure-workspace", input: "safe execution",
+        idempotencyKey: "observability-failure", principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] },
+      });
+      await expect(service.waitForTerminal(created.runId)).resolves.toMatchObject({ status: "SUCCEEDED" });
+    } finally {
+      await service.shutdown();
+      store.close();
+    }
+  });
 });

@@ -47,7 +47,11 @@ attempt, never an already-prepared attempt.
 
 Gateway and Manager requests start a bounded trace, return its opaque ID in
 `X-Lite-Trace-Id`, and finish with structured request metrics and an audit
-event. `StructuredObservability` accepts only finite bounded metric values and
+event. The RunService coordinator reports accepted/replayed runs, queue wait,
+workspace lease acquisition, and terminal outcomes through a kernel-owned
+observability port so the durable execution lifecycle is covered as well. All
+telemetry calls are fail-open to the run path: a broken sink cannot change run
+state. `StructuredObservability` accepts only finite bounded metric values and
 sanitizes attributes before retaining them in a bounded in-memory ring or a
 mode-600 JSONL sink. Prompt, file, path, stack, and credential fields are
 omitted or redacted by default; the sink is telemetry and audit evidence, not a

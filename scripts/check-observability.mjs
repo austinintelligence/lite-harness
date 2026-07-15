@@ -36,6 +36,7 @@ try {
         observability: {
           requestTraceHeaders: true,
           structuredRequestMetrics: true,
+          runLifecycleTelemetry: true,
           durableJsonlAuditSink: true,
           promptFilePathStackAndSecretRedaction: true,
         },

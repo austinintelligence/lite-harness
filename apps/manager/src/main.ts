@@ -122,6 +122,7 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
   makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
   runSnapshot: runSnapshotConfiguration,
+  observability,
 });
 const integrationRouter = integrationStore && integrationModule ? new integrationModule.InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({

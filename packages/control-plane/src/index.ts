@@ -38,6 +38,31 @@ export interface RunSnapshotConfiguration {
   credentialProfileIds?: string[];
 }
 
+/**
+ * Kernel-owned observability port. The coordinator reports lifecycle facts
+ * through this narrow interface without depending on a concrete sink or
+ * telemetry package.
+ */
+export type RunObservabilityAttributes = Record<string, string | number | boolean | undefined>;
+
+export interface RunTraceSpan {
+  readonly traceId: string;
+  readonly spanId: string;
+  end(attributes?: RunObservabilityAttributes): unknown;
+}
+
+export interface RunObservability {
+  startTrace(name: string, attributes?: RunObservabilityAttributes, parent?: { traceId: string; spanId: string }): RunTraceSpan;
+  counter(name: string, value?: number, attributes?: RunObservabilityAttributes): void;
+  observe(name: string, value: number, attributes?: RunObservabilityAttributes): void;
+  audit(
+    name: string,
+    outcome: "accepted" | "rejected" | "completed" | "failed",
+    attributes?: RunObservabilityAttributes,
+    context?: { traceId: string; spanId: string },
+  ): void;
+}
+
 export class RunService {
   readonly #events = new EventEmitter();
   readonly #active = new Map<string, AbortController>();
@@ -63,6 +88,7 @@ export class RunService {
       workspaceCheckpointTimeoutMs?: number;
       makeWorkspaceColdAfterCheckpoint?: boolean | ((run: RunRecord) => boolean);
       runSnapshot?: RunSnapshotConfiguration;
+      observability?: RunObservability;
     } = {},
   ) {
     this.#events.setMaxListeners(0);
@@ -78,6 +104,11 @@ export class RunService {
     if (!this.#accepting) throw new Error("Run service is shutting down");
     const result = this.store.createOrGetRun(createId("run"), request);
     if (result.created) {
+      this.#safeAudit("run.accepted", "accepted", {
+        runId: result.run.id, workspaceId: result.run.workspaceId,
+        appId: result.run.appId, tenantId: result.run.tenantId, status: result.run.status,
+      });
+      this.#safeCounter("runs.accepted.total");
       this.#notify(result.run.id);
       this.#scheduled.add(result.run.id);
       setImmediate(() => {
@@ -85,6 +116,12 @@ export class RunService {
         if (!this.#accepting) return;
         this.#enqueue(result.run);
       });
+    } else {
+      this.#safeAudit("run.replayed", "completed", {
+        runId: result.run.id, workspaceId: result.run.workspaceId,
+        appId: result.run.appId, tenantId: result.run.tenantId, status: result.run.status,
+      });
+      this.#safeCounter("runs.idempotent_replays.total");
     }
     return {
       runId: result.run.id,
@@ -408,6 +445,7 @@ export class RunService {
 
   async #execute(runId: string): Promise<void> {
     const controller = new AbortController();
+    let executionTrace: RunTraceSpan | undefined;
     this.#active.set(runId, controller);
     let lease: WorkspaceLease | undefined;
     let attempt: RunAttemptRecord | undefined;
@@ -418,6 +456,13 @@ export class RunService {
     try {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run disappeared: ${runId}`);
+      const lifecycleAttributes = {
+        runId: run.id, workspaceId: run.workspaceId,
+        appId: run.appId, tenantId: run.tenantId,
+      };
+      executionTrace = this.#safeStartTrace("run.execute", lifecycleAttributes);
+      this.#safeObserve("run.queue_wait_ms", Math.max(0, Date.now() - Date.parse(run.createdAt)), lifecycleAttributes);
+      this.#safeCounter("runs.attempts.started", 1, lifecycleAttributes);
       const remainingMs = acceptedDeadline(run) - Date.now();
       if (remainingMs <= 0) {
         this.#timeoutQueuedRun(run.id, run.budget.totalTimeoutMs);
@@ -438,6 +483,8 @@ export class RunService {
         type: "workspace.lease.acquired",
         payload: { workspaceId: run.workspaceId, fencingToken: lease.fencingToken },
       });
+      this.#safeCounter("workspace.leases.acquired", 1, lifecycleAttributes);
+      this.#safeAudit("workspace.lease", "accepted", lifecycleAttributes, executionTrace);
       this.#notify(runId);
       if (this.options.workspaceLifecycle) {
         const prepared = await this.options.workspaceLifecycle.prepare(run, controller.signal);
@@ -617,7 +664,40 @@ export class RunService {
           message: "Run execution ended without a terminal result",
         });
       }
+      const finalRun = this.getRun(runId);
+      const finalStatus = finalRun?.status ?? terminal?.status ?? "FAILED";
+      const terminalAttributes = {
+        ...(finalRun ? {
+          runId: finalRun.id, workspaceId: finalRun.workspaceId,
+          appId: finalRun.appId, tenantId: finalRun.tenantId,
+        } : { runId }),
+        status: finalStatus,
+      };
+      this.#safeCounter("runs.terminal.total", 1, terminalAttributes);
+      this.#safeAudit("run.terminal", finalStatus === "SUCCEEDED" ? "completed" : "failed", terminalAttributes, executionTrace);
+      try { executionTrace?.end({ status: finalStatus }); } catch { /* telemetry must not affect finalization */ }
     }
+  }
+
+  #safeStartTrace(name: string, attributes: RunObservabilityAttributes = {}): RunTraceSpan | undefined {
+    try { return this.options.observability?.startTrace(name, attributes); } catch { return undefined; }
+  }
+
+  #safeCounter(name: string, value = 1, attributes: RunObservabilityAttributes = {}): void {
+    try { this.options.observability?.counter(name, value, attributes); } catch { /* telemetry must not affect runs */ }
+  }
+
+  #safeObserve(name: string, value: number, attributes: RunObservabilityAttributes = {}): void {
+    try { this.options.observability?.observe(name, value, attributes); } catch { /* telemetry must not affect runs */ }
+  }
+
+  #safeAudit(
+    name: string,
+    outcome: "accepted" | "rejected" | "completed" | "failed",
+    attributes: RunObservabilityAttributes = {},
+    context?: RunTraceSpan,
+  ): void {
+    try { this.options.observability?.audit(name, outcome, attributes, context); } catch { /* telemetry must not affect runs */ }
   }
 
   #timeoutQueuedRun(runId: string, timeoutMs: number): void {

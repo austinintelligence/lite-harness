@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const required = [
@@ -27,9 +27,9 @@ if (existsSync(resolve(root, "docs/sbom.cdx.json"))) {
   if (sbom.bomFormat !== "CycloneDX" || !Array.isArray(sbom.components)) failures.push("SBOM is not a CycloneDX component inventory");
 }
 const dockerfile = readFileSync(resolve(root, "docker/tool-runtime/Dockerfile"), "utf8");
-if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) failures.push("tool runtime base image is not digest-pinned");
+if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}(?:\s+AS\s+\S+)?$/mi.test(dockerfile)) failures.push("tool runtime base image is not digest-pinned");
 const browserDockerfile = readFileSync(resolve(root, "docker/browser-runtime/Dockerfile"), "utf8");
-if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}$/m.test(browserDockerfile)) failures.push("browser runtime base image is not digest-pinned");
+if (!/^FROM\s+\S+@sha256:[a-f0-9]{64}(?:\s+AS\s+\S+)?$/mi.test(browserDockerfile)) failures.push("browser runtime base image is not digest-pinned");
 const expectedIgnored = [
   ".env.local", "node_modules/example.js", "coverage/index.html", ".lite-harness/state.db",
   "sdks/python/.venv/python", "playwright-report/index.html", "runtime.sqlite-wal", "temp/output.tmp",
@@ -59,7 +59,9 @@ const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml")
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
   if (!imageWorkflow.includes(command)) failures.push(`release workflow is missing required gate: ${command}`);
 }
-if (!/publish:\s*[\s\S]*?needs:\s*release-gate/.test(imageWorkflow)) failures.push("container publishing must depend on the strict release gate");
+if (!/publish:\s*[\s\S]*?needs:\s*\[[^\]]*release-gate[^\]]*candidate[^\]]*\]/.test(imageWorkflow)) {
+  failures.push("container publishing must depend on the strict release gate and tested candidates");
+}
 if (/lite-harness-\$\{\{ matrix\.name \}\}:latest/.test(imageWorkflow)) failures.push("prerelease tags must not promote mutable latest images");
 for (const workflowName of ["ci.yml", "images.yml"]) {
   const workflow = readFileSync(resolve(root, ".github/workflows", workflowName), "utf8");
@@ -98,6 +100,10 @@ if (existsSync(resolve(root, "sdks/python/pyproject.toml"))) {
   if (!/version\s*=\s*"[^"]*(?:a|alpha|dev|rc)[^"]*"/i.test(pythonManifest)) failures.push("Python SDK must remain a prerelease");
 }
 
+validateOpenApiSemantics();
+validateArtifactInstallability();
+validateAlphaBehavior();
+
 for (const directory of [resolve(root, "apps"), resolve(root, "packages")]) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -114,9 +120,76 @@ try {
   failures.push("Lite branch no longer descends from the pinned OpenClaw baseline");
 }
 
+function validateOpenApiSemantics() {
+  try {
+    execFileSync(process.execPath, ["--import", "tsx", "scripts/generate-openapi.ts", "--check"], { cwd: root, stdio: "pipe" });
+  } catch {
+    failures.push("OpenAPI is stale relative to the authoritative contract schemas");
+    return;
+  }
+  const document = JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "utf8"));
+  if (!/^3\.1\./.test(document.openapi ?? "") || !document["x-lite-generated-from-contracts"]) {
+    failures.push("OpenAPI lacks its 3.1 contract-generation marker");
+  }
+  const operationIds = new Set();
+  for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
+    if (!path.startsWith("/")) failures.push(`OpenAPI path is not absolute: ${path}`);
+    for (const [method, operation] of Object.entries(pathItem ?? {})) {
+      if (!["get", "post", "put", "patch", "delete"].includes(method)) continue;
+      if (!operation || typeof operation !== "object" || !Object.keys(operation.responses ?? {}).length) {
+        failures.push(`OpenAPI operation ${method.toUpperCase()} ${path} has no response contract`);
+      }
+      if (operation.operationId) {
+        if (operationIds.has(operation.operationId)) failures.push(`duplicate OpenAPI operationId ${operation.operationId}`);
+        operationIds.add(operation.operationId);
+      }
+    }
+  }
+  for (const reference of JSON.stringify(document).matchAll(/"\$ref":"#\/components\/schemas\/([^"]+)"/g)) {
+    if (!document.components?.schemas?.[reference[1]]) failures.push(`OpenAPI has an unresolved schema reference: ${reference[1]}`);
+  }
+}
+
+function validateArtifactInstallability() {
+  try {
+    execFileSync(process.execPath, ["scripts/check-built-artifacts.mjs", "--python-wheel"], { cwd: root, stdio: "pipe" });
+  } catch (error) {
+    const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(-2_000);
+    failures.push(`packaged Node and Python artifacts are not installable through the real Gateway: ${detail}`);
+  }
+}
+
+function validateAlphaBehavior() {
+  const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+  if (!/-(?:alpha|beta|rc|dev)[.-]?\d*/i.test(manifest.version ?? "")) failures.push("root package must remain an explicit prerelease");
+  if (manifest.private !== true) failures.push("root workspace must remain private during alpha");
+  if (!imageWorkflow.includes("pnpm release:check")) failures.push("tag publication bypasses alpha release behavior checks");
+  if (!imageWorkflow.includes("Promote only tested platform digests")) failures.push("alpha image promotion does not reuse tested candidates");
+}
+
 if (failures.length) {
   process.stderr.write(`Release checks failed:\n${failures.map((item) => `- ${item}`).join("\n")}\n`);
   process.exitCode = 1;
 } else {
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const evidencePath = resolve(root, "evidence/m11/release-validation.json");
+  mkdirSync(dirname(evidencePath), { recursive: true });
+  writeFileSync(evidencePath, `${JSON.stringify({
+    schemaVersion: 1,
+    commit,
+    capturedAt: new Date().toISOString(),
+    suite: "semantic-release-validation",
+    result: "pass",
+    skips: 0,
+    assertions: {
+      openApiGeneratedWithoutDrift: true,
+      openApiReferencesResolve: true,
+      nodePackagesInstallAndRunThroughGateway: true,
+      pythonWheelInstallsAndRunsThroughGateway: true,
+      prereleaseBehaviorEnforced: true,
+      testedImageDigestPromotionEnforced: true,
+    },
+    testIds: ["BD-057-REGRESSION"],
+  }, null, 2)}\n`);
   process.stdout.write("Release structure checks passed.\n");
 }

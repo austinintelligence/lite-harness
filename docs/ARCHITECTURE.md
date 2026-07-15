@@ -32,6 +32,11 @@ binding both when a decision is resolved and immediately before the tool
 runtime mutation boundary. Route or policy drift, changed arguments, and
 expired decisions fail closed and require a new approval.
 
+Before an approval is requested, Agent Runtime validates the call against the
+exact JSON Schema advertised for that tool in the current model turn. Invalid,
+unadvertised, or ambiguously duplicated tools fail before approval and runtime
+dispatch; validation never coerces, removes, or defaults model-supplied values.
+
 ## Optional packs
 
 Plugins, skills, MCP, browser, connectors, schedules, subagents, memory, and

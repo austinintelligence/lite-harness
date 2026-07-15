@@ -18,6 +18,7 @@ try {
     "run",
     "test/approval.test.ts",
     "test/approval-binding.test.ts",
+    "test/agent-tool-validation.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -52,8 +53,12 @@ function writeEvidence(output, report) {
       resolutionFailsClosedOnBindingDrift: true,
       executionBoundaryRevalidatesDigest: true,
       approvalRecordsDurableInSqlite: true,
+      exactAdvertisedToolSchemaEnforcedBeforeApprovalAndDispatch: true,
     },
-    testIds: ["BD-028-REGRESSION", "R11-0885", "R27-2237", "R34-2900"],
+    testIds: [
+      "BD-028-REGRESSION", "BD-029-REGRESSION",
+      "R11-0885", "R27-2237", "R34-2900",
+    ],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

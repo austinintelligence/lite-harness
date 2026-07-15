@@ -11,6 +11,7 @@ describe("AgentRunner", () => {
 
     await runner.run({
       input: "make the demo file",
+      allowedTools: ["write_file"],
       workspaceId: "workspace-1",
       onEvent,
     });

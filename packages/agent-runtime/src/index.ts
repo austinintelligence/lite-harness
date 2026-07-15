@@ -2,6 +2,10 @@ import type { InternalPrincipal, RunEventType, ToolCall, ToolResult } from "@lit
 import { createId } from "@lite-harness/domain";
 import type { ModelEvent, ModelGateway, ModelMessage } from "@lite-harness/provider-core";
 import type { ToolRuntime } from "@lite-harness/runtime";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
+import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
+
+const addFormats = addFormatsImport as unknown as FormatsPlugin;
 
 export interface AgentRuntimeEvent {
   type: RunEventType;
@@ -9,11 +13,28 @@ export interface AgentRuntimeEvent {
 }
 
 export class AgentRunner {
+  readonly #schemaCompiler: Ajv2020;
+  readonly #validatorCache = new Map<string, { schemaJson: string; validate: ValidateFunction }>();
+
   constructor(
     private readonly model: ModelGateway,
     private readonly tools: ToolRuntime,
     private readonly maxTurns = 8,
-  ) {}
+  ) {
+    this.#schemaCompiler = new Ajv2020({
+      allErrors: true,
+      strict: true,
+      coerceTypes: false,
+      removeAdditional: false,
+      useDefaults: false,
+    });
+    addFormats(this.#schemaCompiler);
+    compileAdvertisedToolValidators(
+      this.tools.listTools?.() ?? [],
+      this.#schemaCompiler,
+      this.#validatorCache,
+    );
+  }
 
   async run(params: {
     input: string;
@@ -41,6 +62,11 @@ export class AgentRunner {
     ];
     const allowed = new Set(params.allowedTools ?? []);
     const advertisedTools = (this.tools.listTools?.() ?? []).filter((tool) => allowed.has(tool.name));
+    const advertisedToolValidators = compileAdvertisedToolValidators(
+      advertisedTools,
+      this.#schemaCompiler,
+      this.#validatorCache,
+    );
 
     const turnLimit = params.maxTurns ?? this.maxTurns;
     for (let turn = 0; turn < turnLimit; turn += 1) {
@@ -99,6 +125,7 @@ export class AgentRunner {
       });
 
       for (const call of toolCalls) {
+        validateAdvertisedToolArguments(call, advertisedToolValidators);
         params.onEvent({
           type: "tool.call.requested",
           payload: { callId: call.id, name: call.name, arguments: call.arguments },
@@ -138,6 +165,64 @@ export class AgentRunner {
 
     throw new Error(`Agent exceeded the ${turnLimit}-turn limit`);
   }
+}
+
+export class ToolArgumentValidationError extends Error {
+  readonly code: "tool_not_advertised" | "invalid_tool_arguments" | "invalid_tool_schema";
+
+  constructor(
+    code: ToolArgumentValidationError["code"],
+    toolName: string,
+    detail?: string,
+    options?: ErrorOptions,
+  ) {
+    super(`${code}: ${toolName}${detail ? ` (${detail})` : ""}`, options);
+    this.name = "ToolArgumentValidationError";
+    this.code = code;
+  }
+}
+
+type AdvertisedToolValidators = ReadonlyMap<string, ValidateFunction>;
+
+function compileAdvertisedToolValidators(
+  tools: readonly import("@lite-harness/contracts").ToolDefinition[],
+  ajv: Ajv2020,
+  cache: Map<string, { schemaJson: string; validate: ValidateFunction }>,
+): AdvertisedToolValidators {
+  const validators = new Map<string, ValidateFunction>();
+  for (const tool of tools) {
+    if (validators.has(tool.name)) {
+      throw new ToolArgumentValidationError("invalid_tool_schema", tool.name, "duplicate advertised name");
+    }
+    try {
+      const schemaJson = JSON.stringify(tool.inputSchema);
+      if (!schemaJson) throw new Error("schema is not JSON serializable");
+      const cached = cache.get(tool.name);
+      const validate = cached?.schemaJson === schemaJson ? cached.validate : ajv.compile(tool.inputSchema);
+      cache.set(tool.name, { schemaJson, validate });
+      validators.set(tool.name, validate);
+    } catch (error) {
+      throw new ToolArgumentValidationError("invalid_tool_schema", tool.name, "schema compilation failed", {
+        cause: error,
+      });
+    }
+  }
+  return validators;
+}
+
+/** Enforces the exact immutable schema advertised to the model for this run. */
+export function validateAdvertisedToolArguments(
+  call: ToolCall,
+  validators: AdvertisedToolValidators,
+): void {
+  const validate = validators.get(call.name);
+  if (!validate) throw new ToolArgumentValidationError("tool_not_advertised", call.name);
+  if (validate(call.arguments)) return;
+  const violations = (validate.errors ?? [])
+    .slice(0, 4)
+    .map((error) => `${error.instancePath || "/"}:${error.keyword}`)
+    .join(",");
+  throw new ToolArgumentValidationError("invalid_tool_arguments", call.name, violations || "schema mismatch");
 }
 
 function startBestEffortIteratorCleanup<T>(iterator: AsyncIterator<T>): void {

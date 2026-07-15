@@ -6,6 +6,7 @@ export const candidateEvidenceCatalog = Object.freeze([
   entry("m10-context-optimization/context-optimization.json", "evidence/m10/context-optimization.json", "context-optimization-evidence", "pnpm test:context", "test-suite", "m10-context-optimization"),
   entry("lite-harness-readiness-evidence/evidence/m11/doctor.json", "evidence/m11/doctor.json", "repository-readiness", "pnpm check:doctor", "policy-check", "production-doctor"),
   entry("m11-observability/observability.json", "evidence/m11/observability.json", "observability-evidence", "pnpm check:observability", "test-suite", "m11-observability"),
+  entry("m11-status-truth/status-truth.json", "evidence/m11/status-truth.json", "status-truth-evidence", "pnpm check:status-truth", "test-suite", "m11-status-truth"),
   entry("m11-readiness/readiness.json", "evidence/m11/readiness.json", "readiness-evidence", "pnpm test:readiness", "test-suite", "m11-production-readiness"),
   entry("lite-harness-readiness-evidence/evidence/m11/release-validation.json", "evidence/m11/release-validation.json", "repository-readiness", "pnpm check:release", "policy-check", "semantic-release-validation"),
   entry("m2-backpressure/backpressure.json", "evidence/m2/backpressure.json", "backpressure-evidence", "pnpm test:backpressure", "test-suite", "m2-backpressure"),

@@ -27,8 +27,9 @@
   generation remains available.
 - Provider fallback stops after a tool call becomes externally visible.
 - Browser destinations reject credentials, non-HTTP protocols, private ranges,
-  link-local metadata targets, and non-allowlisted origins. Managed HTTP(S)
-  requests are DNS-resolved and fetched through the sidecar broker.
+  link-local metadata targets, and non-allowlisted origins. Chromium has only
+  an internal Docker network; a separate constrained proxy is the only member
+  with an external route and rechecks DNS/origin policy for every request.
 - Skills cannot widen policy; plugin grants are intersections, never unions.
 - Provider secrets can be resolved through the OS secret store and never enter
   run state, Gateway, or ordinary tool containers.
@@ -39,7 +40,8 @@
   hostile multi-tenant execution.
 - Environment-based provider/snapshot keys remain available for local use;
   shared deployments should select the OS/secret-manager broker.
-- Remote CDP, browser private-network overrides, compatibility plugins, and
-  connector workers are operator-enabled trust expansions with separate policy.
+- Browser private-network overrides, compatibility plugins, and connector
+  workers are operator-enabled trust expansions with separate policy. Remote
+  CDP is disabled until it can preserve the external egress boundary.
 - Denial-of-service beyond configured local quotas is not a distributed
   fairness guarantee.

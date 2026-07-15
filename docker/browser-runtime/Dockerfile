@@ -5,7 +5,7 @@ WORKDIR /opt/lite-browser
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && npm cache clean --force
-COPY server.mjs ./server.mjs
+COPY server.mjs proxy.mjs ./
 RUN chown -R pwuser:pwuser /opt/lite-browser
 USER pwuser
 ENTRYPOINT ["node", "/opt/lite-browser/server.mjs"]

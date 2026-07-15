@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { spawn } from "node:child_process";
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 
 export interface BrowserOwner {
@@ -224,7 +225,81 @@ export class ProcessBrowserDriver implements BrowserDriver {
   }
 }
 
-export class DockerBrowserDriver extends ProcessBrowserDriver {
+export type BrowserDockerRunner = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+export type BrowserProcessFactory = (
+  spec: ProcessSpec,
+  options: { timeoutMs: number; initialization: Record<string, unknown> },
+) => BrowserDriver;
+
+/**
+ * Owns the only network path out of the Chromium isolation network. Chromium
+ * never joins the external bridge, so a renderer/container compromise cannot
+ * bypass origin and private-address policy by ignoring browser hooks.
+ */
+export class ExternalBrowserEgressBroker {
+  readonly networkName = `lite-browser-net-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  readonly containerName = `lite-browser-egress-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  #started = false;
+
+  constructor(private readonly options: {
+    image: string;
+    dockerCommand?: string;
+    runner?: BrowserDockerRunner;
+    externalNetwork?: string;
+  }) {}
+
+  get proxyUrl(): string { return `http://${this.containerName}:8080`; }
+
+  async start(policy: BrowserNetworkPolicy): Promise<void> {
+    if (this.#started) return;
+    const encodedPolicy = Buffer.from(JSON.stringify(policy)).toString("base64url");
+    if (encodedPolicy.length > 64 * 1024) throw new Error("Browser egress policy is too large");
+    const run = this.options.runner ?? ((args) => runDocker(this.options.dockerCommand ?? "docker", args));
+    const network = await run(["network", "create", "--internal", "--driver", "bridge", this.networkName]);
+    if (network.code !== 0) throw new Error(`Could not create browser isolation network: ${network.stderr}`);
+    try {
+      const proxy = await run([
+        "run", "--detach", "--rm", "--name", this.containerName,
+        "--network", this.networkName, "--read-only", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges", "--pids-limit", "64",
+        "--memory", "128m", "--cpus", "0.5", "--user", "pwuser",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+        "--env", `LITE_BROWSER_PROXY_POLICY=${encodedPolicy}`,
+        "--entrypoint", "node", this.options.image, "/opt/lite-browser/proxy.mjs",
+      ]);
+      if (proxy.code !== 0) throw new Error(`Could not start external browser egress broker: ${proxy.stderr}`);
+      const connected = await run(["network", "connect", this.options.externalNetwork ?? "bridge", this.containerName]);
+      if (connected.code !== 0) throw new Error(`Could not connect browser egress broker externally: ${connected.stderr}`);
+      const ready = await run([
+        "exec", this.containerName, "node", "-e",
+        "fetch('http://127.0.0.1:8080').then(r=>process.exit(r.status===403?0:1)).catch(()=>process.exit(1))",
+      ]);
+      if (ready.code !== 0) throw new Error(`External browser egress broker did not become ready: ${ready.stderr}`);
+      this.#started = true;
+    } catch (error) {
+      await run(["container", "rm", "--force", this.containerName]).catch(() => undefined);
+      await run(["network", "rm", this.networkName]).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async stop(): Promise<void> {
+    const run = this.options.runner ?? ((args) => runDocker(this.options.dockerCommand ?? "docker", args));
+    await run(["container", "rm", "--force", this.containerName]).catch(() => undefined);
+    await run(["network", "rm", this.networkName]).catch(() => undefined);
+    this.#started = false;
+  }
+}
+
+export class DockerBrowserDriver implements BrowserDriver {
+  readonly #options: {
+    image: string; dockerCommand?: string; memory?: string; cpus?: string; pidsLimit?: number;
+    seccompProfile?: string; timeoutMs?: number; remoteCdpEndpoint?: string; dockerRunner?: BrowserDockerRunner;
+    processFactory?: BrowserProcessFactory;
+  };
+  #driver?: BrowserDriver;
+  #egress?: ExternalBrowserEgressBroker;
+
   constructor(options: {
     image: string;
     dockerCommand?: string;
@@ -234,26 +309,75 @@ export class DockerBrowserDriver extends ProcessBrowserDriver {
     seccompProfile?: string;
     timeoutMs?: number;
     remoteCdpEndpoint?: string;
+    dockerRunner?: BrowserDockerRunner;
+    processFactory?: BrowserProcessFactory;
   }) {
     if (!options.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(options.image)) {
       throw new Error("Browser image must be pinned by sha256 digest");
     }
-    super({
-      command: options.dockerCommand ?? "docker",
+    if (options.remoteCdpEndpoint) {
+      validateRemoteCdpEndpoint(options.remoteCdpEndpoint);
+      throw new Error("Remote CDP is disabled until it can use the external browser egress broker");
+    }
+    this.#options = { ...options };
+  }
+
+  async start(policy: BrowserNetworkPolicy): Promise<void> {
+    if (this.#driver) return;
+    const egress = new ExternalBrowserEgressBroker({
+      image: this.#options.image,
+      ...(this.#options.dockerCommand ? { dockerCommand: this.#options.dockerCommand } : {}),
+      ...(this.#options.dockerRunner ? { runner: this.#options.dockerRunner } : {}),
+    });
+    await egress.start(policy);
+    const spec: ProcessSpec = {
+      command: this.#options.dockerCommand ?? "docker",
       args: [
         "run", "--rm", "--interactive", "--init", "--user", "pwuser",
+        "--network", egress.networkName,
+        "--env", `HTTP_PROXY=${egress.proxyUrl}`, "--env", `HTTPS_PROXY=${egress.proxyUrl}`,
+        "--env", "NO_PROXY=localhost,127.0.0.1",
         "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--security-opt", `seccomp=${options.seccompProfile ?? join(process.cwd(), "docker", "browser-runtime", "seccomp_profile.json")}`,
-        "--shm-size", "256m",
-        "--memory", options.memory ?? "1g", "--cpus", options.cpus ?? "1.5",
-        "--pids-limit", String(options.pidsLimit ?? 256),
-        "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
-        options.image,
+        "--security-opt", `seccomp=${this.#options.seccompProfile ?? join(process.cwd(), "docker", "browser-runtime", "seccomp_profile.json")}`,
+        "--shm-size", "256m", "--memory", this.#options.memory ?? "1g", "--cpus", this.#options.cpus ?? "1.5",
+        "--pids-limit", String(this.#options.pidsLimit ?? 256), "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
+        this.#options.image,
       ],
-    }, {
-      timeoutMs: options.timeoutMs ?? 30_000,
-      ...(options.remoteCdpEndpoint ? { initialization: { remoteCdpEndpoint: validateRemoteCdpEndpoint(options.remoteCdpEndpoint) } } : {}),
-    });
+    };
+    const processOptions = {
+      timeoutMs: this.#options.timeoutMs ?? 30_000,
+      initialization: { proxyServer: egress.proxyUrl },
+    };
+    const driver = this.#options.processFactory
+      ? this.#options.processFactory(spec, processOptions)
+      : new ProcessBrowserDriver(spec, processOptions);
+    try {
+      await driver.start(policy);
+      this.#egress = egress;
+      this.#driver = driver;
+    } catch (error) {
+      await driver.stop().catch(() => undefined);
+      await egress.stop();
+      throw error;
+    }
+  }
+
+  execute(command: BrowserAction, signal?: AbortSignal): Promise<BrowserActionResult> {
+    if (!this.#driver) throw new Error("Browser driver is not initialized");
+    return this.#driver.execute(command, signal);
+  }
+  restoreProfile(data: string): Promise<void> {
+    if (!this.#driver?.restoreProfile) throw new Error("Browser driver does not support profile restore");
+    return this.#driver.restoreProfile(data);
+  }
+  exportProfile(): Promise<string> {
+    if (!this.#driver?.exportProfile) throw new Error("Browser driver does not support profile export");
+    return this.#driver.exportProfile();
+  }
+  async stop(): Promise<void> {
+    const driver = this.#driver; const egress = this.#egress;
+    this.#driver = undefined; this.#egress = undefined;
+    try { await driver?.stop(); } finally { await egress?.stop(); }
   }
 }
 
@@ -263,6 +387,32 @@ function validateRemoteCdpEndpoint(value: string): string {
     throw new Error("Remote CDP endpoint is invalid");
   }
   return url.toString();
+}
+
+function runDocker(command: string, args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let outputBytes = 0;
+    const append = (target: Buffer[], chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > 1024 * 1024) {
+        child.kill();
+        reject(new Error("Docker command output exceeded 1 MiB"));
+        return;
+      }
+      target.push(chunk);
+    };
+    child.stdout.on("data", (chunk: Buffer) => append(stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => append(stderr, chunk));
+    child.once("error", reject);
+    child.once("close", (code) => resolve({
+      code: code ?? 1,
+      stdout: Buffer.concat(stdout).toString("utf8").trim(),
+      stderr: Buffer.concat(stderr).toString("utf8").trim(),
+    }));
+  });
 }
 
 interface ManagedSession {

@@ -11,6 +11,7 @@ let browser;
 let context;
 let page;
 let policy = {};
+let proxyServer;
 let consoleRecords = [];
 let networkRecords = [];
 const input = createInterface({ input: process.stdin });
@@ -30,12 +31,21 @@ input.on("line", async (line) => {
 async function dispatch(method, params) {
   if (method === "initialize") {
     policy = params.policy ?? {};
+    if (params.proxyServer !== undefined) {
+      const proxy = new URL(params.proxyServer);
+      if (proxy.protocol !== "http:" || proxy.username || proxy.password) throw new Error("Invalid external browser proxy");
+      proxyServer = proxy.toString();
+    }
     if (params.remoteCdpEndpoint) {
       const endpoint = new URL(params.remoteCdpEndpoint);
       if (!["ws:", "wss:", "http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new Error("Invalid remote CDP endpoint");
       browser = await chromium.connectOverCDP(endpoint.toString());
     } else {
-      browser = await chromium.launch({ headless: true, args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
+      browser = await chromium.launch({
+        headless: true,
+        ...(proxyServer ? { proxy: { server: proxyServer } } : {}),
+        args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+      });
     }
     await createContext();
     return { ok: true };
@@ -63,13 +73,18 @@ async function dispatch(method, params) {
 async function createContext(storageState) {
     consoleRecords = []; networkRecords = [];
     context = await browser.newContext({ acceptDownloads: true, serviceWorkers: "block", ...(storageState ? { storageState } : {}) });
-    await context.route("**/*", async (route) => {
-      try {
-        const response = await fetchPinned(route.request());
-        await route.fulfill(response);
-      }
-      catch { await route.abort("blockedbyclient"); }
-    });
+    // Legacy standalone execution retains the in-process policy route. The
+    // managed path always supplies proxyServer and enforces policy outside the
+    // Chromium container through ExternalBrowserEgressBroker.
+    if (!proxyServer) {
+      await context.route("**/*", async (route) => {
+        try {
+          const response = await fetchPinned(route.request());
+          await route.fulfill(response);
+        }
+        catch { await route.abort("blockedbyclient"); }
+      });
+    }
     await context.routeWebSocket(/.*/, (socket) => socket.close({ code: 1008, reason: "WebSockets are disabled by the browser broker" }));
     context.on("requestfinished", (request) => {
       networkRecords.push({ method: request.method(), url: request.url().slice(0, 2_048), resourceType: request.resourceType(), at: new Date().toISOString() });
@@ -198,6 +213,9 @@ async function assertAllowed(rawUrl) {
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Blocked browser protocol");
   if (url.username || url.password) throw new Error("Blocked URL credentials");
   if (policy.allowedOrigins && !policy.allowedOrigins.includes(url.origin)) throw new Error("Blocked browser origin");
+  // The Chromium container intentionally has no external DNS route. The
+  // external proxy resolves and pins destinations for the managed path.
+  if (proxyServer) return { url, addresses: [] };
   const addresses = isIP(url.hostname) ? [url.hostname] : (await lookup(url.hostname, { all: true, verbatim: true })).map((entry) => entry.address);
   if (!policy.allowPrivateNetworks && addresses.some(isPrivate)) throw new Error("Blocked private network");
   return { url, addresses };

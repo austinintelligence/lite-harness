@@ -34,19 +34,26 @@ decision, timestamp, and error. Idle sessions stop their sidecar automatically.
 
 ## Network policy
 
-Only credential-free HTTP(S) URLs are accepted. The sidecar intercepts each
-HTTP(S) request, resolves and validates DNS, connects to the approved address
-while preserving the TLS server name, bounds redirects/body/time, and fulfills
-the browser route with the brokered response. Loopback, private, link-local,
+Only credential-free HTTP(S) URLs are accepted. Chromium joins an internal-only
+Docker network and cannot route to the Internet. A separate non-root,
+read-only `ExternalBrowserEgressBroker` proxy joins that network and the
+external Docker bridge. It resolves and validates every destination, connects
+to the approved address, and bounds tunnel bytes and idle time. Loopback, private, link-local,
 carrier-grade NAT, documentation/reserved, multicast, and metadata addresses
 are denied. WebSockets are closed and non-proxied WebRTC UDP is disabled.
+
+This split is a deliberate compromise boundary: even if Chromium or its
+container is compromised and ignores Playwright request hooks, it has no
+external route that bypasses the policy proxy. Redirects create new proxy
+requests and are checked again. TLS remains end-to-end between Chromium and the
+approved origin; the proxy authorizes HTTPS by CONNECT host and pinned IP.
 
 `allowPrivateNetworks` is a high-trust operator override. Do not enable it for
 untrusted pages or tenants. Managed browser containers are Docker containment,
 not a hostile multi-tenant micro-VM boundary.
 
-Optional remote CDP is supported through a validated endpoint sent to the
-sidecar over its initialization channel rather than container environment.
+Remote CDP fails closed in the managed lane because a remote browser cannot be
+proven to use this external egress boundary.
 Owner-scoped browser profiles are encrypted with AES-GCM and generation-safe
 atomic replacement. Host-session attachment, extension relay, and noVNC remain
 outside the managed alpha lane because they require separate high-trust UX and

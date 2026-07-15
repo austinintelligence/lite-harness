@@ -114,7 +114,7 @@ export class EncryptedBrowserProfileStore implements BrowserProfileStore {
 
   async load(profileId: string, owner: Omit<BrowserOwner, "runId">): Promise<string | undefined> {
     try {
-      const encoded = readFileSync(this.#path(profileId));
+      const encoded = readFileSync(this.#path(profileId, owner));
       const envelope = JSON.parse(encoded.toString("utf8")) as { version: number; nonce: string; tag: string; ciphertext: string };
       if (envelope.version !== 1) throw new Error("Browser profile version is unsupported");
       const decipher = createDecipheriv("aes-256-gcm", this.#key(profileId, owner), Buffer.from(envelope.nonce, "base64"));
@@ -134,7 +134,7 @@ export class EncryptedBrowserProfileStore implements BrowserProfileStore {
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.#key(profileId, owner), nonce);
     const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-    const path = this.#path(profileId); const temporary = `${path}.${process.pid}.tmp`; const backup = `${path}.previous`;
+    const path = this.#path(profileId, owner); const temporary = `${path}.${process.pid}.tmp`; const backup = `${path}.previous`;
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(temporary, JSON.stringify({ version: 1, nonce: nonce.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ciphertext: ciphertext.toString("base64") }), { mode: 0o600 });
     rmSync(backup, { force: true });
@@ -144,15 +144,21 @@ export class EncryptedBrowserProfileStore implements BrowserProfileStore {
     rmSync(backup, { force: true });
   }
 
-  #path(profileId: string): string {
+  #path(profileId: string, owner: Omit<BrowserOwner, "runId">): string {
     if (!/^[A-Za-z0-9._-]{1,128}$/.test(profileId)) throw new Error("Browser profile id is invalid");
-    const digest = createHash("sha256").update(profileId).digest("hex");
+    const digest = createHash("sha256").update(browserProfileIdentity(profileId, owner)).digest("hex");
     return join(this.root, digest.slice(0, 2), `${digest}.json`);
   }
 
   #key(profileId: string, owner: Omit<BrowserOwner, "runId">): Buffer {
     return createHmac("sha256", this.masterKey).update(`${owner.appId}\0${owner.tenantId}\0${owner.userId}\0${profileId}`).digest();
   }
+}
+
+function browserProfileIdentity(profileId: string, owner: Omit<BrowserOwner, "runId">): string {
+  return [owner.appId, owner.tenantId, owner.userId, profileId]
+    .map((value) => `${Buffer.byteLength(value)}:${value}`)
+    .join("|");
 }
 
 export interface BrowserAuditRecord {

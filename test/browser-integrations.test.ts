@@ -63,13 +63,15 @@ describe("managed browser broker", () => {
     expect(() => new DockerBrowserDriver({ image: "playwright:latest" })).toThrow(/pinned by sha256/);
   });
 
-  it("encrypts persistent browser state and binds it to the app tenant and user", async () => {
+  it("encrypts same-named profiles in distinct owner-scoped storage paths", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-browser-profile-")); cleanup.push(directory);
     const profiles = new EncryptedBrowserProfileStore(directory, Buffer.alloc(32, 7));
     const owner = { appId: "app", tenantId: "tenant", userId: "user" };
-    await profiles.save("default", owner, JSON.stringify({ cookies: [{ name: "session", value: "secret" }] }));
-    await expect(profiles.load("default", owner)).resolves.toContain("session");
-    await expect(profiles.load("default", { ...owner, tenantId: "other" })).rejects.toThrow();
+    const other = { ...owner, tenantId: "other" };
+    await profiles.save("default", owner, JSON.stringify({ cookies: [{ name: "session", value: "primary" }] }));
+    await profiles.save("default", other, JSON.stringify({ cookies: [{ name: "session", value: "other" }] }));
+    await expect(profiles.load("default", owner)).resolves.toContain("primary");
+    await expect(profiles.load("default", other)).resolves.toContain("other");
   });
 
   it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("runs the pinned Chromium sidecar and stops it", async () => {

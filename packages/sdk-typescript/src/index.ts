@@ -21,6 +21,7 @@ import type {
   MintRunTokenResponse,
   RevokeTokenResponse,
 } from "@lite-harness/contracts";
+export * from "./generated-api.js";
 
 export interface LiteHarnessClientOptions {
   baseUrl: string;

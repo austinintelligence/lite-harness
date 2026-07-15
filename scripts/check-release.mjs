@@ -189,7 +189,7 @@ if (failures.length) {
       prereleaseBehaviorEnforced: true,
       testedImageDigestPromotionEnforced: true,
     },
-    testIds: ["BD-057-REGRESSION"],
+    testIds: ["BD-057-REGRESSION", "BD-061-REGRESSION"],
   }, null, 2)}\n`);
   process.stdout.write("Release structure checks passed.\n");
 }

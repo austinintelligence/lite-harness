@@ -86,6 +86,7 @@ export const RunBudgetOverridesSchema = Type.Object({
   modelIdleTimeoutMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 3_600_000 })),
   commandTimeoutMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 3_600_000 })),
 }, { additionalProperties: false });
+export type RunBudgetOverrides = Static<typeof RunBudgetOverridesSchema>;
 
 export const CreateRunRequestSchema = Type.Object(
   {

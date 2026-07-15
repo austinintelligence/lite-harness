@@ -496,6 +496,34 @@
           "tokenId",
           "revoked"
         ]
+      },
+      "PublishArtifact": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "mediaType": {
+            "minLength": 3,
+            "maxLength": 255,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+            "type": "string"
+          },
+          "dataBase64": {
+            "minLength": 4,
+            "maxLength": 25165824,
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "dataBase64"
+        ]
       }
     }
   },
@@ -512,7 +540,8 @@
           "200": {
             "description": "healthy"
           }
-        }
+        },
+        "operationId": "getHealthz"
       }
     },
     "/readyz": {
@@ -532,7 +561,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "getReadyz"
       }
     },
     "/hooks/webhook/{accountId}": {
@@ -581,7 +611,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "postHooksWebhookByAccountId"
       }
     },
     "/v1/runs": {
@@ -600,7 +631,8 @@
           "202": {
             "description": "accepted or replayed"
           }
-        }
+        },
+        "operationId": "postV1Runs"
       }
     },
     "/v1/runs/{runId}": {
@@ -629,7 +661,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "getV1RunsByRunId"
       }
     },
     "/v1/runs/{runId}/events": {
@@ -659,7 +692,8 @@
               "text/event-stream": {}
             }
           }
-        }
+        },
+        "operationId": "getV1RunsByRunIdEvents"
       }
     },
     "/v1/runs/{runId}/attempts": {
@@ -678,7 +712,8 @@
           "200": {
             "description": "durable execution attempts"
           }
-        }
+        },
+        "operationId": "getV1RunsByRunIdAttempts"
       }
     },
     "/v1/runs/{runId}/children": {
@@ -697,7 +732,8 @@
           "200": {
             "description": "owned direct child runs"
           }
-        }
+        },
+        "operationId": "getV1RunsByRunIdChildren"
       }
     },
     "/v1/runs/{runId}/cancel": {
@@ -716,7 +752,8 @@
           "200": {
             "description": "cancelled or terminal run"
           }
-        }
+        },
+        "operationId": "postV1RunsByRunIdCancel"
       }
     },
     "/v1/runs/{runId}/steer": {
@@ -735,7 +772,8 @@
           "200": {
             "description": "instruction queued"
           }
-        }
+        },
+        "operationId": "postV1RunsByRunIdSteer"
       }
     },
     "/v1/sessions/{sessionId}": {
@@ -754,7 +792,8 @@
           "200": {
             "description": "session"
           }
-        }
+        },
+        "operationId": "getV1SessionsBySessionId"
       }
     },
     "/v1/sessions/{sessionId}/messages": {
@@ -773,7 +812,8 @@
           "200": {
             "description": "messages"
           }
-        }
+        },
+        "operationId": "getV1SessionsBySessionIdMessages"
       }
     },
     "/v1/approvals/{approvalId}": {
@@ -792,7 +832,8 @@
           "200": {
             "description": "approval resolved"
           }
-        }
+        },
+        "operationId": "postV1ApprovalsByApprovalId"
       }
     },
     "/v1/runs/{runId}/artifacts": {
@@ -811,7 +852,8 @@
           "201": {
             "description": "artifact published"
           }
-        }
+        },
+        "operationId": "postV1RunsByRunIdArtifacts"
       }
     },
     "/v1/artifacts/{artifactId}": {
@@ -830,7 +872,8 @@
           "200": {
             "description": "artifact metadata and base64 data"
           }
-        }
+        },
+        "operationId": "getV1ArtifactsByArtifactId"
       }
     },
     "/v1/agents": {
@@ -839,7 +882,8 @@
           "200": {
             "description": "owned agent profiles"
           }
-        }
+        },
+        "operationId": "getV1Agents"
       },
       "post": {
         "requestBody": {
@@ -856,7 +900,8 @@
           "201": {
             "description": "agent profile created"
           }
-        }
+        },
+        "operationId": "postV1Agents"
       }
     },
     "/v1/agents/{agentId}": {
@@ -885,7 +930,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "getV1AgentsByAgentId"
       }
     },
     "/v1/workspaces": {
@@ -894,7 +940,8 @@
           "200": {
             "description": "owned workspaces"
           }
-        }
+        },
+        "operationId": "getV1Workspaces"
       },
       "post": {
         "requestBody": {
@@ -910,7 +957,8 @@
           "201": {
             "description": "managed workspace created"
           }
-        }
+        },
+        "operationId": "postV1Workspaces"
       }
     },
     "/v1/workspaces/{workspaceId}": {
@@ -939,7 +987,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "getV1WorkspacesByWorkspaceId"
       }
     },
     "/v1/tokens": {
@@ -991,7 +1040,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "postV1Tokens"
       }
     },
     "/v1/tokens/{tokenId}": {
@@ -1035,7 +1085,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "deleteV1TokensByTokenId"
       }
     }
   },

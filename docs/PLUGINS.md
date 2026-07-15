@@ -38,3 +38,26 @@ isolation. Unbrokered server-to-client requests fail closed.
 Remote MCP uses the same bounded request/response lifecycle over an explicitly
 allowlisted HTTP origin. Credentials remain in Manager-owned configuration and
 are not exposed to the model, Gateway, or tool container.
+
+## Production Manager composition
+
+Optional systems are disabled by default. The Manager composes them before a
+run freezes its advertised tools and stops every active supervisor during
+shutdown:
+
+- `LITE_HARNESS_SKILL_ROOTS` is a JSON array of `{root, precedence, source}`
+  entries. Discovery freezes exact `SKILL.md` bodies; `skill_list` exposes only
+  metadata and `skill_view` loads one body without granting its requested tools.
+- `LITE_HARNESS_MCP_SERVERS` is a JSON array of stdio or HTTP server records.
+  Every record declares its advertised tool schemas up front. Transports start
+  only when one of those brokered tools is invoked.
+- `LITE_HARNESS_ENABLE_PLUGINS=true` activates enabled entries from
+  `plugins.lock.json`. `LITE_HARNESS_PLUGIN_IMAGE` must be a digest-pinned
+  sandbox image; workers remain lazy and receive only intersected grants.
+- `LITE_HARNESS_ENABLE_SNAPSHOT_COMPACTION=true` registers owned encrypted
+  Docker-workspace snapshots through the bounded compactor queue.
+- `LITE_HARNESS_ENABLE_CACHE_CATALOG=true` registers owner-derived cache
+  generation resolution without returning host paths to a model or container.
+
+MCP authorization values are referenced by a `LITE_HARNESS_*` environment
+variable name in server configuration; credentials are not embedded in JSON.

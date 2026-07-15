@@ -39,6 +39,7 @@ import { LocalArtifactStore, validateRegisteredBindRoot } from "@lite-harness/wo
 import { ManagerInstanceLock } from "@lite-harness/operations";
 import { buildManagerServer } from "./server.js";
 import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
+import { configureProductionOptionalSystems } from "./optional-systems.js";
 
 const configuration = loadManagerConfiguration();
 const { dataDir, socketPath, internalToken } = configuration;
@@ -50,9 +51,10 @@ const instanceLock = new ManagerInstanceLock({
 await instanceLock.acquire();
 const databasePath = join(dataDir, "lite-harness.db");
 const store = new SqliteRunStore(databasePath);
+const snapshotRootKey = await artifactEncryptionRootKey(dataDir, configuration.mode);
 const artifactStore = new LocalArtifactStore(
   join(dataDir, "artifacts"),
-  await artifactEncryptionRootKey(dataDir, configuration.mode),
+  snapshotRootKey,
 );
 const baseRuntime = resolveRuntime(store, configuration.runtime);
 if (baseRuntime instanceof DockerToolRuntime) {
@@ -64,13 +66,22 @@ if (baseRuntime instanceof DockerToolRuntime) {
 const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
 const modelGateway = resolveModelGateway(configuration.provider, createDelegatedWorkspaceResolver(store));
+// ContextOptimizationGate, skills, MCP, plugins, snapshots, and caches are
+// composed here so they share the production run/tool lifecycle.
+const optionalSystems = configureProductionOptionalSystems({
+  dataDir,
+  modelId: process.env.LITE_HARNESS_MODEL?.trim() || configuration.provider,
+  runtime: brokeredRuntime,
+  ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
+  snapshotKey: snapshotRootKey,
+});
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
   : undefined;
 const memoryStore = process.env.LITE_HARNESS_ENABLE_MEMORY === "true"
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
-const service = new RunService(store, new AgentRunner(modelGateway, runtime), {
+const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, optionalSystems.context), {
   requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
     ? () => true
     : () => false,
@@ -114,6 +125,7 @@ app.addHook("onClose", async () => {
   integrationDelivery?.stop();
   await service.shutdown(Number.parseInt(process.env.LITE_HARNESS_SHUTDOWN_TIMEOUT_MS ?? "30000", 10));
   await brokeredCapabilities.stop();
+  await optionalSystems.stop();
   memoryStore?.close();
   integrationStore?.close();
   store.close();

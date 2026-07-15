@@ -65,6 +65,7 @@
     "test:docker": "node scripts/check-docker.mjs",
     "test:integrations": "node scripts/check-integrations.mjs",
     "test:migrations": "node scripts/check-migrations.mjs",
+    "test:optional-systems": "node scripts/check-optional-systems.mjs",
     "test:plugins": "node scripts/check-plugins.mjs",
     "test:providers": "node scripts/check-providers.mjs",
     "test:readiness": "node scripts/check-readiness.mjs",

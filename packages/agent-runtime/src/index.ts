@@ -12,6 +12,16 @@ export interface AgentRuntimeEvent {
   payload: Record<string, unknown>;
 }
 
+export interface AgentContextCompiler {
+  compile(params: {
+    input: string;
+    instructions?: string;
+    workspaceId: string;
+    runId?: string;
+    principal?: InternalPrincipal;
+  }): Promise<readonly ModelMessage[]>;
+}
+
 export class AgentRunner {
   readonly #schemaCompiler: Ajv2020;
   readonly #validatorCache = new Map<string, { schemaJson: string; validate: ValidateFunction }>();
@@ -20,6 +30,7 @@ export class AgentRunner {
     private readonly model: ModelGateway,
     private readonly tools: ToolRuntime,
     private readonly maxTurns = 8,
+    private readonly context?: AgentContextCompiler,
   ) {
     this.#schemaCompiler = new Ajv2020({
       allErrors: true,
@@ -55,8 +66,16 @@ export class AgentRunner {
     signal?: AbortSignal;
     onEvent: (event: AgentRuntimeEvent) => void;
   }): Promise<void> {
+    const compiledContext = await this.context?.compile({
+      input: params.input,
+      ...(params.instructions ? { instructions: params.instructions } : {}),
+      workspaceId: params.workspaceId,
+      ...(params.runId ? { runId: params.runId } : {}),
+      ...(params.principal ? { principal: params.principal } : {}),
+    }) ?? [];
     const messages: ModelMessage[] = [
       ...(params.instructions?.trim() ? [{ role: "system" as const, content: params.instructions.trim() }] : []),
+      ...compiledContext.map((message) => ({ ...message })),
       ...(params.history?.length
         ? params.history.map((message) => ({ ...message }))
         : [{ role: "user" as const, content: params.input }]),

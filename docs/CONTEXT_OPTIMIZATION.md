@@ -14,6 +14,14 @@ The gate has global, app, and model switches plus a tenant-scoped render cache.
 Renderer error, an unknown model profile, or any disabled switch falls back to
 text without changing run semantics. The feature is disabled by default.
 
+Set `LITE_HARNESS_CONTEXT_FILE` to a bounded operator-owned instruction file to
+compose canonical context into real runs. Optional rendering additionally
+requires `LITE_HARNESS_CONTEXT_OPTIMIZATION=true` and explicit comma-separated
+`LITE_HARNESS_CONTEXT_ALLOWED_APPS` and `LITE_HARNESS_CONTEXT_ALLOWED_MODELS`.
+The Manager compiles once at run start; adapters that currently accept only the
+canonical text representation receive exact text even when an optional image
+view can be produced.
+
 `pnpm evaluate:pxpipe` measures local render latency/bytes and exact recovery
 without contacting a model. Results are recorded in
 [`pxpipe-evaluation.json`](pxpipe-evaluation.json). That measurement does not

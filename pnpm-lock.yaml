@@ -109,6 +109,9 @@ importers:
       '@lite-harness/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@lite-harness/context':
+        specifier: workspace:*
+        version: link:../../packages/context
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -124,12 +127,18 @@ importers:
       '@lite-harness/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@lite-harness/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@lite-harness/memory-sqlite':
         specifier: workspace:*
         version: link:../../packages/memory-sqlite
       '@lite-harness/operations':
         specifier: workspace:*
         version: link:../../packages/operations
+      '@lite-harness/plugin-core':
+        specifier: workspace:*
+        version: link:../../packages/plugin-core
       '@lite-harness/provider-anthropic':
         specifier: workspace:*
         version: link:../../packages/provider-anthropic
@@ -145,6 +154,9 @@ importers:
       '@lite-harness/runtime-docker':
         specifier: workspace:*
         version: link:../../packages/runtime-docker
+      '@lite-harness/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@lite-harness/storage-sqlite':
         specifier: workspace:*
         version: link:../../packages/storage-sqlite

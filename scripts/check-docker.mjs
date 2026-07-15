@@ -12,7 +12,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/docker-archive.test.ts", "test/runtime.test.ts",
+    "run", "test/docker-archive.test.ts", "test/docker-lifecycle.test.ts", "test/runtime.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -46,8 +46,12 @@ function writeEvidence(output, report) {
       maintenanceNetworkDisabled: true,
       maintenanceCapabilitiesMinimal: true,
       maintenanceResourcesBounded: true,
+      toolContainerIdentityPersistedBeforeStart: true,
+      toolContainerOwnershipLabelsScoped: true,
+      startupContainerReconciliation: true,
+      cancellationIndependentlyKillsWaitsRemovesAndVerifies: true,
     },
-    testIds: ["BD-018-REGRESSION"],
+    testIds: ["BD-018-REGRESSION", "BD-019-REGRESSION", "BD-020-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

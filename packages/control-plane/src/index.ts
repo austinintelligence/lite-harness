@@ -409,6 +409,7 @@ export class RunService {
         allowedTools: profile.allowedTools,
         workspaceId: run.workspaceId,
         runId: run.id,
+        attemptId: attempt.id,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
         ...(history?.length ? { history } : {}),
         signal: controller.signal,

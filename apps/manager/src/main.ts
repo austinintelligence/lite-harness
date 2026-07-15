@@ -42,7 +42,14 @@ await instanceLock.acquire();
 const databasePath = join(dataDir, "lite-harness.db");
 const store = new SqliteRunStore(databasePath);
 const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
-const brokeredRuntime = new BrokeredToolRuntime(resolveRuntime(store, configuration.runtime));
+const baseRuntime = resolveRuntime(store, configuration.runtime);
+if (baseRuntime instanceof DockerToolRuntime) {
+  const reapedContainers = await baseRuntime.reconcileContainers();
+  if (reapedContainers > 0) {
+    process.stderr.write(`lite-harness manager: reaped ${reapedContainers} interrupted Docker container(s)\n`);
+  }
+}
+const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
 const integrationStore = process.env.LITE_HARNESS_WEBHOOK_SECRET
   ? new SqliteIntegrationStore(join(dataDir, "integrations.db"))
@@ -286,6 +293,8 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
   const image = requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE");
   return new DockerToolRuntime({
     image,
+    installationId: dataDir,
+    containerStore: runStore,
     workspaceQuotaBytes: Number.parseInt(process.env.LITE_HARNESS_WORKSPACE_QUOTA_BYTES ?? String(1024 * 1024 * 1024), 10),
     resolveRegisteredWorkspace: (workspaceId, principal) => {
       if (!principal) return undefined;

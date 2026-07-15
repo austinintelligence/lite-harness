@@ -18,6 +18,8 @@ import type {
   SessionMessageRecord,
   SessionMessageRole,
   SessionRecord,
+  RuntimeContainerRecord,
+  RuntimeContainerState,
   WorkspaceLease,
 } from "@lite-harness/contracts";
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
@@ -593,6 +595,20 @@ export class SqliteRunStore implements RunStore {
             ON session_messages(session_internal_id, sequence);
         `);
       },
+      () => this.#database.exec(`
+        CREATE TABLE runtime_containers (
+          runtime_container_id TEXT PRIMARY KEY,
+          container_name TEXT NOT NULL UNIQUE,
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          attempt_id TEXT NOT NULL,
+          workspace_identity TEXT NOT NULL,
+          tool_call_id TEXT NOT NULL,
+          state TEXT NOT NULL CHECK(state IN ('CREATED', 'RUNNING', 'STOPPING')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX runtime_containers_run ON runtime_containers(run_id, attempt_id);
+      `),
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -1152,6 +1168,45 @@ export class SqliteRunStore implements RunStore {
     const run = this.getRun(runId);
     if (!run) throw new Error(`Run not found: ${runId}`);
     return run;
+  }
+
+  recordRuntimeContainer(record: RuntimeContainerRecord): void {
+    this.#database.prepare(`
+      INSERT INTO runtime_containers(
+        runtime_container_id, container_name, run_id, attempt_id, workspace_identity,
+        tool_call_id, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.runtimeContainerId, record.containerName, record.runId, record.attemptId,
+      record.workspaceIdentity, record.toolCallId, record.state, record.createdAt, record.updatedAt,
+    );
+  }
+
+  updateRuntimeContainerState(runtimeContainerId: string, state: RuntimeContainerState, updatedAt: string): void {
+    const result = this.#database.prepare(
+      "UPDATE runtime_containers SET state = ?, updated_at = ? WHERE runtime_container_id = ?",
+    ).run(state, updatedAt, runtimeContainerId);
+    if (Number(result.changes) !== 1) throw new Error(`Runtime container is not recorded: ${runtimeContainerId}`);
+  }
+
+  removeRuntimeContainer(runtimeContainerId: string): void {
+    this.#database.prepare("DELETE FROM runtime_containers WHERE runtime_container_id = ?").run(runtimeContainerId);
+  }
+
+  listRuntimeContainers(): RuntimeContainerRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM runtime_containers ORDER BY created_at, runtime_container_id",
+    ).all() as Array<Record<string, unknown>>).map((row) => ({
+      runtimeContainerId: String(row.runtime_container_id),
+      containerName: String(row.container_name),
+      runId: String(row.run_id),
+      attemptId: String(row.attempt_id),
+      workspaceIdentity: String(row.workspace_identity),
+      toolCallId: String(row.tool_call_id),
+      state: row.state as RuntimeContainerState,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    }));
   }
 
   close(): void {

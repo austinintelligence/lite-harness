@@ -165,6 +165,21 @@ export interface RunRecord {
   updatedAt: string;
 }
 
+export type RuntimeContainerState = "CREATED" | "RUNNING" | "STOPPING";
+
+/** Durable Manager record for a Docker object owned by one tool execution. */
+export interface RuntimeContainerRecord {
+  runtimeContainerId: string;
+  containerName: string;
+  runId: string;
+  attemptId: string;
+  workspaceIdentity: string;
+  toolCallId: string;
+  state: RuntimeContainerState;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RunBudget {
   maxTurns: number;
   maxToolCalls: number;

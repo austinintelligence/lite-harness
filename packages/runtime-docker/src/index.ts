@@ -2,7 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { InternalPrincipal, ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
+import type {
+  InternalPrincipal,
+  RuntimeContainerRecord,
+  RuntimeContainerState,
+  ToolCall,
+  ToolDefinition,
+  ToolResult,
+} from "@lite-harness/contracts";
 import type { ToolExecutionContext, ToolRuntime } from "@lite-harness/runtime";
 import { validateWorkspacePath, WORKSPACE_TOOL_DEFINITIONS } from "@lite-harness/runtime";
 
@@ -15,8 +22,40 @@ export interface DockerRuntimeConfig {
   maxOutputBytes?: number;
   workspaceQuotaBytes?: number;
   maxArchiveFiles?: number;
+  /** Stable per-data-directory identity used to scope daemon reconciliation. */
+  installationId?: string;
+  containerStore?: DockerRuntimeContainerStore;
+  commandRunner?: DockerCommandRunner;
   /** Trusted Manager-owned lookup. Arbitrary run input never becomes a bind source. */
   resolveRegisteredWorkspace?: (workspaceId: string, principal?: InternalPrincipal) => string | undefined;
+}
+
+export interface DockerCommandResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface DockerCommandOptions {
+  input?: string;
+  signal?: AbortSignal;
+  maxOutputBytes?: number;
+}
+
+export type DockerCommandRunner = (
+  args: readonly string[],
+  options?: DockerCommandOptions,
+) => Promise<DockerCommandResult>;
+
+export interface DockerRuntimeContainerStore {
+  recordRuntimeContainer(record: RuntimeContainerRecord): void | Promise<void>;
+  updateRuntimeContainerState(
+    runtimeContainerId: string,
+    state: RuntimeContainerState,
+    updatedAt: string,
+  ): void | Promise<void>;
+  removeRuntimeContainer(runtimeContainerId: string): void | Promise<void>;
+  listRuntimeContainers(): RuntimeContainerRecord[] | Promise<RuntimeContainerRecord[]>;
 }
 
 export interface DockerDoctorResult {
@@ -53,12 +92,9 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async doctor(): Promise<DockerDoctorResult> {
     try {
-      const result = await runCommand(
-        this.#docker,
+      const result = await this.#run(
         ["version", "--format", "{{.Client.Version}}|{{.Server.Version}}"],
-        undefined,
-        undefined,
-        64 * 1024,
+        { maxOutputBytes: 64 * 1024 },
       );
       const [clientVersion, serverVersion] = result.stdout.trim().split("|");
       return {
@@ -82,7 +118,7 @@ export class DockerToolRuntime implements ToolRuntime {
       validateWorkspacePath(path);
       const contentBytes = Buffer.byteLength(content);
       const quotaBytes = this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024;
-      const usage = await this.#workspaceUsage(mount, path, params.signal);
+      const usage = await this.#workspaceUsage(mount, path, params);
       if (usage.totalBytes - usage.existingBytes + contentBytes > quotaBytes) {
         throw new Error(`Workspace write exceeds the ${quotaBytes}-byte quota`);
       }
@@ -96,7 +132,8 @@ export class DockerToolRuntime implements ToolRuntime {
           path,
         ],
         content,
-        params.signal,
+        params,
+        "write",
       );
       return commandResult(params.call.id, result, { path, bytes: contentBytes });
     }
@@ -108,7 +145,8 @@ export class DockerToolRuntime implements ToolRuntime {
         mount,
         ["sh", "-c", 'set -eu; cat -- "/workspace/$1"', "lite-read", path],
         undefined,
-        params.signal,
+        params,
+        "read",
       );
       return commandResult(params.call.id, result, { path });
     }
@@ -179,7 +217,7 @@ export class DockerToolRuntime implements ToolRuntime {
   async removeWorkspace(workspaceId: string, principal?: InternalPrincipal): Promise<boolean> {
     if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be deleted by Lite-Harness");
     const volume = volumeName(workspaceIdentity(workspaceId, principal));
-    const result = await runCommand(this.#docker, ["volume", "rm", volume], undefined, undefined);
+    const result = await this.#run(["volume", "rm", volume]);
     this.#readyVolumes.delete(volume);
     return result.code === 0;
   }
@@ -188,12 +226,11 @@ export class DockerToolRuntime implements ToolRuntime {
     if (this.#readyVolumes.has(volume)) {
       return;
     }
-    const create = await runCommand(this.#docker, ["volume", "create", volume], undefined, signal);
+    const create = await this.#run(["volume", "create", volume], { signal });
     if (create.code !== 0) {
       throw new Error(`Could not create workspace volume: ${create.stderr}`);
     }
-    const initialize = await runCommand(
-      this.#docker,
+    const initialize = await this.#run(
       [
         "run",
         "--rm",
@@ -205,8 +242,7 @@ export class DockerToolRuntime implements ToolRuntime {
         "-c",
         "touch /workspace/.lite-harness-workspace && chown -R 1000:1000 /workspace && chmod 0700 /workspace",
       ],
-      undefined,
-      signal,
+      { signal },
     );
     if (initialize.code !== 0) {
       throw new Error(`Could not initialize workspace volume: ${initialize.stderr}`);
@@ -215,13 +251,12 @@ export class DockerToolRuntime implements ToolRuntime {
   }
 
   async #createRawVolume(volume: string, signal?: AbortSignal): Promise<void> {
-    const result = await runCommand(this.#docker, ["volume", "create", volume], undefined, signal);
+    const result = await this.#run(["volume", "create", volume], { signal });
     if (result.code !== 0) throw new Error(`Could not create staging volume: ${result.stderr}`);
   }
 
   async #copyVolume(source: string, destination: string, signal?: AbortSignal): Promise<void> {
-    const result = await runCommand(
-      this.#docker,
+    const result = await this.#run(
       [
         "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
@@ -229,15 +264,13 @@ export class DockerToolRuntime implements ToolRuntime {
         "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination`,
         this.config.image, "sh", "-c", "cp -a /source/. /destination/",
       ],
-      undefined,
-      signal,
+      { signal },
     );
     if (result.code !== 0) throw new Error(`Could not copy workspace volume: ${result.stderr}`);
   }
 
   async #replaceVolumeContents(source: string, destination: string, signal?: AbortSignal): Promise<void> {
-    const result = await runCommand(
-      this.#docker,
+    const result = await this.#run(
       [
         "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
@@ -246,8 +279,7 @@ export class DockerToolRuntime implements ToolRuntime {
         this.config.image, "sh", "-c",
         "find /destination -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a /source/. /destination/ && chown -R 1000:1000 /destination",
       ],
-      undefined,
-      signal,
+      { signal },
     );
     if (result.code !== 0) throw new Error(`Could not replace workspace volume: ${result.stderr}`);
   }
@@ -260,12 +292,17 @@ export class DockerToolRuntime implements ToolRuntime {
     return { kind: "volume", source: volume };
   }
 
-  async #workspaceUsage(mount: WorkspaceMount, path: string, signal?: AbortSignal): Promise<{ totalBytes: number; existingBytes: number }> {
+  async #workspaceUsage(
+    mount: WorkspaceMount,
+    path: string,
+    params: ToolExecutionContext,
+  ): Promise<{ totalBytes: number; existingBytes: number }> {
     const result = await this.#runTool(
       mount,
       ["sh", "-c", 'set -eu; total=$(du -sk /workspace | cut -f1); target="/workspace/$1"; if [ -f "$target" ]; then old=$(wc -c < "$target"); else old=0; fi; printf "%s %s" "$total" "$old"', "lite-quota", path],
       undefined,
-      signal,
+      params,
+      "quota",
     );
     if (result.code !== 0) throw new Error(`Could not inspect workspace quota usage: ${result.stderr}`);
     const [kilobytes, existingBytes] = result.stdout.trim().split(/\s+/).map(Number);
@@ -282,17 +319,44 @@ export class DockerToolRuntime implements ToolRuntime {
     return path;
   }
 
-  #runTool(
+  async #runTool(
     mount: WorkspaceMount,
     command: string[],
     input?: string,
-    signal?: AbortSignal,
-  ): Promise<CommandResult> {
-    return runCommand(
-      this.#docker,
+    params?: ToolExecutionContext,
+    operation = "tool",
+  ): Promise<DockerCommandResult> {
+    if (!params?.runId || !params.attemptId || !params.principal) {
+      throw new Error("Docker tool execution requires owned run and attempt context");
+    }
+    const containerStore = this.config.containerStore;
+    const installationId = this.config.installationId?.trim();
+    if (!containerStore || !installationId) {
+      throw new Error("Docker tool execution requires durable container storage and an installation identity");
+    }
+    const identity = workspaceIdentity(params.workspaceId, params.principal);
+    const containerName = deterministicContainerName(
+      installationId,
+      identity,
+      params.runId,
+      params.attemptId,
+      params.call.id,
+      operation,
+    );
+    const label = (name: string, value: string) => ["--label", `lite-harness.${name}=${labelDigest(value)}`];
+    const create = await this.#run(
       [
-        "run",
-        "--rm",
+        "create",
+        "--name", containerName,
+        "--label", "lite-harness.managed=true",
+        ...label("installation", installationId),
+        ...label("app", params.principal.appId),
+        ...label("tenant", params.principal.tenantId),
+        ...label("user", params.principal.userId),
+        ...label("workspace", identity),
+        ...label("run", params.runId),
+        ...label("attempt", params.attemptId),
+        ...label("tool-call", params.call.id),
         "--interactive",
         "--network",
         "none",
@@ -315,14 +379,171 @@ export class DockerToolRuntime implements ToolRuntime {
         this.config.image,
         ...command,
       ],
-      input,
-      signal,
-      this.#maxOutputBytes,
+      { signal: params.signal, maxOutputBytes: this.#maxOutputBytes },
+    );
+    if (create.code !== 0) throw new Error(`Could not create Docker tool container: ${create.stderr}`);
+    const runtimeContainerId = create.stdout.trim();
+    if (!/^[a-f0-9]{12,64}$/i.test(runtimeContainerId)) {
+      await killAndReapContainer((args, options) => this.#run(args, options), containerName).catch(() => undefined);
+      throw new Error("Docker create returned an invalid container ID");
+    }
+
+    const now = new Date().toISOString();
+    const record: RuntimeContainerRecord = {
+      runtimeContainerId,
+      containerName,
+      runId: params.runId,
+      attemptId: params.attemptId,
+      workspaceIdentity: labelDigest(identity),
+      toolCallId: params.call.id,
+      state: "CREATED",
+      createdAt: now,
+      updatedAt: now,
+    };
+    let recorded = false;
+    let result: DockerCommandResult | undefined;
+    let executionError: unknown;
+    try {
+      await containerStore.recordRuntimeContainer(record);
+      recorded = true;
+      await containerStore.updateRuntimeContainerState(runtimeContainerId, "RUNNING", new Date().toISOString());
+      result = await this.#run(
+        ["start", "--attach", "--interactive", runtimeContainerId],
+        { ...(input === undefined ? {} : { input }), signal: params.signal, maxOutputBytes: this.#maxOutputBytes },
+      );
+    } catch (error) {
+      executionError = error;
+    }
+
+    const cleanupErrors: unknown[] = [];
+    if (recorded) {
+      try {
+        await containerStore.updateRuntimeContainerState(runtimeContainerId, "STOPPING", new Date().toISOString());
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    let reaped = false;
+    try {
+      await killAndReapContainer((args, options) => this.#run(args, options), runtimeContainerId);
+      reaped = true;
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (recorded && reaped) {
+      try {
+        await containerStore.removeRuntimeContainer(runtimeContainerId);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (executionError && cleanupErrors.length) {
+      throw new AggregateError([executionError, ...cleanupErrors], "Docker tool execution and cleanup both failed");
+    }
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "Docker tool cleanup failed");
+    if (executionError) throw executionError;
+    return result!;
+  }
+
+  async reconcileContainers(): Promise<number> {
+    const store = this.config.containerStore;
+    const installationId = this.config.installationId?.trim();
+    if (!store || !installationId) throw new Error("Docker reconciliation requires durable container storage and an installation identity");
+    const listed = await this.#run([
+      "ps", "--all", "--no-trunc",
+      "--filter", "label=lite-harness.managed=true",
+      "--filter", `label=lite-harness.installation=${labelDigest(installationId)}`,
+      "--format", "{{.ID}}",
+    ]);
+    if (listed.code !== 0) throw new Error(`Could not list managed Docker containers: ${listed.stderr}`);
+    const records = await store.listRuntimeContainers();
+    const storedIds = new Set(records.map((record) => record.runtimeContainerId));
+    const containerIds = new Set([
+      ...records.map((record) => record.runtimeContainerId),
+      ...listed.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    ]);
+    const failures: unknown[] = [];
+    let reaped = 0;
+    for (const runtimeContainerId of containerIds) {
+      try {
+        await killAndReapContainer((args, options) => this.#run(args, options), runtimeContainerId);
+        if (storedIds.has(runtimeContainerId)) await store.removeRuntimeContainer(runtimeContainerId);
+        reaped += 1;
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, "Docker startup reconciliation failed");
+    return reaped;
+  }
+
+  #run(args: readonly string[], options: DockerCommandOptions = {}): Promise<DockerCommandResult> {
+    if (this.config.commandRunner) return this.config.commandRunner(args, options);
+    return runCommand(
+      this.#docker,
+      [...args],
+      options.input,
+      options.signal,
+      options.maxOutputBytes ?? this.#maxOutputBytes,
     );
   }
 }
 
 interface WorkspaceMount { kind: "volume" | "bind"; source: string }
+
+export async function killAndReapContainer(
+  runner: DockerCommandRunner,
+  runtimeContainerId: string,
+): Promise<void> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(runtimeContainerId)) {
+    throw new Error("Runtime container ID is invalid");
+  }
+  const inspect = await runner([
+    "container", "inspect", "--format", "{{.State.Running}}|{{.State.Status}}", runtimeContainerId,
+  ]);
+  if (inspect.code !== 0) {
+    if (isNoSuchContainer(inspect)) return;
+    throw new Error(`Could not inspect Docker tool container: ${inspect.stderr}`);
+  }
+  const [runningText, status] = inspect.stdout.trim().split("|");
+  if (runningText !== "true" && runningText !== "false") {
+    throw new Error("Docker tool container state was invalid");
+  }
+  if (runningText === "true" || status === "running" || status === "restarting" || status === "paused") {
+    const killed = await runner(["container", "kill", runtimeContainerId]);
+    if (killed.code !== 0 && !isNoSuchContainer(killed)) {
+      throw new Error(`Could not kill Docker tool container: ${killed.stderr}`);
+    }
+  }
+  if (status !== "created" && status !== "removing") {
+    const waited = await runner(["container", "wait", runtimeContainerId]);
+    if (waited.code !== 0 && !isNoSuchContainer(waited)) {
+      throw new Error(`Could not wait for Docker tool container: ${waited.stderr}`);
+    }
+  }
+  const removed = await runner(["container", "rm", "--force", runtimeContainerId]);
+  if (removed.code !== 0 && !isNoSuchContainer(removed)) {
+    throw new Error(`Could not remove Docker tool container: ${removed.stderr}`);
+  }
+  const verified = await runner(["container", "inspect", runtimeContainerId]);
+  if (verified.code === 0 || !isNoSuchContainer(verified)) {
+    throw new Error("Docker tool container removal could not be verified");
+  }
+}
+
+function isNoSuchContainer(result: DockerCommandResult): boolean {
+  return /no such (?:container|object)/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+function deterministicContainerName(...identity: string[]): string {
+  const hash = createHash("sha256");
+  for (const value of identity) hash.update(String(value.length)).update(":").update(value).update(";");
+  return `lite-harness-tool-${hash.digest("hex").slice(0, 32)}`;
+}
+
+function labelDigest(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
 
 export function dockerMaintenanceHardeningArgs(
   config: Pick<DockerRuntimeConfig, "memory" | "cpus" | "pidsLimit">,

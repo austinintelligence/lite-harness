@@ -3,6 +3,7 @@ import type { ArtifactRecord, InternalPrincipal, ToolCall, ToolDefinition, ToolR
 export interface ToolExecutionContext {
   workspaceId: string;
   runId?: string;
+  attemptId?: string;
   principal?: InternalPrincipal;
   call: ToolCall;
   signal?: AbortSignal;

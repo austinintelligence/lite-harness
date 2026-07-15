@@ -21,6 +21,7 @@ export class AgentRunner {
     allowedTools?: readonly string[];
     workspaceId: string;
     runId?: string;
+    attemptId?: string;
     principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
     takeSteering?: () => readonly ModelMessage[];
@@ -99,6 +100,7 @@ export class AgentRunner {
         const result = await this.tools.execute({
           workspaceId: params.workspaceId,
           ...(params.runId ? { runId: params.runId } : {}),
+          ...(params.attemptId ? { attemptId: params.attemptId } : {}),
           ...(params.principal ? { principal: params.principal } : {}),
           call,
           signal: commandSignal,

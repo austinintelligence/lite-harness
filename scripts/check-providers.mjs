@@ -54,7 +54,10 @@ function writeEvidence(output, report) {
       omittedAdapterCostCalculatedFromFrozenRates: true,
       conservativeHigherCostEnforced: true,
     },
-    testIds: ["BD-030-REGRESSION", "BD-031-REGRESSION"],
+    testIds: [
+      "BD-030-REGRESSION", "BD-031-REGRESSION",
+      "R14-1251", "R27-2223", "R34-2883",
+    ],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

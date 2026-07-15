@@ -2395,9 +2395,13 @@
         "testId": "BD-063-REGRESSION",
         "path": "test/release-truth.test.ts",
         "result": "pass",
-        "evidenceArtifact": null
+        "evidenceArtifact": {
+          "path": "evidence/m11/status-truth.json"
+        }
       },
-      "fixCommits": [],
+      "fixCommits": [
+        "2136a0dbf2d5a82037905c8d8c728949bcc839c9"
+      ],
       "blockers": [
         "current-regression-evidence-missing"
       ]

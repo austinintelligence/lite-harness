@@ -1739,7 +1739,7 @@
         "section": "Known baseline defects / 50",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-050-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1753,14 +1753,18 @@
       },
       "regression": {
         "testId": "BD-050-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/context-optimization.test.ts",
+        "result": "pass",
+        "evidenceArtifact": { "path": "docs/pxpipe-paired-evaluation.json" }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "70cafd6c55340ae98cf61d343d94fbda14de819a",
+        "d76a9e6ab0bce4530d246b0303b1d528da4e1c7d",
+        "db96f60b51b31cb0ba3255f8b376209095f2e330",
+        "ac307fd8557e656b3ae37e6f323bc6c833e1fc07",
+        "9c49e80b66ccf11e90cb9e17e6fd4cf6fe69cfce"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-051",

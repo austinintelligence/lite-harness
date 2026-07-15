@@ -451,14 +451,12 @@
         "lineStart": 203,
         "lineEnd": 203
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "packages/agent-runtime/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "D21",
@@ -957,14 +955,15 @@
         "lineStart": 2799,
         "lineEnd": 2804
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts", "scripts/evaluate-context.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [
+        { "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" },
+        { "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "P11",
@@ -9758,14 +9757,12 @@
         "lineStart": 1660,
         "lineEnd": 1661
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/optional-systems.ts", "packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1674",
@@ -9780,14 +9777,12 @@
         "lineStart": 1674,
         "lineEnd": 1674
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1675",
@@ -9802,14 +9797,12 @@
         "lineStart": 1675,
         "lineEnd": 1675
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1676",
@@ -9846,14 +9839,12 @@
         "lineStart": 1678,
         "lineEnd": 1678
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["apps/manager/src/optional-systems.ts", "docs/pxpipe-paired-evaluation.json"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1682",
@@ -9868,14 +9859,12 @@
         "lineStart": 1682,
         "lineEnd": 1683
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1696",
@@ -9890,14 +9879,12 @@
         "lineStart": 1696,
         "lineEnd": 1696
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1697",
@@ -9912,14 +9899,12 @@
         "lineStart": 1697,
         "lineEnd": 1697
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1698",
@@ -9934,14 +9919,12 @@
         "lineStart": 1698,
         "lineEnd": 1698
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1699",
@@ -9956,14 +9939,12 @@
         "lineStart": 1699,
         "lineEnd": 1699
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1700",
@@ -10000,14 +9981,12 @@
         "lineStart": 1701,
         "lineEnd": 1701
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1702",
@@ -10022,14 +10001,12 @@
         "lineStart": 1702,
         "lineEnd": 1702
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1708",
@@ -10044,14 +10021,12 @@
         "lineStart": 1708,
         "lineEnd": 1708
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1709",
@@ -10066,14 +10041,12 @@
         "lineStart": 1709,
         "lineEnd": 1709
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1710",
@@ -10088,14 +10061,12 @@
         "lineStart": 1710,
         "lineEnd": 1710
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1711",
@@ -10110,14 +10081,12 @@
         "lineStart": 1711,
         "lineEnd": 1711
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1718",
@@ -10132,14 +10101,12 @@
         "lineStart": 1718,
         "lineEnd": 1718
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["scripts/evaluate-context.ts", "docs/pxpipe-paired-evaluation.json"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1719",
@@ -10154,14 +10121,12 @@
         "lineStart": 1719,
         "lineEnd": 1719
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["package.json", "pnpm-lock.yaml", "packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1720",
@@ -10176,14 +10141,12 @@
         "lineStart": 1720,
         "lineEnd": 1720
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1721",
@@ -10198,14 +10161,12 @@
         "lineStart": 1721,
         "lineEnd": 1721
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "packages/agent-runtime/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1722",
@@ -10220,14 +10181,15 @@
         "lineStart": 1722,
         "lineEnd": 1722
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts", "apps/manager/src/optional-systems.ts", "scripts/evaluate-context.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [
+        { "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" },
+        { "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1723",
@@ -10242,14 +10204,12 @@
         "lineStart": 1723,
         "lineEnd": 1723
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1724",
@@ -10264,14 +10224,12 @@
         "lineStart": 1724,
         "lineEnd": 1725
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docs/adr/0048-pxpipe-version-and-evaluation.md", "docs/pxpipe-paired-evaluation.json"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R18-1730",
@@ -10286,13 +10244,13 @@
         "lineStart": 1730,
         "lineEnd": 1731
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": ["packages/agent-runtime/src/index.ts", "packages/provider-core/src/index.ts", "packages/context/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "evidence/m10/context-optimization.json", "producer": "pnpm test:context" }],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "automatic-canonical-recompile-after-fallback-selection-not-implemented"
       ]
     },
     {
@@ -20358,14 +20316,12 @@
         "lineStart": 2989,
         "lineEnd": 2990
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["scripts/evaluate-context.ts", "docs/pxpipe-paired-evaluation.json", "packages/provider-core/src/index.ts"],
+      "testIds": ["BD-050-REGRESSION"],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [{ "path": "docs/pxpipe-paired-evaluation.json", "producer": "pnpm evaluate:pxpipe:hermes" }],
+      "status": "verified",
+      "blockers": []
     }
   ]
 }

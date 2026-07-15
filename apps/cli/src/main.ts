@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { loadManagerConfiguration } from "@lite-harness/config";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { installUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
@@ -22,10 +23,21 @@ if (command === "doctor") {
   mkdirSync(dataDir, { recursive: true });
   let dataDirectoryWritable = true;
   try { accessSync(dataDir, constants.R_OK | constants.W_OK); } catch { dataDirectoryWritable = false; }
-  const docker = await inspectDocker();
+  const docker = await inspectDocker(process.env.LITE_HARNESS_DOCTOR_DOCKER_COMMAND?.trim() || "docker");
   const disk = statfsSync(dataDir);
   const freeBytes = disk.bavail * disk.bsize;
+  const minimumFreeBytes = doctorMinimumFreeBytes(process.env.LITE_HARNESS_DOCTOR_MIN_FREE_BYTES);
   const database = databaseIntegrityCheck(join(dataDir, "lite-harness.db"));
+  let configuration: { ok: boolean; schemaVersion?: number; dataDir?: string; provider?: string; runtime?: string; mode?: string; error?: string };
+  try {
+    const validated = loadManagerConfiguration({ ...process.env, LITE_HARNESS_DATA_DIR: dataDir });
+    configuration = {
+      ok: true, schemaVersion: validated.schemaVersion, dataDir: validated.dataDir,
+      provider: validated.provider, runtime: validated.runtime, mode: validated.mode,
+    };
+  } catch (error) {
+    configuration = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
   const configuredProfile = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${process.env.LITE_HARNESS_PROVIDER ?? "fake"}_default`;
   let osCredential: { available: boolean; providerConfigured: boolean; snapshotKeyConfigured: boolean; error?: string } = {
     available: true, providerConfigured: false, snapshotKeyConfigured: false,
@@ -43,7 +55,7 @@ if (command === "doctor") {
   }
   const environmentSnapshotKey = process.env.LITE_HARNESS_SNAPSHOT_KEY;
   const snapshotKeyValid = environmentSnapshotKey
-    ? Buffer.from(environmentSnapshotKey, "base64").length === 32
+    ? validBase64Key(environmentSnapshotKey)
     : osCredential.snapshotKeyConfigured;
   const runtimeImage = process.env.LITE_HARNESS_RUNTIME_IMAGE;
   const mode = process.env.LITE_HARNESS_MODE ?? "development";
@@ -55,7 +67,7 @@ if (command === "doctor") {
     node: { ok: Number(process.versions.node.split(".")[0]) >= 24, version: process.versions.node },
     docker,
     dataDirectory: { ok: dataDirectoryWritable, path: dataDir },
-    disk: { ok: freeBytes >= 1024 * 1024 * 1024, freeBytes },
+    disk: { ok: freeBytes >= minimumFreeBytes, freeBytes, requiredFreeBytes: minimumFreeBytes },
     database,
     snapshotKey: { ok: snapshotKeyValid, source: environmentSnapshotKey ? "environment" : osCredential.snapshotKeyConfigured ? "os" : "missing" },
     credentials: {
@@ -65,8 +77,11 @@ if (command === "doctor") {
     },
     runtimeImage: runtimeImageCheck,
     gateway,
+    configuration,
     platform: { os: process.platform, arch: process.arch },
   };
+  const remediation = doctorRemediation(report);
+  (report as typeof report & { remediation: typeof remediation }).remediation = remediation;
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   const requiredChecks = [
     report.node.ok,
@@ -76,6 +91,7 @@ if (command === "doctor") {
     dataDirectoryWritable,
     report.disk.ok,
     database.ok,
+    configuration.ok,
     runtimeImageCheck.ok,
     gateway.ok,
     mode !== "production" || snapshotKeyValid,
@@ -269,6 +285,45 @@ function inspectRuntimeImage(image: string | undefined, required: boolean): { ok
   } catch (error) {
     return { ok: false, configured: true, image, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function doctorMinimumFreeBytes(value: string | undefined): number {
+  if (value === undefined) return 1024 * 1024 * 1024;
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) return Number.MAX_SAFE_INTEGER;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
+function validBase64Key(value: string): boolean {
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return false;
+  const key = Buffer.from(value, "base64");
+  return key.length === 32 && key.toString("base64").replace(/=+$/, "") === value.replace(/=+$/, "");
+}
+
+function doctorRemediation(report: {
+  node: { ok: boolean };
+  docker: { available: boolean; serverOs?: string };
+  dataDirectory: { ok: boolean };
+  disk: { ok: boolean };
+  database: { ok: boolean };
+  snapshotKey: { ok: boolean };
+  credentials: { osStoreAvailable: boolean; providerConfigured: boolean };
+  runtimeImage: { ok: boolean };
+  gateway: { ok: boolean };
+  configuration: { ok: boolean; mode?: string };
+}): Array<{ check: string; remediation: string }> {
+  const remediation: Array<{ check: string; remediation: string }> = [];
+  if (!report.node.ok) remediation.push({ check: "node", remediation: "Install the pinned Node 24 runtime." });
+  if (!report.configuration.ok) remediation.push({ check: "configuration", remediation: "Fix the reported LITE_HARNESS_* configuration and rerun doctor." });
+  if (!report.docker.available || report.docker.serverOs !== "linux") remediation.push({ check: "docker", remediation: "Start a Linux Docker engine and verify the active context and server version." });
+  if (!report.dataDirectory.ok) remediation.push({ check: "dataDirectory", remediation: "Grant the service account read/write access to the data directory." });
+  if (!report.disk.ok) remediation.push({ check: "disk", remediation: "Free disk space or move LITE_HARNESS_DATA_DIR to a volume with the required reserve." });
+  if (!report.database.ok) remediation.push({ check: "database", remediation: "Restore from the previous-good database or run the ordered migration repair workflow." });
+  if (report.configuration.mode === "production" && !report.snapshotKey.ok) remediation.push({ check: "snapshotKey", remediation: "Configure a valid base64-encoded 32-byte snapshot key in the OS store or environment." });
+  if (!report.credentials.osStoreAvailable || !report.credentials.providerConfigured) remediation.push({ check: "credentials", remediation: "Configure the OS credential store and the selected provider profile." });
+  if (!report.runtimeImage.ok) remediation.push({ check: "runtimeImage", remediation: "Install the exact digest-pinned runtime image." });
+  if (!report.gateway.ok) remediation.push({ check: "gateway", remediation: "Start Gateway and Manager locally, then verify loopback /readyz health." });
+  return remediation;
 }
 
 async function inspectGatewayReadiness(url: string | undefined, required: boolean): Promise<{ ok: boolean; configured: boolean; status?: number; error?: string }> {

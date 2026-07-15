@@ -478,7 +478,7 @@ export class RunService {
         runId: run.id,
         role: "assistant",
         content: String(event.payload.content ?? ""),
-        metadata: { turn: event.payload.turn ?? 0 },
+        metadata: { turn: event.payload.turn ?? 0, toolCalls: event.payload.toolCalls ?? [] },
       });
     } else if (run.sessionId && event.type === "tool.call.completed") {
       this.store.appendSessionMessage({
@@ -626,13 +626,32 @@ function boundedChildBudget(
 }
 
 function toModelMessage(message: SessionMessageRecord): ModelMessage {
+  const toolCalls = message.role === "assistant"
+    ? persistedToolCalls(message.metadata.toolCalls)
+    : undefined;
   return {
     role: message.role === "system" ? "user" : message.role,
     content: message.content,
+    ...(toolCalls?.length ? { toolCalls } : {}),
     ...(message.role === "tool" && typeof message.metadata.callId === "string"
       ? { toolCallId: message.metadata.callId }
       : {}),
   };
+}
+
+function persistedToolCalls(value: unknown): ToolCall[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const calls: ToolCall[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const call = item as Record<string, unknown>;
+    if (typeof call.id !== "string" || typeof call.name !== "string" ||
+        !call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments)) {
+      return undefined;
+    }
+    calls.push({ id: call.id, name: call.name, arguments: call.arguments as Record<string, unknown> });
+  }
+  return calls;
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {

@@ -84,7 +84,7 @@ export class AgentRunner {
       messages.push({ role: "assistant", content: assistantText, toolCalls });
       params.onEvent({
         type: "agent.message.completed",
-        payload: { role: "assistant", content: assistantText, turn },
+        payload: { role: "assistant", content: assistantText, toolCalls, turn },
       });
 
       for (const call of toolCalls) {

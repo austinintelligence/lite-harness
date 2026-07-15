@@ -18,6 +18,7 @@ try {
     "test/migrations.test.ts",
     "test/idempotency.test.ts",
     "test/owner-scoped-identities.test.ts",
+    "test/session-history.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -53,8 +54,13 @@ function writeEvidence(output, report) {
       canonicalRequestFingerprint: true,
       ownerScopedExternalSlugs: true,
       opaqueInternalIdentityReferences: true,
+      newestSessionHistoryWindow: true,
+      structuredAssistantToolCalls: true,
     },
-    testIds: ["BD-013-REGRESSION", "BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320"],
+    testIds: [
+      "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-013-REGRESSION",
+      "BD-014-REGRESSION", "BD-024-REGRESSION", "R29-2320",
+    ],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

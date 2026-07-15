@@ -578,6 +578,20 @@ export class SqliteRunStore implements RunStore {
         `).get() as { count: number };
         if (missing.count !== 0) throw new Error("Owner-scoped identity migration left unresolved run references");
       },
+      () => {
+        this.#database.exec(`
+          ALTER TABLE session_messages ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0;
+          UPDATE session_messages
+          SET sequence = (
+            SELECT COUNT(*) FROM session_messages prior
+            WHERE prior.session_internal_id = session_messages.session_internal_id
+              AND (prior.created_at < session_messages.created_at
+                OR (prior.created_at = session_messages.created_at AND prior.id <= session_messages.id))
+          );
+          CREATE UNIQUE INDEX session_messages_sequence
+            ON session_messages(session_internal_id, sequence);
+        `);
+      },
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -755,10 +769,16 @@ export class SqliteRunStore implements RunStore {
         .run(id, JSON.stringify({ status: "ACCEPTED" }), now);
       this.#database
         .prepare(
-          `INSERT INTO session_messages(id, session_internal_id, run_id, role, content, metadata_json, created_at)
-           VALUES (?, ?, ?, 'user', ?, '{}', ?)`,
+          `INSERT INTO session_messages(
+             id, session_internal_id, run_id, role, content, metadata_json, created_at, sequence
+           ) VALUES (?, ?, ?, 'user', ?, '{}', ?,
+             (SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_messages WHERE session_internal_id = ?)
+           )`,
         )
-        .run(`msg_${id.slice(4)}_user`, effectiveSession.internal_id, id, request.input, now);
+        .run(
+          `msg_${id.slice(4)}_user`, effectiveSession.internal_id, id, request.input, now,
+          effectiveSession.internal_id,
+        );
       const row = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(id) as unknown as RunRow;
       this.#database.exec("COMMIT");
       return { run: toRunRecord(row), created: true };
@@ -865,38 +885,53 @@ export class SqliteRunStore implements RunStore {
     metadata?: Record<string, unknown>;
   }): SessionMessageRecord {
     const createdAt = new Date().toISOString();
-    const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as RunRow | undefined;
-    if (!run || !run.session_internal_id || run.session_id !== params.sessionId) {
-      throw new Error("Session message does not belong to the supplied run");
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as RunRow | undefined;
+      if (!run || !run.session_internal_id || run.session_id !== params.sessionId) {
+        throw new Error("Session message does not belong to the supplied run");
+      }
+      const next = this.#database.prepare(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM session_messages WHERE session_internal_id = ?",
+      ).get(run.session_internal_id) as { sequence: number };
+      this.#database
+        .prepare(
+          `INSERT INTO session_messages(
+             id, session_internal_id, run_id, role, content, metadata_json, created_at, sequence
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          params.id,
+          run.session_internal_id,
+          params.runId,
+          params.role,
+          params.content,
+          JSON.stringify(params.metadata ?? {}),
+          createdAt,
+          next.sequence,
+        );
+      const row = this.#database.prepare(
+        `SELECT m.*, s.id AS session_id FROM session_messages m
+         JOIN sessions s ON s.internal_id = m.session_internal_id WHERE m.id = ?`,
+      ).get(params.id) as unknown as MessageRow;
+      this.#database.exec("COMMIT");
+      return toMessage(row);
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
     }
-    this.#database
-      .prepare(
-        `INSERT INTO session_messages(id, session_internal_id, run_id, role, content, metadata_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        params.id,
-        run.session_internal_id,
-        params.runId,
-        params.role,
-        params.content,
-        JSON.stringify(params.metadata ?? {}),
-        createdAt,
-      );
-    const row = this.#database.prepare(
-      `SELECT m.*, s.id AS session_id FROM session_messages m
-       JOIN sessions s ON s.internal_id = m.session_internal_id WHERE m.id = ?`,
-    ).get(params.id) as unknown as MessageRow;
-    return toMessage(row);
   }
 
   listSessionMessages(sessionId: string, owner: ResourceOwner, limit = 1_000): SessionMessageRecord[] {
     const rows = this.#database
       .prepare(
-        `SELECT m.*, s.id AS session_id FROM session_messages m
-         JOIN sessions s ON s.internal_id = m.session_internal_id
-         WHERE s.app_id = ? AND s.tenant_id = ? AND s.user_id = ? AND s.id = ?
-         ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
+        `SELECT * FROM (
+           SELECT m.*, s.id AS session_id FROM session_messages m
+           JOIN sessions s ON s.internal_id = m.session_internal_id
+           WHERE s.app_id = ? AND s.tenant_id = ? AND s.user_id = ? AND s.id = ?
+           ORDER BY m.sequence DESC LIMIT ?
+         ) newest
+         ORDER BY sequence ASC`,
       )
       .all(owner.appId, owner.tenantId, owner.userId, sessionId, limit) as unknown as MessageRow[];
     return rows.map(toMessage);

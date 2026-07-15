@@ -1957,7 +1957,7 @@
         "section": "Known baseline defects / 56",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-056-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1971,14 +1971,17 @@
       },
       "regression": {
         "testId": "BD-056-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "scripts/check-image-workflow.mjs",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m3/image-promotion.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "679fe9c9486e4cea66ebbe9bedcb33972ce6b714",
+        "2e087c696c346a07263881ba89146d372e20217a"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-057",

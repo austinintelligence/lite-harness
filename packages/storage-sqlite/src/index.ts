@@ -259,145 +259,158 @@ export class SqliteRunStore implements RunStore {
     this.#database = new DatabaseSync(path);
     this.#database.exec("PRAGMA foreign_keys = ON");
     this.#database.exec("PRAGMA journal_mode = WAL");
-    this.#migrate();
+    try {
+      this.#migrate();
+    } catch (error) {
+      this.#database.close();
+      throw error;
+    }
   }
 
   #migrate(): void {
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
+        version INTEGER PRIMARY KEY CHECK(version > 0),
         applied_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS runs (
-        id TEXT PRIMARY KEY,
-        idempotency_key TEXT NOT NULL,
-        request_fingerprint TEXT NOT NULL,
-        app_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        session_id TEXT,
-        input TEXT NOT NULL,
-        status TEXT NOT NULL,
-        last_sequence INTEGER NOT NULL DEFAULT 0,
-        error_code TEXT,
-        error_message TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (app_id, tenant_id, idempotency_key)
-      );
-
-      CREATE TABLE IF NOT EXISTS run_events (
-        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-        sequence INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (run_id, sequence)
-      );
-
-      CREATE INDEX IF NOT EXISTS run_events_cursor
-        ON run_events(run_id, sequence);
-
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        app_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS session_messages (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-        run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS session_messages_order
-        ON session_messages(session_id, created_at, id);
-
-      CREATE TABLE IF NOT EXISTS workspace_leases (
-        workspace_id TEXT PRIMARY KEY,
-        owner_run_id TEXT,
-        fencing_token INTEGER NOT NULL DEFAULT 0,
-        expires_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS approvals (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-        tool_call_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        status TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        resolved_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS agent_profiles (
-        id TEXT PRIMARY KEY,
-        version INTEGER NOT NULL,
-        app_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        instructions TEXT NOT NULL,
-        model_capabilities_json TEXT NOT NULL,
-        allowed_tools_json TEXT NOT NULL,
-        default_budget_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS workspaces (
-        id TEXT PRIMARY KEY,
-        app_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        state TEXT NOT NULL,
-        registered_path TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS run_attempts (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-        attempt INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        UNIQUE(run_id, attempt)
-      );
-
-      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-        VALUES (1, datetime('now'));
-      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-        VALUES (2, datetime('now'));
-      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-        VALUES (3, datetime('now'));
-      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-        VALUES (4, datetime('now'));
-      INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-        VALUES (5, datetime('now'));
+      ) STRICT;
     `);
-    this.#ensureColumn("runs", "budget_json", "TEXT NOT NULL DEFAULT '{}'");
-    this.#ensureColumn("runs", "usage_input_tokens", "INTEGER NOT NULL DEFAULT 0");
-    this.#ensureColumn("runs", "usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
-    this.#ensureColumn("runs", "usage_cost_usd", "REAL NOT NULL DEFAULT 0");
-    this.#ensureColumn("runs", "usage_tool_calls", "INTEGER NOT NULL DEFAULT 0");
-    this.#ensureColumn("runs", "parent_run_id", "TEXT REFERENCES runs(id) ON DELETE SET NULL");
-    this.#ensureColumn("runs", "depth", "INTEGER NOT NULL DEFAULT 0");
-    this.#ensureColumn("runs", "delivery_allowed", "INTEGER NOT NULL DEFAULT 1");
+    const migrations: Array<() => void> = [
+      () => this.#database.exec(`
+        CREATE TABLE runs (
+          id TEXT PRIMARY KEY,
+          idempotency_key TEXT NOT NULL,
+          request_fingerprint TEXT NOT NULL,
+          app_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL,
+          session_id TEXT,
+          input TEXT NOT NULL,
+          status TEXT NOT NULL,
+          last_sequence INTEGER NOT NULL DEFAULT 0,
+          error_code TEXT,
+          error_message TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (app_id, tenant_id, idempotency_key)
+        );
+        CREATE TABLE run_events (
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          sequence INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (run_id, sequence)
+        );
+        CREATE INDEX run_events_cursor ON run_events(run_id, sequence);
+      `),
+      () => this.#database.exec(`
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          app_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE session_messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          metadata_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX session_messages_order ON session_messages(session_id, created_at, id);
+      `),
+      () => this.#database.exec(`
+        CREATE TABLE workspace_leases (
+          workspace_id TEXT PRIMARY KEY,
+          owner_run_id TEXT,
+          fencing_token INTEGER NOT NULL DEFAULT 0,
+          expires_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE approvals (
+          id TEXT PRIMARY KEY,
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          tool_call_id TEXT NOT NULL,
+          tool_name TEXT NOT NULL,
+          status TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          resolved_at TEXT
+        );
+      `),
+      () => this.#database.exec(`
+        CREATE TABLE agent_profiles (
+          id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL,
+          app_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          instructions TEXT NOT NULL,
+          model_capabilities_json TEXT NOT NULL,
+          allowed_tools_json TEXT NOT NULL,
+          default_budget_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE TABLE workspaces (
+          id TEXT PRIMARY KEY,
+          app_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          state TEXT NOT NULL,
+          registered_path TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `),
+      () => {
+        this.#database.exec(`
+          CREATE TABLE run_attempts (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+            attempt INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            UNIQUE(run_id, attempt)
+          );
+        `);
+        this.#ensureColumn("runs", "budget_json", "TEXT NOT NULL DEFAULT '{}'");
+        this.#ensureColumn("runs", "usage_input_tokens", "INTEGER NOT NULL DEFAULT 0");
+        this.#ensureColumn("runs", "usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
+        this.#ensureColumn("runs", "usage_cost_usd", "REAL NOT NULL DEFAULT 0");
+        this.#ensureColumn("runs", "usage_tool_calls", "INTEGER NOT NULL DEFAULT 0");
+        this.#ensureColumn("runs", "parent_run_id", "TEXT REFERENCES runs(id) ON DELETE SET NULL");
+        this.#ensureColumn("runs", "depth", "INTEGER NOT NULL DEFAULT 0");
+        this.#ensureColumn("runs", "delivery_allowed", "INTEGER NOT NULL DEFAULT 1");
+      },
+    ];
+    const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
+      .map((row) => row.version);
+    if (applied.some((version, index) => version !== index + 1) || applied.length > migrations.length) {
+      throw new Error(`Unsupported or non-contiguous SQLite migration history: ${applied.join(",") || "empty"}`);
+    }
+    for (let index = applied.length; index < migrations.length; index += 1) {
+      this.#database.exec("BEGIN IMMEDIATE");
+      try {
+        migrations[index]!();
+        this.#database.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+          .run(index + 1, new Date().toISOString());
+        this.#database.exec(`PRAGMA user_version = ${index + 1}`);
+        this.#database.exec("COMMIT");
+      } catch (error) {
+        this.#database.exec("ROLLBACK");
+        throw new Error(`SQLite migration ${index + 1} failed`, { cause: error });
+      }
+    }
   }
 
   #ensureColumn(table: string, column: string, definition: string): void {

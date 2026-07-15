@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  hkdfSync,
   randomBytes,
   webcrypto,
 } from "node:crypto";
@@ -10,7 +11,10 @@ import { createGunzip, createGzip } from "node:zlib";
 import {
   createReadStream,
   createWriteStream,
+  closeSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -24,6 +28,7 @@ import { dirname, join, posix, win32 } from "node:path";
 import { once } from "node:events";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { DatabaseSync } from "node:sqlite";
 import type { ArtifactRecord, InternalPrincipal } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import { validateWorkspacePath } from "@lite-harness/runtime";
@@ -31,6 +36,8 @@ import { validateWorkspacePath } from "@lite-harness/runtime";
 const SNAPSHOT_MAGIC = "LHS2\n";
 const SNAPSHOT_TAG_BYTES = 16;
 const SNAPSHOT_HEADER_BYTES = 16 * 1024;
+const ARTIFACT_MAGIC = "LHA1\n";
+const ARTIFACT_TAG_BYTES = 16;
 
 const POSIX_SENSITIVE_ROOTS = [
   "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root",
@@ -452,7 +459,12 @@ export interface ArtifactPayload {
 }
 
 export class LocalArtifactStore {
-  constructor(private readonly root: string, private readonly maxBytes = 16 * 1024 * 1024) {}
+  readonly #rootKey: Buffer;
+
+  constructor(private readonly root: string, rootKey: Buffer, private readonly maxBytes = 16 * 1024 * 1024) {
+    if (rootKey.length !== 32) throw new Error("Artifact root key must be exactly 32 bytes");
+    this.#rootKey = Buffer.from(rootKey);
+  }
 
   publish(params: {
     runId: string;
@@ -464,6 +476,9 @@ export class LocalArtifactStore {
   }): ArtifactRecord {
     validateWorkspacePath(params.path);
     if (params.data.length > this.maxBytes) throw new Error(`Artifact exceeds ${this.maxBytes} bytes`);
+    if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(params.mediaType)) {
+      throw new Error("Artifact media type is invalid");
+    }
     const id = createId("art");
     const createdAt = new Date().toISOString();
     const record: ArtifactRecord = {
@@ -480,22 +495,55 @@ export class LocalArtifactStore {
       createdAt,
     };
     const paths = this.#paths(id);
-    mkdirSync(dirname(paths.data), { recursive: true });
-    writeFileSync(paths.data, params.data, { mode: 0o600 });
-    writeFileSync(paths.metadata, JSON.stringify(record), { mode: 0o600 });
-    return record;
+    mkdirSync(dirname(paths.data), { recursive: true, mode: 0o700 });
+    const staging = `${paths.data}.staging-${process.pid}-${randomBytes(6).toString("hex")}`;
+    writeFileSync(staging, encryptArtifact(record, params.data, this.#rootKey), { flag: "wx", mode: 0o600 });
+    const descriptor = openSync(staging, "r+");
+    try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+    const database = this.#database();
+    let promoted = false;
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      database.prepare(`
+        INSERT INTO artifacts (
+          id, run_id, app_id, tenant_id, user_id, workspace_id, path,
+          media_type, size_bytes, sha256, created_at, blob_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        record.id, record.runId, record.appId, record.tenantId, record.userId,
+        record.workspaceId, record.path, record.mediaType, record.sizeBytes,
+        record.sha256, record.createdAt, paths.relative,
+      );
+      renameSync(staging, paths.data);
+      promoted = true;
+      database.exec("COMMIT");
+      return record;
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch { /* no open transaction */ }
+      if (promoted) rmSync(paths.data, { force: true });
+      throw error;
+    } finally {
+      rmSync(staging, { force: true });
+      database.close();
+    }
   }
 
   get(id: string, principal: InternalPrincipal): ArtifactPayload | undefined {
     const paths = this.#paths(id);
+    const database = this.#database();
     try {
-      const record = JSON.parse(readFileSync(paths.metadata, "utf8")) as ArtifactRecord;
-      if (
-        record.appId !== principal.appId ||
-        record.tenantId !== principal.tenantId ||
-        record.userId !== principal.userId
-      ) return undefined;
-      const data = readFileSync(paths.data);
+      const row = database.prepare(`
+        SELECT id, run_id, app_id, tenant_id, user_id, workspace_id, path,
+               media_type, size_bytes, sha256, created_at, blob_path
+        FROM artifacts
+        WHERE id = ? AND app_id = ? AND tenant_id = ? AND user_id = ?
+      `).get(id, principal.appId, principal.tenantId, principal.userId) as ArtifactMetadataRow | undefined;
+      if (!row) return undefined;
+      const record = artifactRecordFromRow(row);
+      if (row.blob_path !== paths.relative) throw new Error(`Artifact metadata path is invalid: ${id}`);
+      const encodedSize = statSync(paths.data).size;
+      if (encodedSize > this.maxBytes + 16 * 1024) throw new Error(`Artifact encoded size is invalid: ${id}`);
+      const data = decryptArtifact(record, readFileSync(paths.data), this.#rootKey);
       if (data.length !== record.sizeBytes || createHash("sha256").update(data).digest("hex") !== record.sha256) {
         throw new Error(`Artifact integrity check failed: ${id}`);
       }
@@ -503,14 +551,123 @@ export class LocalArtifactStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
+    } finally {
+      database.close();
     }
   }
 
-  #paths(id: string): { data: string; metadata: string } {
-    if (!/^art_[a-f0-9]{32}$/i.test(id)) throw new Error("Invalid artifact identifier");
-    const directory = join(this.root, id.slice(4, 6), id);
-    return { data: join(directory, "data"), metadata: join(directory, "metadata.json") };
+  #database(): DatabaseSync {
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    const database = new DatabaseSync(join(this.root, "artifacts.sqlite"));
+    database.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000");
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS artifacts (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        app_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        blob_path TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS artifacts_owner_idx
+        ON artifacts (app_id, tenant_id, user_id, id);
+    `);
+    return database;
   }
+
+  #paths(id: string): { data: string; relative: string } {
+    if (!/^art_[a-f0-9]{32}$/i.test(id)) throw new Error("Invalid artifact identifier");
+    const relative = join("blobs", id.slice(4, 6), id, "artifact.lha");
+    return { data: join(this.root, relative), relative };
+  }
+}
+
+interface ArtifactMetadataRow {
+  id: string;
+  run_id: string;
+  app_id: string;
+  tenant_id: string;
+  user_id: string;
+  workspace_id: string;
+  path: string;
+  media_type: string;
+  size_bytes: number;
+  sha256: string;
+  created_at: string;
+  blob_path: string;
+}
+
+interface ArtifactBlobHeader {
+  schemaVersion: 1;
+  id: string;
+  nonce: string;
+  algorithm: "aes-256-gcm+hkdf-sha256";
+}
+
+function artifactRecordFromRow(row: ArtifactMetadataRow): ArtifactRecord {
+  if (!Number.isSafeInteger(row.size_bytes) || row.size_bytes < 0 || !/^[a-f0-9]{64}$/.test(row.sha256)) {
+    throw new Error(`Artifact metadata is invalid: ${row.id}`);
+  }
+  return {
+    id: row.id, runId: row.run_id, appId: row.app_id, tenantId: row.tenant_id,
+    userId: row.user_id, workspaceId: row.workspace_id, path: row.path,
+    mediaType: row.media_type, sizeBytes: row.size_bytes, sha256: row.sha256,
+    createdAt: row.created_at,
+  };
+}
+
+function encryptArtifact(record: ArtifactRecord, data: Buffer, rootKey: Buffer): Buffer {
+  const header: ArtifactBlobHeader = {
+    schemaVersion: 1,
+    id: record.id,
+    nonce: randomBytes(12).toString("base64"),
+    algorithm: "aes-256-gcm+hkdf-sha256",
+  };
+  const cipher = createCipheriv("aes-256-gcm", artifactDataKey(rootKey, record.id), Buffer.from(header.nonce, "base64"));
+  cipher.setAAD(artifactAssociatedData(record, header));
+  return Buffer.concat([
+    Buffer.from(`${ARTIFACT_MAGIC}${JSON.stringify(header)}\n`),
+    cipher.update(data),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]);
+}
+
+function decryptArtifact(record: ArtifactRecord, encoded: Buffer, rootKey: Buffer): Buffer {
+  if (!encoded.subarray(0, ARTIFACT_MAGIC.length).equals(Buffer.from(ARTIFACT_MAGIC))) {
+    throw new Error(`Artifact envelope is invalid: ${record.id}`);
+  }
+  const headerEnd = encoded.indexOf(0x0a, ARTIFACT_MAGIC.length);
+  if (headerEnd < 0 || headerEnd > 4096 || encoded.length < headerEnd + 1 + ARTIFACT_TAG_BYTES) {
+    throw new Error(`Artifact envelope is invalid: ${record.id}`);
+  }
+  let header: ArtifactBlobHeader;
+  try { header = JSON.parse(encoded.subarray(ARTIFACT_MAGIC.length, headerEnd).toString("utf8")) as ArtifactBlobHeader; }
+  catch { throw new Error(`Artifact envelope is invalid: ${record.id}`); }
+  const nonce = typeof header.nonce === "string" ? Buffer.from(header.nonce, "base64") : Buffer.alloc(0);
+  if (header.schemaVersion !== 1 || header.id !== record.id || nonce.length !== 12 || header.algorithm !== "aes-256-gcm+hkdf-sha256") {
+    throw new Error(`Artifact envelope is invalid: ${record.id}`);
+  }
+  const tagStart = encoded.length - ARTIFACT_TAG_BYTES;
+  const decipher = createDecipheriv("aes-256-gcm", artifactDataKey(rootKey, record.id), nonce);
+  decipher.setAAD(artifactAssociatedData(record, header));
+  decipher.setAuthTag(encoded.subarray(tagStart));
+  try { return Buffer.concat([decipher.update(encoded.subarray(headerEnd + 1, tagStart)), decipher.final()]); }
+  catch { throw new Error(`Artifact integrity check failed: ${record.id}`); }
+}
+
+function artifactDataKey(rootKey: Buffer, id: string): Buffer {
+  return Buffer.from(hkdfSync("sha256", rootKey, Buffer.from(id), Buffer.from("lite-harness/artifact/v1"), 32));
+}
+
+function artifactAssociatedData(record: ArtifactRecord, header: ArtifactBlobHeader): Buffer {
+  return Buffer.from(JSON.stringify({ header, record }));
 }
 
 export type CacheClass = "global-immutable" | "tenant-private" | "workspace-private";

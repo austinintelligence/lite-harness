@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -119,7 +119,7 @@ describe("workspace durability", () => {
   it("binds artifact downloads to app, tenant, and user ownership", () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-artifact-"));
     directories.push(directory);
-    const store = new LocalArtifactStore(directory);
+    const store = new LocalArtifactStore(directory, Buffer.alloc(32, 4));
     const principal = {
       appId: "app-1",
       tenantId: "tenant-1",
@@ -136,12 +136,19 @@ describe("workspace durability", () => {
     });
     expect(store.get(record.id, principal)?.data.toString("utf8")).toBe("private result");
     expect(store.get(record.id, { ...principal, tenantId: "tenant-other" })).toBeUndefined();
+    const blobPath = join(directory, "blobs", record.id.slice(4, 6), record.id, "artifact.lha");
+    expect(readFileSync(blobPath, "utf8")).not.toContain("private result");
+    expect(existsSync(join(directory, "artifacts.sqlite"))).toBe(true);
+    const tampered = readFileSync(blobPath);
+    tampered[tampered.length - 1] ^= 0xff;
+    writeFileSync(blobPath, tampered);
+    expect(() => store.get(record.id, principal)).toThrow(/integrity check failed/);
   });
 
   it("rejects unsafe artifact paths", () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-artifact-"));
     directories.push(directory);
-    const store = new LocalArtifactStore(directory);
+    const store = new LocalArtifactStore(directory, Buffer.alloc(32, 4));
     expect(() => store.publish({
       runId: "run-1",
       workspaceId: "workspace-1",

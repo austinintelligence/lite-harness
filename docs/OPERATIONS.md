@@ -45,4 +45,5 @@ Logs rotate by bounded byte size and generation count. Redaction covers bearer
 headers and common credential shapes, but applications should still avoid
 placing secrets in prompts, tool results, file names, or connector messages.
 Back up the SQLite databases, artifacts, snapshots, and OS-held snapshot key as
-one recovery set; see [`RECOVERY.md`](RECOVERY.md).
+one recovery set; see [`RECOVERY.md`](RECOVERY.md) and
+[`ARTIFACTS.md`](ARTIFACTS.md).

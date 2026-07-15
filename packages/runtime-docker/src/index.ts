@@ -175,6 +175,30 @@ export class DockerToolRuntime implements ToolRuntime {
     return { callId: params.call.id, ok: false, content: `Unsupported tool: ${params.call.name}` };
   }
 
+  async readWorkspaceArtifact(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer> {
+    params.signal?.throwIfAborted();
+    validateWorkspacePath(params.path);
+    if (!Number.isSafeInteger(params.maxBytes) || params.maxBytes < 1) throw new Error("Artifact size limit is invalid");
+    const mount = await this.#workspaceMount(params.workspaceId, params.signal, params.principal);
+    const result = await this.#runTool(
+      mount,
+      ["sh", "-c", 'set -eu; target="/workspace/$1"; test -f "$target"; size=$(wc -c < "$target"); test "$size" -le "$2"; base64 "$target"', "lite-artifact", params.path, String(params.maxBytes)],
+      undefined,
+      params,
+      "artifact-read",
+      Math.ceil(params.maxBytes * 1.4) + 64 * 1024,
+      true,
+    );
+    if (result.code !== 0) throw new Error(`Could not read authorized workspace artifact: ${result.stderr}`);
+    const encoded = result.stdout.replace(/\s+/g, "");
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) throw new Error("Workspace artifact encoding was invalid");
+    const data = Buffer.from(encoded, "base64");
+    if (data.length > params.maxBytes || data.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
+      throw new Error("Workspace artifact exceeded its limit or was malformed");
+    }
+    return data;
+  }
+
   async exportWorkspace(workspaceId: string, principal?: InternalPrincipal, signal?: AbortSignal): Promise<Buffer> {
     const mount = await this.#workspaceMount(workspaceId, signal, principal);
     const quotaBytes = this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024;
@@ -346,6 +370,8 @@ export class DockerToolRuntime implements ToolRuntime {
     input?: string,
     params?: ToolExecutionContext,
     operation = "tool",
+    maxOutputBytes = this.#maxOutputBytes,
+    readOnly = false,
   ): Promise<DockerCommandResult> {
     if (!params?.runId || !params.attemptId || !params.principal) {
       throw new Error("Docker tool execution requires owned run and attempt context");
@@ -396,11 +422,11 @@ export class DockerToolRuntime implements ToolRuntime {
         "1000:1000",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        ...mountArgs(mount),
+        ...mountArgs(mount, readOnly),
         this.config.image,
         ...command,
       ],
-      { signal: params.signal, maxOutputBytes: this.#maxOutputBytes },
+      { signal: params.signal, maxOutputBytes },
     );
     if (create.code !== 0) throw new Error(`Could not create Docker tool container: ${create.stderr}`);
     const runtimeContainerId = create.stdout.trim();
@@ -430,7 +456,7 @@ export class DockerToolRuntime implements ToolRuntime {
       await containerStore.updateRuntimeContainerState(runtimeContainerId, "RUNNING", new Date().toISOString());
       result = await this.#run(
         ["start", "--attach", "--interactive", runtimeContainerId],
-        { ...(input === undefined ? {} : { input }), signal: params.signal, maxOutputBytes: this.#maxOutputBytes },
+        { ...(input === undefined ? {} : { input }), signal: params.signal, maxOutputBytes },
       );
     } catch (error) {
       executionError = error;

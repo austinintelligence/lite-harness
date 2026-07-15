@@ -31,7 +31,7 @@ describe("Gateway to Manager vertical slice", () => {
     const mintedPrincipals = new Map<string, InternalPrincipal>();
     const store = new SqliteRunStore(join(directory, "test.db"));
     const runtime = new InMemoryToolRuntime();
-    const artifactStore = new LocalArtifactStore(join(directory, "artifacts"));
+    const artifactStore = new LocalArtifactStore(join(directory, "artifacts"), Buffer.alloc(32, 3));
     const service = new RunService(store, new AgentRunner(new FakeModelGateway(), runtime));
     const integrationStore = new SqliteIntegrationStore(join(directory, "integrations.db"));
     integrationStore.bind({

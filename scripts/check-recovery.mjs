@@ -12,7 +12,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/workspace.test.ts",
+    "run", "test/workspace.test.ts", "test/runtime.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -47,10 +47,14 @@ function writeEvidence(output, report) {
       artifactOwnerIsolation: true,
       privateCacheOwnerIsolation: true,
       registeredBindRootsCanonicalAndNonsensitive: true,
+      artifactSourceReadFromOwnedWorkspace: true,
+      artifactBlobEncryptedAndMetadataTransactional: true,
     },
     testIds: [
       "BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION", "BD-034-REGRESSION",
       "R21-1897", "R21-1899", "R21-1900",
+      "BD-035-REGRESSION",
+      "R24-2069", "R24-2070", "R25-2100",
     ],
   };
   const absolute = resolve(root, output);

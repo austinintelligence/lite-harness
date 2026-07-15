@@ -12,6 +12,7 @@ export interface ToolExecutionContext {
 export interface ToolRuntime {
   execute(params: ToolExecutionContext): Promise<ToolResult>;
   listTools?(): readonly ToolDefinition[];
+  readWorkspaceArtifact?(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer>;
 }
 
 export type BrokeredToolHandler = (params: ToolExecutionContext) => Promise<ToolResult>;
@@ -47,6 +48,11 @@ export class BrokeredToolRuntime implements ToolRuntime {
   async execute(params: ToolExecutionContext): Promise<ToolResult> {
     const handler = this.#handlers.get(params.call.name);
     return handler ? await handler(params) : await this.inner.execute(params);
+  }
+
+  readWorkspaceArtifact(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer> {
+    if (!this.inner.readWorkspaceArtifact) throw new Error("The configured runtime cannot publish workspace artifacts");
+    return this.inner.readWorkspaceArtifact(params);
   }
 }
 
@@ -93,6 +99,16 @@ export class InMemoryToolRuntime implements ToolRuntime {
   readFile(workspaceId: string, path: string, principal?: InternalPrincipal): string | undefined {
     return this.#workspaces.get(workspaceIdentity(workspaceId, principal))?.get(path);
   }
+
+  async readWorkspaceArtifact(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer> {
+    params.signal?.throwIfAborted();
+    validateWorkspacePath(params.path);
+    const value = this.readFile(params.workspaceId, params.path, params.principal);
+    if (value === undefined) throw new Error(`Artifact source file not found: ${params.path}`);
+    const data = Buffer.from(value, "utf8");
+    if (data.length > params.maxBytes) throw new Error(`Artifact exceeds ${params.maxBytes} bytes`);
+    return data;
+  }
 }
 
 function workspaceIdentity(workspaceId: string, principal?: InternalPrincipal): string {
@@ -127,13 +143,13 @@ export class ArtifactPublishingRuntime implements ToolRuntime {
     if (params.call.name !== "artifact_publish") return await this.inner.execute(params);
     params.signal?.throwIfAborted();
     if (!params.runId || !params.principal) throw new Error("Artifact publication requires an owned run context");
-    const path = requireString(params.call.arguments.path, "path");
+    const path = authorizedWorkspaceArtifactPath(requireString(params.call.arguments.path, "path"));
     const mediaType = requireString(params.call.arguments.mediaType, "mediaType");
-    validateWorkspacePath(path);
-    const data = typeof params.call.arguments.dataBase64 === "string"
-      ? Buffer.from(params.call.arguments.dataBase64, "base64")
-      : Buffer.from(requireString(params.call.arguments.content, "content"), "utf8");
-    if (data.length > this.maxBytes) throw new Error(`Artifact exceeds ${this.maxBytes} bytes`);
+    if ("content" in params.call.arguments || "dataBase64" in params.call.arguments) {
+      throw new Error("artifact_publish accepts an authorized workspace path, never caller-supplied bytes");
+    }
+    if (!this.inner.readWorkspaceArtifact) throw new Error("The configured runtime cannot publish workspace artifacts");
+    const data = await this.inner.readWorkspaceArtifact({ ...params, path, maxBytes: this.maxBytes });
     const record = await this.artifacts.publish({
       runId: params.runId,
       workspaceId: params.workspaceId,
@@ -151,6 +167,11 @@ export class ArtifactPublishingRuntime implements ToolRuntime {
   }
 }
 
+export function authorizedWorkspaceArtifactPath(path: string): string {
+  validateWorkspacePath(path);
+  return path;
+}
+
 export const WORKSPACE_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   Object.freeze({
     name: "read_file", description: "Read a UTF-8 file from the current workspace.",
@@ -163,10 +184,10 @@ export const WORKSPACE_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.free
 ]);
 
 const ARTIFACT_TOOL_DEFINITION: ToolDefinition = Object.freeze({
-  name: "artifact_publish", description: "Publish owned text or base64 data as a downloadable run artifact.",
+  name: "artifact_publish", description: "Publish a file from the current owned workspace as a downloadable run artifact.",
   inputSchema: {
     type: "object",
-    properties: { path: { type: "string" }, mediaType: { type: "string" }, content: { type: "string" }, dataBase64: { type: "string" } },
+    properties: { path: { type: "string" }, mediaType: { type: "string" } },
     required: ["path", "mediaType"], additionalProperties: false,
   },
 });

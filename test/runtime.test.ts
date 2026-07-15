@@ -43,9 +43,10 @@ describe("tool runtime policy", () => {
     expect(runtime.readFile("two", "a.txt")).toBeUndefined();
   });
 
-  it("publishes an owned artifact through the brokered agent tool", async () => {
+  it("BD-035-REGRESSION publishes only bytes read from an owned workspace path", async () => {
     let published: Buffer | undefined;
-    const runtime = new ArtifactPublishingRuntime(new InMemoryToolRuntime(), {
+    const workspaceRuntime = new InMemoryToolRuntime();
+    const runtime = new ArtifactPublishingRuntime(workspaceRuntime, {
       publish: (params) => {
         published = params.data;
         return {
@@ -63,15 +64,27 @@ describe("tool runtime policy", () => {
         };
       },
     });
+    await workspaceRuntime.execute({
+      workspaceId: "one",
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      call: { id: "tool-write", name: "write_file", arguments: { path: "reports/result.txt", content: "owned output" } },
+    });
     const result = await runtime.execute({
       workspaceId: "one",
       runId: "run-one",
       principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
       call: { id: "tool-art", name: "artifact_publish", arguments: {
-        path: "reports/result.txt", mediaType: "text/plain", content: "owned output",
+        path: "reports/result.txt", mediaType: "text/plain",
       } },
     });
     expect(result).toMatchObject({ ok: true, metadata: { artifactId: "art_00000000000000000000000000000000" } });
     expect(published?.toString("utf8")).toBe("owned output");
+    await expect(runtime.execute({
+      workspaceId: "one", runId: "run-one",
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      call: { id: "tool-forged", name: "artifact_publish", arguments: {
+        path: "reports/result.txt", mediaType: "text/plain", content: "forged bytes",
+      } },
+    })).rejects.toThrow(/authorized workspace path/);
   });
 });

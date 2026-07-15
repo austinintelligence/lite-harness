@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { accessSync, constants, statfsSync } from "node:fs";
+import { accessSync, constants, readFileSync, statfsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { loadManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { SchedulerEngine, SqliteTriggerStore, nextDailyOccurrence, type IntervalTrigger } from "@lite-harness/automation";
@@ -50,7 +50,10 @@ const instanceLock = new ManagerInstanceLock({
 await instanceLock.acquire();
 const databasePath = join(dataDir, "lite-harness.db");
 const store = new SqliteRunStore(databasePath);
-const artifactStore = new LocalArtifactStore(join(dataDir, "artifacts"));
+const artifactStore = new LocalArtifactStore(
+  join(dataDir, "artifacts"),
+  await artifactEncryptionRootKey(dataDir, configuration.mode),
+);
 const baseRuntime = resolveRuntime(store, configuration.runtime);
 if (baseRuntime instanceof DockerToolRuntime) {
   const reapedContainers = await baseRuntime.reconcileContainers();
@@ -416,6 +419,43 @@ async function snapshotKeyReadiness(path: string, mode: "development" | "product
       : { ok: false, reason: "snapshot-key-missing" };
   } catch {
     return { ok: false, reason: "snapshot-key-store-unavailable" };
+  }
+}
+
+async function artifactEncryptionRootKey(path: string, mode: "development" | "production"): Promise<Buffer> {
+  const configured = process.env.LITE_HARNESS_SNAPSHOT_KEY;
+  if (configured) {
+    if (!validBase64Key(configured)) throw new Error("LITE_HARNESS_SNAPSHOT_KEY must be a base64-encoded 32-byte key");
+    return Buffer.from(configured, "base64");
+  }
+  try {
+    const secret = await new OsSecretStore({ windowsPath: join(path, "credentials.dpapi.json") }).get("snapshot.root");
+    if (secret) {
+      if (!validBase64Key(secret)) throw new Error("Stored snapshot.root must be a base64-encoded 32-byte key");
+      return Buffer.from(secret, "base64");
+    }
+  } catch (error) {
+    if (mode === "production") throw error;
+  }
+  if (mode === "production") throw new Error("Encrypted artifact storage requires snapshot.root or LITE_HARNESS_SNAPSHOT_KEY");
+  const developmentKeyPath = join(path, "development-artifact.key");
+  try {
+    const existing = readFileSync(developmentKeyPath, "utf8").trim();
+    if (!validBase64Key(existing)) throw new Error("Development artifact key is invalid");
+    return Buffer.from(existing, "base64");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const generated = randomBytes(32);
+  try {
+    writeFileSync(developmentKeyPath, generated.toString("base64"), { flag: "wx", mode: 0o600 });
+    process.stderr.write("lite-harness manager: created a local development-only artifact key\n");
+    return generated;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const raced = readFileSync(developmentKeyPath, "utf8").trim();
+    if (!validBase64Key(raced)) throw new Error("Development artifact key is invalid");
+    return Buffer.from(raced, "base64");
   }
 }
 

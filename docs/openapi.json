@@ -154,12 +154,36 @@
             "type": "string"
           },
           "modelCapabilities": {
-            "maxItems": 256,
+            "maxItems": 6,
+            "uniqueItems": true,
             "type": "array",
             "items": {
-              "minLength": 1,
-              "maxLength": 128,
-              "type": "string"
+              "anyOf": [
+                {
+                  "const": "text",
+                  "type": "string"
+                },
+                {
+                  "const": "tools",
+                  "type": "string"
+                },
+                {
+                  "const": "vision",
+                  "type": "string"
+                },
+                {
+                  "const": "json",
+                  "type": "string"
+                },
+                {
+                  "const": "reasoning",
+                  "type": "string"
+                },
+                {
+                  "const": "delegated-agent",
+                  "type": "string"
+                }
+              ]
             }
           },
           "allowedTools": {

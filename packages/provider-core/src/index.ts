@@ -23,15 +23,24 @@ export interface ModelRunContext {
   principal: InternalPrincipal;
   fencingToken: number;
   maxCostUsd?: number;
+  requiredCapabilities?: readonly ModelCapability[];
 }
 
 export interface ModelGateway {
+  prepareRun?(context: ModelRunContext): Promise<PreparedModelRoute>;
   streamTurn(params: {
     messages: readonly ModelMessage[];
     tools?: readonly ToolDefinition[];
     context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent>;
+}
+
+export interface PreparedModelRoute {
+  routePlanId: string;
+  modelId: string;
+  providerId: string;
+  capabilities: readonly ModelCapability[];
 }
 
 export type ModelCapability =
@@ -69,6 +78,16 @@ export interface RoutePlan {
   selected: ModelDescriptor;
   fallbacks: readonly ModelDescriptor[];
   createdAt: string;
+}
+
+export interface RoutePersistenceHooks {
+  onRoutePlan?(context: ModelRunContext, plan: RoutePlan, requiredCapabilities: readonly ModelCapability[]): void | Promise<void>;
+  onUsage?(
+    context: ModelRunContext,
+    plan: RoutePlan,
+    model: ModelDescriptor,
+    usage: Extract<ModelEvent, { type: "usage" }>,
+  ): void | Promise<void>;
 }
 
 export class ModelRegistry {
@@ -288,13 +307,20 @@ export class ProviderError extends Error {
 
 export class RoutedModelGateway implements ModelGateway {
   readonly #adapters = new Map<string, ProviderAdapter>();
+  readonly #plans = new Map<string, RoutePlan>();
 
   constructor(
-    private readonly plan: RoutePlan,
+    private readonly route: RoutePlan | ModelRegistry,
     adapters: readonly ProviderAdapter[],
     private readonly credentials: CredentialBroker,
+    private readonly hooks: RoutePersistenceHooks = {},
   ) {
     for (const adapter of adapters) this.#adapters.set(adapter.providerId, adapter);
+  }
+
+  async prepareRun(context: ModelRunContext): Promise<PreparedModelRoute> {
+    const plan = await this.#plan(context, normalizedRequiredCapabilities(context.requiredCapabilities));
+    return preparedRoute(plan);
   }
 
   async *streamTurn(params: {
@@ -303,7 +329,9 @@ export class RoutedModelGateway implements ModelGateway {
     context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent> {
-    const routes = [this.plan.selected, ...this.plan.fallbacks];
+    const requiredCapabilities = normalizedRequiredCapabilities(params.context?.requiredCapabilities);
+    const plan = await this.#plan(params.context, requiredCapabilities);
+    const routes = [plan.selected, ...plan.fallbacks];
     let lastError: unknown;
     let externallyVisible = false;
 
@@ -332,7 +360,13 @@ export class RoutedModelGateway implements ModelGateway {
         })) {
           if (providerRequestBecameVisible(event)) externallyVisible = true;
           if (event.type === "request.accepted") continue;
-          yield event.type === "usage" ? withAuthoritativeCost(event, model) : event;
+          if (event.type === "usage") {
+            const usage = withAuthoritativeCost(event, model);
+            if (params.context) await this.hooks.onUsage?.(params.context, plan, model, usage);
+            yield usage;
+          } else {
+            yield event;
+          }
         }
         return;
       } catch (error) {
@@ -345,6 +379,89 @@ export class RoutedModelGateway implements ModelGateway {
       ? lastError
       : new ProviderError("route_exhausted", "Every provider route failed", true);
   }
+
+  async #plan(context: ModelRunContext | undefined, requiredCapabilities: readonly ModelCapability[]): Promise<RoutePlan> {
+    const route = this.route;
+    if (!(route instanceof ModelRegistry)) {
+      if (!requiredCapabilities.every((capability) => route.selected.capabilities.includes(capability))) {
+        throw new ProviderError("no_compatible_model", "Frozen route does not satisfy the run capabilities", false);
+      }
+      return route;
+    }
+    const key = context ? `${context.runId}\0${context.attemptId}` : undefined;
+    const cached = key ? this.#plans.get(key) : undefined;
+    if (cached) return cached;
+    const plan = route.plan({ requiredCapabilities });
+    if (context) {
+      await this.hooks.onRoutePlan?.(context, plan, requiredCapabilities);
+      this.#plans.set(key as string, plan);
+      while (this.#plans.size > 1_024) this.#plans.delete(this.#plans.keys().next().value as string);
+    }
+    return plan;
+  }
+}
+
+/** Applies the same capability-derived durable route boundary to delegated or development gateways. */
+export class CapabilityBoundModelGateway implements ModelGateway {
+  readonly #registry: ModelRegistry;
+  readonly #plans = new Map<string, RoutePlan>();
+
+  constructor(
+    descriptor: ModelDescriptor,
+    private readonly inner: ModelGateway,
+    private readonly hooks: RoutePersistenceHooks = {},
+  ) {
+    this.#registry = new ModelRegistry([descriptor]);
+  }
+
+  async prepareRun(context: ModelRunContext): Promise<PreparedModelRoute> {
+    return preparedRoute(await this.#plan(context, normalizedRequiredCapabilities(context.requiredCapabilities)));
+  }
+
+  async *streamTurn(params: {
+    messages: readonly ModelMessage[];
+    tools?: readonly ToolDefinition[];
+    context?: ModelRunContext;
+    signal?: AbortSignal;
+  }): AsyncIterable<ModelEvent> {
+    const requiredCapabilities = normalizedRequiredCapabilities(params.context?.requiredCapabilities);
+    const plan = await this.#plan(params.context, requiredCapabilities);
+    for await (const event of this.inner.streamTurn(params)) {
+      if (event.type === "usage") {
+        const usage = withAuthoritativeCost(event, plan.selected);
+        if (params.context) await this.hooks.onUsage?.(params.context, plan, plan.selected, usage);
+        yield usage;
+      } else {
+        yield event;
+      }
+    }
+  }
+
+  async #plan(context: ModelRunContext | undefined, requiredCapabilities: readonly ModelCapability[]): Promise<RoutePlan> {
+    const key = context ? `${context.runId}\0${context.attemptId}` : undefined;
+    const cached = key ? this.#plans.get(key) : undefined;
+    if (cached) return cached;
+    const plan = this.#registry.plan({ requiredCapabilities });
+    if (context) {
+      await this.hooks.onRoutePlan?.(context, plan, requiredCapabilities);
+      this.#plans.set(key as string, plan);
+      while (this.#plans.size > 1_024) this.#plans.delete(this.#plans.keys().next().value as string);
+    }
+    return plan;
+  }
+}
+
+function normalizedRequiredCapabilities(value: readonly ModelCapability[] | undefined): ModelCapability[] {
+  const capabilities = [...new Set(value?.length ? value : ["text" as const])];
+  if (!capabilities.includes("text")) capabilities.unshift("text");
+  return capabilities;
+}
+
+function preparedRoute(plan: RoutePlan): PreparedModelRoute {
+  return {
+    routePlanId: plan.id, modelId: plan.selected.id, providerId: plan.selected.providerId,
+    capabilities: [...plan.selected.capabilities],
+  };
 }
 
 /** Once true, retrying another route could duplicate billed or externally visible work. */

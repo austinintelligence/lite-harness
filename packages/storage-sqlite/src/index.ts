@@ -7,6 +7,7 @@ import type {
   ApprovalRecord,
   ApprovalStatus,
   AgentProfileRecord,
+  AgentModelCapability,
   WorkspaceRecord,
   RunAttemptRecord,
   RunBudget,
@@ -20,6 +21,8 @@ import type {
   SessionRecord,
   RuntimeContainerRecord,
   RuntimeContainerState,
+  RunRoutePlanRecord,
+  RunModelUsageRecord,
   WorkspaceLease,
 } from "@lite-harness/contracts";
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
@@ -91,6 +94,32 @@ interface AttemptRow {
   status: RunAttemptRecord["status"];
   started_at: string;
   ended_at: string | null;
+}
+
+interface RoutePlanRow {
+  run_id: string;
+  attempt_id: string;
+  route_plan_id: string;
+  registry_generation: number;
+  required_capabilities_json: string;
+  selected_model_id: string;
+  selected_provider_id: string;
+  selected_credential_profile_id: string;
+  fallback_model_ids_json: string;
+  created_at: string;
+}
+
+interface ModelUsageRow {
+  id: number;
+  run_id: string;
+  attempt_id: string;
+  route_plan_id: string;
+  model_id: string;
+  provider_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  recorded_at: string;
 }
 
 interface EventRow {
@@ -206,7 +235,7 @@ function toAgentProfile(row: AgentRow): AgentProfileRecord {
     userId: row.user_id,
     name: row.name,
     instructions: row.instructions,
-    modelCapabilities: JSON.parse(row.model_capabilities_json) as string[],
+    modelCapabilities: JSON.parse(row.model_capabilities_json) as AgentModelCapability[],
     allowedTools: JSON.parse(row.allowed_tools_json) as string[],
     defaultBudget: normalizeBudget(JSON.parse(row.default_budget_json) as Partial<RunBudget>),
     createdAt: row.created_at,
@@ -235,6 +264,26 @@ function toAttempt(row: AttemptRow): RunAttemptRecord {
     status: row.status,
     startedAt: row.started_at,
     ...(row.ended_at ? { endedAt: row.ended_at } : {}),
+  };
+}
+
+function toRoutePlan(row: RoutePlanRow): RunRoutePlanRecord {
+  return {
+    runId: row.run_id, attemptId: row.attempt_id, routePlanId: row.route_plan_id,
+    registryGeneration: row.registry_generation,
+    requiredCapabilities: JSON.parse(row.required_capabilities_json) as AgentModelCapability[],
+    selectedModelId: row.selected_model_id, selectedProviderId: row.selected_provider_id,
+    selectedCredentialProfileId: row.selected_credential_profile_id,
+    fallbackModelIds: JSON.parse(row.fallback_model_ids_json) as string[], createdAt: row.created_at,
+  };
+}
+
+function toModelUsage(row: ModelUsageRow): RunModelUsageRecord {
+  return {
+    id: row.id, runId: row.run_id, attemptId: row.attempt_id, routePlanId: row.route_plan_id,
+    modelId: row.model_id, providerId: row.provider_id, inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens, ...(row.cost_usd === null ? {} : { costUsd: row.cost_usd }),
+    recordedAt: row.recorded_at,
   };
 }
 
@@ -646,6 +695,34 @@ export class SqliteRunStore implements RunStore {
           WHERE execution_digest = 'legacy-unbound'
         `).run(migratedAt);
       },
+      () => this.#database.exec(`
+        CREATE TABLE run_route_plans (
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          attempt_id TEXT NOT NULL REFERENCES run_attempts(id) ON DELETE CASCADE,
+          route_plan_id TEXT NOT NULL UNIQUE,
+          registry_generation INTEGER NOT NULL,
+          required_capabilities_json TEXT NOT NULL,
+          selected_model_id TEXT NOT NULL,
+          selected_provider_id TEXT NOT NULL,
+          selected_credential_profile_id TEXT NOT NULL,
+          fallback_model_ids_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(run_id, attempt_id)
+        ) STRICT;
+        CREATE TABLE run_model_usage (
+          id INTEGER PRIMARY KEY,
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          attempt_id TEXT NOT NULL REFERENCES run_attempts(id) ON DELETE CASCADE,
+          route_plan_id TEXT NOT NULL REFERENCES run_route_plans(route_plan_id) ON DELETE CASCADE,
+          model_id TEXT NOT NULL,
+          provider_id TEXT NOT NULL,
+          input_tokens INTEGER NOT NULL CHECK(input_tokens >= 0),
+          output_tokens INTEGER NOT NULL CHECK(output_tokens >= 0),
+          cost_usd REAL CHECK(cost_usd IS NULL OR cost_usd >= 0),
+          recorded_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX run_model_usage_run ON run_model_usage(run_id, attempt_id, id);
+      `),
     ];
     const applied = (this.#database.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>)
       .map((row) => row.version);
@@ -1203,6 +1280,54 @@ export class SqliteRunStore implements RunStore {
     return (this.#database.prepare(
       "SELECT * FROM run_attempts WHERE run_id = ? ORDER BY attempt ASC",
     ).all(runId) as unknown as AttemptRow[]).map(toAttempt);
+  }
+
+  persistRunRoutePlan(record: RunRoutePlanRecord): RunRoutePlanRecord {
+    const existing = this.getRunRoutePlan(record.runId, record.attemptId);
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error("A run attempt route plan is already frozen");
+      return existing;
+    }
+    this.#database.prepare(`
+      INSERT INTO run_route_plans(
+        run_id, attempt_id, route_plan_id, registry_generation, required_capabilities_json,
+        selected_model_id, selected_provider_id, selected_credential_profile_id,
+        fallback_model_ids_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.runId, record.attemptId, record.routePlanId, record.registryGeneration,
+      JSON.stringify(record.requiredCapabilities), record.selectedModelId, record.selectedProviderId,
+      record.selectedCredentialProfileId, JSON.stringify(record.fallbackModelIds), record.createdAt,
+    );
+    return this.getRunRoutePlan(record.runId, record.attemptId) as RunRoutePlanRecord;
+  }
+
+  getRunRoutePlan(runId: string, attemptId: string): RunRoutePlanRecord | undefined {
+    const row = this.#database.prepare(
+      "SELECT * FROM run_route_plans WHERE run_id = ? AND attempt_id = ?",
+    ).get(runId, attemptId) as RoutePlanRow | undefined;
+    return row ? toRoutePlan(row) : undefined;
+  }
+
+  persistRunModelUsage(record: Omit<RunModelUsageRecord, "id">): RunModelUsageRecord {
+    const result = this.#database.prepare(`
+      INSERT INTO run_model_usage(
+        run_id, attempt_id, route_plan_id, model_id, provider_id,
+        input_tokens, output_tokens, cost_usd, recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.runId, record.attemptId, record.routePlanId, record.modelId, record.providerId,
+      record.inputTokens, record.outputTokens, record.costUsd ?? null, record.recordedAt,
+    );
+    const row = this.#database.prepare("SELECT * FROM run_model_usage WHERE id = ?")
+      .get(Number(result.lastInsertRowid)) as unknown as ModelUsageRow;
+    return toModelUsage(row);
+  }
+
+  listRunModelUsage(runId: string): RunModelUsageRecord[] {
+    return (this.#database.prepare(
+      "SELECT * FROM run_model_usage WHERE run_id = ? ORDER BY id",
+    ).all(runId) as unknown as ModelUsageRow[]).map(toModelUsage);
   }
 
   recordUsage(runId: string, delta: Partial<RunUsage>): RunRecord {

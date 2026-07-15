@@ -19,6 +19,7 @@ try {
     "test/provider-core.test.ts",
     "test/provider-adapters.test.ts",
     "test/provider-cost-accounting.test.ts",
+    "test/model-routing-persistence.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -57,9 +58,11 @@ function writeEvidence(output, report) {
       responsesTerminalStatesNormalized: true,
       openAiCompatibleRemainsSeparate: true,
       anthropicPlaintextRestrictedToLoopback: true,
+      storedAgentCapabilitiesDriveFrozenRoutes: true,
+      routePlansAndActualUsagePersisted: true,
     },
     testIds: [
-      "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION", "BD-033-REGRESSION",
+      "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION", "BD-033-REGRESSION", "BD-039-REGRESSION",
       "R14-1251", "R27-2223", "R34-2883",
       "R14-1052", "R14-1281",
     ],

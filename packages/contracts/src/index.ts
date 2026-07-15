@@ -219,6 +219,38 @@ export interface RunUsage {
   toolCalls: number;
 }
 
+export interface RunRoutePlanRecord {
+  runId: string;
+  attemptId: string;
+  routePlanId: string;
+  registryGeneration: number;
+  requiredCapabilities: AgentModelCapability[];
+  selectedModelId: string;
+  selectedProviderId: string;
+  selectedCredentialProfileId: string;
+  fallbackModelIds: string[];
+  createdAt: string;
+}
+
+export interface RunModelUsageRecord {
+  id: number;
+  runId: string;
+  attemptId: string;
+  routePlanId: string;
+  modelId: string;
+  providerId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd?: number;
+  recordedAt: string;
+}
+
+export type AgentModelCapability = "text" | "tools" | "vision" | "json" | "reasoning" | "delegated-agent";
+export const AgentModelCapabilitySchema = Type.Union([
+  Type.Literal("text"), Type.Literal("tools"), Type.Literal("vision"),
+  Type.Literal("json"), Type.Literal("reasoning"), Type.Literal("delegated-agent"),
+]);
+
 export interface AgentProfileRecord {
   id: string;
   version: number;
@@ -227,7 +259,7 @@ export interface AgentProfileRecord {
   userId: string;
   name: string;
   instructions: string;
-  modelCapabilities: string[];
+  modelCapabilities: AgentModelCapability[];
   allowedTools: string[];
   defaultBudget: RunBudget;
   createdAt: string;
@@ -237,7 +269,7 @@ export interface CreateAgentProfileRequest {
   id?: string;
   name: string;
   instructions?: string;
-  modelCapabilities?: string[];
+  modelCapabilities?: AgentModelCapability[];
   allowedTools?: string[];
   defaultBudget?: Partial<RunBudget>;
 }
@@ -246,7 +278,7 @@ export const CreateAgentProfileRequestSchema = Type.Object({
   id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   name: Type.String({ minLength: 1, maxLength: 128, pattern: ".*\\S.*" }),
   instructions: Type.Optional(Type.String({ maxLength: 1_000_000 })),
-  modelCapabilities: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256 })),
+  modelCapabilities: Type.Optional(Type.Array(AgentModelCapabilitySchema, { maxItems: 6, uniqueItems: true })),
   allowedTools: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 })),
   defaultBudget: Type.Optional(RunBudgetOverridesSchema),
 }, { additionalProperties: false });
@@ -255,7 +287,7 @@ export const InternalCreateAgentProfileRequestSchema = Type.Object({
   id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   name: Type.String({ minLength: 1, maxLength: 128, pattern: ".*\\S.*" }),
   instructions: Type.Optional(Type.String({ maxLength: 1_000_000 })),
-  modelCapabilities: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 256 })),
+  modelCapabilities: Type.Optional(Type.Array(AgentModelCapabilitySchema, { maxItems: 6, uniqueItems: true })),
   allowedTools: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 1_000 })),
   defaultBudget: Type.Optional(RunBudgetOverridesSchema),
   principal: InternalPrincipalSchema,

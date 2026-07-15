@@ -31,6 +31,16 @@ preventing duplicate billing and repeated work. Model IDs, prices, capabilities,
 and context limits are operator/discovery data, not hard-coded aliases disguised
 as compatibility.
 
+At run start the Manager derives required capabilities from the stored agent
+profile, freezes one route for that run attempt before compiling model-specific
+context, and records the registry
+generation, selected/fallback model IDs, credential profile ID, and actual
+per-turn usage in SQLite. `LITE_HARNESS_MODEL_CATALOG` may provide a bounded
+JSON array of same-provider model records (`id`, `capabilities`,
+`contextWindow`, optional prices, and `enabled`) when an installation routes
+between more than one model. Catalog records reference the Manager-owned
+credential profile; they never contain credentials.
+
 Because every run has a dollar ceiling, direct routes require both
 `LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION` and
 `LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION`. Unknown pricing fails before

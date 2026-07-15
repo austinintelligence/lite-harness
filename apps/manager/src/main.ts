@@ -23,13 +23,19 @@ import {
 import type { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
 import {
+  CapabilityBoundModelGateway,
   InMemoryCredentialBroker,
   ModelRegistry,
   ProviderError,
   RoutedModelGateway,
   SingleFlightCredentialBroker,
   type CredentialBroker,
+  type ModelCapability,
+  type ModelDescriptor,
   type ModelGateway,
+  type ModelRunContext,
+  type RoutePersistenceHooks,
+  type RoutePlan,
 } from "@lite-harness/provider-core";
 import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
 import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
@@ -65,7 +71,11 @@ if (baseRuntime instanceof DockerToolRuntime) {
 }
 const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
 const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
-const modelGateway = resolveModelGateway(configuration.provider, createDelegatedWorkspaceResolver(store));
+const modelGateway = resolveModelGateway(
+  configuration.provider,
+  createDelegatedWorkspaceResolver(store),
+  { onRoutePlan: persistRunRoutePlan, onUsage: persistRunModelUsage },
+);
 // ContextOptimizationGate, skills, MCP, plugins, snapshots, and caches are
 // composed here so they share the production run/tool lifecycle.
 const optionalSystems = configureProductionOptionalSystems({
@@ -524,29 +534,37 @@ function configuredApprovalRouteGeneration(provider: string): string {
 function resolveModelGateway(
   provider: string,
   workspacePathForRun: ReturnType<typeof createDelegatedWorkspaceResolver>,
+  hooks: RoutePersistenceHooks,
 ): ModelGateway {
-  if (provider === "fake") return new FakeModelGateway();
+  if (provider === "fake") return new CapabilityBoundModelGateway({
+    id: "fake", providerId: "fake", transport: "direct", credentialProfileId: "fake",
+    capabilities: ["text", "tools", "vision", "json", "reasoning", "delegated-agent"],
+    contextWindow: 128_000, inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    provenance: "static", enabled: true,
+  }, new FakeModelGateway(), hooks);
 
   if (provider === "codex") {
-    return new CodexAppServerGateway({
+    const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "codex-delegated";
+    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "codex", configuredModelPricing()), new CodexAppServerGateway({
       workspacePathForRun,
       ...configuredModelPricing(),
       ...(process.env.LITE_HARNESS_CODEX_COMMAND ? { command: process.env.LITE_HARNESS_CODEX_COMMAND } : {}),
       ...(process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
-    });
+    }), hooks);
   }
 
   if (provider === "claude") {
     const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
-    return new ClaudeCodeGateway({
+    const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "claude-delegated";
+    return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "claude", configuredModelPricing()), new ClaudeCodeGateway({
       workspacePathForRun,
       ...configuredModelPricing(),
       ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
       allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
       ...(maxBudget ? { maxBudgetUsd: Number.parseFloat(maxBudget) } : {}),
-    });
+    }), hooks);
   }
 
   const credentialProfileId = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${provider}_default`;
@@ -558,52 +576,119 @@ function resolveModelGateway(
     const providerId = preset?.providerId ?? "openai-compatible";
     const allowedOrigins = preset?.allowedOrigins ?? [new URL(baseUrl).origin];
     const modelId = requiredEnvironment("LITE_HARNESS_MODEL");
-    const registry = new ModelRegistry([
-      {
-        id: modelId,
-        providerId,
-        transport: "direct",
-        credentialProfileId,
-        capabilities: ["text", "tools", "json"],
-        contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "128000", 10),
-        ...configuredModelPricing(),
-        provenance: "operator",
-        enabled: true,
-      },
-    ]);
+    const registry = new ModelRegistry(configuredDirectModels({
+      id: modelId, providerId, credentialProfileId, capabilities: ["text", "tools", "json"],
+      contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "128000", 10),
+    }));
     return new RoutedModelGateway(
-      registry.plan({ requiredCapabilities: ["text"] }),
+      registry,
       [provider === "openai"
         ? new OpenAIResponsesProvider()
         : new OpenAICompatibleProvider({ providerId, baseUrl, allowedOrigins })],
       broker,
+      hooks,
     );
   }
 
   if (provider === "anthropic") {
     const baseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL ?? "https://api.anthropic.com/v1/";
     const modelId = requiredEnvironment("LITE_HARNESS_MODEL");
-    const registry = new ModelRegistry([
-      {
-        id: modelId,
-        providerId: "anthropic",
-        transport: "direct",
-        credentialProfileId,
-        capabilities: ["text", "tools", "vision"],
-        contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "200000", 10),
-        ...configuredModelPricing(),
-        provenance: "operator",
-        enabled: true,
-      },
-    ]);
+    const registry = new ModelRegistry(configuredDirectModels({
+      id: modelId, providerId: "anthropic", credentialProfileId, capabilities: ["text", "tools", "vision"],
+      contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "200000", 10),
+    }));
     return new RoutedModelGateway(
-      registry.plan({ requiredCapabilities: ["text"] }),
+      registry,
       [new AnthropicProvider({ baseUrl, allowedOrigins: [new URL(baseUrl).origin] })],
       broker,
+      hooks,
     );
   }
 
   throw new Error(`Unsupported LITE_HARNESS_PROVIDER: ${provider}`);
+}
+
+function delegatedDescriptor(
+  modelId: string,
+  providerId: string,
+  pricing: { inputUsdPerMillion?: number; outputUsdPerMillion?: number },
+): ModelDescriptor {
+  return {
+    id: modelId, providerId, transport: "delegated", credentialProfileId: `${providerId}_delegated`,
+    capabilities: ["text", "tools", "reasoning", "delegated-agent"], contextWindow: 128_000,
+    ...pricing, provenance: "operator", enabled: true,
+  };
+}
+
+function configuredDirectModels(defaults: {
+  id: string;
+  providerId: string;
+  credentialProfileId: string;
+  capabilities: readonly ModelCapability[];
+  contextWindow: number;
+}): ModelDescriptor[] {
+  const pricing = configuredModelPricing();
+  const raw = process.env.LITE_HARNESS_MODEL_CATALOG?.trim();
+  if (!raw) return [{ ...defaults, capabilities: [...defaults.capabilities], transport: "direct", ...pricing, provenance: "operator", enabled: true }];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { throw new Error("LITE_HARNESS_MODEL_CATALOG must be valid JSON"); }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 256) throw new Error("LITE_HARNESS_MODEL_CATALOG must be a non-empty bounded array");
+  const allowed = new Set<ModelCapability>(["text", "tools", "vision", "json", "reasoning", "delegated-agent"]);
+  return parsed.map((value, index) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Model catalog entry ${index} must be an object`);
+    const record = value as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    const capabilities = Array.isArray(record.capabilities) ? [...new Set(record.capabilities)] : [];
+    const contextWindow = record.contextWindow ?? defaults.contextWindow;
+    if (!id || id.length > 256 || /[\0\r\n]/.test(id)) throw new Error(`Model catalog entry ${index} id is invalid`);
+    if (!capabilities.length || !capabilities.every((item): item is ModelCapability => typeof item === "string" && allowed.has(item as ModelCapability))) {
+      throw new Error(`Model catalog entry ${index} capabilities are invalid`);
+    }
+    if (!Number.isSafeInteger(contextWindow) || (contextWindow as number) < 1) throw new Error(`Model catalog entry ${index} context window is invalid`);
+    const input = record.inputUsdPerMillion;
+    const output = record.outputUsdPerMillion;
+    if ((input === undefined) !== (output === undefined) || (input !== undefined && (!Number.isFinite(input) || (input as number) < 0)) ||
+        (output !== undefined && (!Number.isFinite(output) || (output as number) < 0))) {
+      throw new Error(`Model catalog entry ${index} pricing is invalid`);
+    }
+    return {
+      id, providerId: defaults.providerId, transport: "direct" as const,
+      credentialProfileId: defaults.credentialProfileId, capabilities,
+      contextWindow: contextWindow as number,
+      ...(input === undefined ? pricing : { inputUsdPerMillion: input as number, outputUsdPerMillion: output as number }),
+      provenance: "operator" as const, enabled: record.enabled === undefined ? true : record.enabled === true,
+    };
+  });
+}
+
+function persistRunRoutePlan(
+  context: ModelRunContext,
+  plan: RoutePlan,
+  requiredCapabilities: readonly ModelCapability[],
+): void {
+  store.persistRunRoutePlan({
+    runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
+    registryGeneration: plan.registryGeneration,
+    requiredCapabilities: [...requiredCapabilities],
+    selectedModelId: plan.selected.id, selectedProviderId: plan.selected.providerId,
+    selectedCredentialProfileId: plan.selected.credentialProfileId,
+    fallbackModelIds: plan.fallbacks.map((model) => model.id), createdAt: plan.createdAt,
+  });
+}
+
+function persistRunModelUsage(
+  context: ModelRunContext,
+  plan: RoutePlan,
+  model: ModelDescriptor,
+  usage: { inputTokens: number; outputTokens: number; costUsd?: number },
+): void {
+  store.persistRunModelUsage({
+    runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
+    modelId: model.id, providerId: model.providerId,
+    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+    ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
+    recordedAt: new Date().toISOString(),
+  });
 }
 
 function resolveCredentialBroker(profileId: string): CredentialBroker {

@@ -43,6 +43,16 @@ Agent Runtime awaits this commit after route and context preparation and before
 calling the provider stream. Configuration changes therefore affect a later
 attempt, never an already-prepared attempt.
 
+## Observability boundary
+
+Gateway and Manager requests start a bounded trace, return its opaque ID in
+`X-Lite-Trace-Id`, and finish with structured request metrics and an audit
+event. `StructuredObservability` accepts only finite bounded metric values and
+sanitizes attributes before retaining them in a bounded in-memory ring or a
+mode-600 JSONL sink. Prompt, file, path, stack, and credential fields are
+omitted or redacted by default; the sink is telemetry and audit evidence, not a
+storage path for user content.
+
 ## Approval boundary
 
 Each pending approval stores a SHA-256 execution digest over the exact tool and

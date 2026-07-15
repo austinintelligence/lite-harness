@@ -11814,14 +11814,22 @@
         "lineStart": 1897,
         "lineEnd": 1897
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "apps/cli/src/main.ts",
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "BD-034-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R21-1898",
@@ -11858,14 +11866,23 @@
         "lineStart": 1899,
         "lineEnd": 1899
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/manager/src/delegated-workspace.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "BD-034-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R21-1900",
@@ -11880,14 +11897,23 @@
         "lineStart": 1900,
         "lineEnd": 1901
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "apps/cli/src/main.ts",
+        "apps/manager/src/delegated-workspace.ts"
+      ],
+      "testIds": [
+        "BD-034-REGRESSION"
+      ],
+      "ciJob": "recovery-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/workspace-recovery.json",
+          "producer": "pnpm test:recovery -- --evidence evidence/m4/workspace-recovery.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R21-1902",

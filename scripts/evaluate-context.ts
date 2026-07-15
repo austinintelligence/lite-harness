@@ -100,6 +100,7 @@ export async function pairedHermesModelEvaluation(): Promise<Record<string, unkn
   const opticalScore = average(evaluations.map((item) => item.optical.score));
   const textBill = sumBills(evaluations.map((item) => item.text.fullBill));
   const opticalBill = sumBills(evaluations.map((item) => item.optical.fullBill));
+  const authoritativeAccounting = evaluations.every((item) => item.text.fullBill.usageReported && item.optical.fullBill.usageReported);
   return {
     schemaVersion: 2, generatedAt: new Date().toISOString(), sourceCommit: currentCommit(),
     evaluationType: "paired-model-quality-cost", testId: "BD-050-REGRESSION",
@@ -110,10 +111,13 @@ export async function pairedHermesModelEvaluation(): Promise<Record<string, unkn
     aggregate: {
       textQuality: textScore, opticalQuality: opticalScore, qualityDelta: opticalScore - textScore,
       textFullBill: textBill, opticalFullBill: opticalBill,
-      inputTokensIncludeProviderBilledImageTokens: true,
-      conclusion: opticalScore >= textScore
-        ? "Optical quality was non-inferior on this bounded benchmark; production remains disabled pending repeated workload evidence."
-        : "Optical quality regressed on this bounded benchmark; keep the feature disabled.",
+      authoritativeAccounting, promotionEligible: false,
+      inputTokensIncludeProviderBilledImageTokens: authoritativeAccounting,
+      conclusion: !authoritativeAccounting
+        ? "Hermes returned no authoritative usage fields; quality is measured, but savings and production promotion are prohibited."
+        : opticalScore >= textScore
+          ? "Optical quality was non-inferior on this bounded benchmark; production remains disabled pending repeated workload evidence."
+          : "Optical quality regressed on this bounded benchmark; keep the feature disabled.",
     },
   };
 }
@@ -133,20 +137,29 @@ async function runEvaluationTurn(
     if (event.type === "text.delta") answer += event.delta;
     if (event.type === "usage") usage = event;
   }
-  if (!usage) throw new Error("Hermes paired evaluation returned no provider usage");
   const inputRate = optionalRate("LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION");
   const outputRate = optionalRate("LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION");
+  const noPerTokenCharge = inputRate === 0 && outputRate === 0;
   return {
     answer: answer.trim(), latencyMilliseconds: performance.now() - started,
     fullBill: {
-      inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-      cachedInputTokens: usage.cachedInputTokens ?? 0,
-      costUsd: (usage.inputTokens * inputRate + usage.outputTokens * outputRate) / 1_000_000,
+      usageReported: Boolean(usage), requestBytes: Buffer.byteLength(JSON.stringify(messages)),
+      inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null,
+      cachedInputTokens: usage?.cachedInputTokens ?? null,
+      costUsd: usage
+        ? (usage.inputTokens * inputRate + usage.outputTokens * outputRate) / 1_000_000
+        : noPerTokenCharge ? 0 : null,
+      accountingNote: usage
+        ? "Provider-reported usage; image tokens are included in total input tokens."
+        : "Hermes supplied no usage fields; token counts are unknown and no savings claim is permitted.",
     },
   };
 }
 
-interface Bill { inputTokens: number; outputTokens: number; cachedInputTokens: number; costUsd: number }
+interface Bill {
+  usageReported: boolean; requestBytes: number; inputTokens: number | null; outputTokens: number | null;
+  cachedInputTokens: number | null; costUsd: number | null; accountingNote: string;
+}
 
 function scoredRun(run: { answer: string; latencyMilliseconds: number; fullBill: Bill }, expected: string) {
   return { ...run, score: normalize(run.answer) === normalize(expected) ? 1 : 0 };
@@ -171,12 +184,17 @@ function benchmarkTasks(): Array<{ id: string; reference: string; question: stri
 }
 
 function sumBills(bills: Bill[]): Bill {
-  return bills.reduce<Bill>((total, bill) => ({
-    inputTokens: total.inputTokens + bill.inputTokens,
-    outputTokens: total.outputTokens + bill.outputTokens,
-    cachedInputTokens: total.cachedInputTokens + bill.cachedInputTokens,
-    costUsd: total.costUsd + bill.costUsd,
-  }), { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, costUsd: 0 });
+  const usageReported = bills.every((bill) => bill.usageReported);
+  return {
+    usageReported, requestBytes: bills.reduce((total, bill) => total + bill.requestBytes, 0),
+    inputTokens: usageReported ? bills.reduce((total, bill) => total + (bill.inputTokens ?? 0), 0) : null,
+    outputTokens: usageReported ? bills.reduce((total, bill) => total + (bill.outputTokens ?? 0), 0) : null,
+    cachedInputTokens: usageReported ? bills.reduce((total, bill) => total + (bill.cachedInputTokens ?? 0), 0) : null,
+    costUsd: bills.every((bill) => bill.costUsd !== null) ? bills.reduce((total, bill) => total + (bill.costUsd ?? 0), 0) : null,
+    accountingNote: usageReported
+      ? "Provider-reported aggregate usage."
+      : "At least one response omitted usage; aggregate token counts are intentionally null.",
+  };
 }
 
 function average(values: number[]): number { return values.reduce((total, value) => total + value, 0) / values.length; }

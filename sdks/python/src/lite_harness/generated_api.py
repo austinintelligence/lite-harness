@@ -84,7 +84,7 @@ class CreateRunResponse(TypedDict):
 
 class CreateWorkspace(TypedDict):
     id: NotRequired[str]
-    mode: NotRequired["managed"]
+    mode: NotRequired[Literal["managed"]]
 
 ErrorDetail: TypeAlias = dict[str, Any]
 
@@ -92,14 +92,14 @@ class ErrorEnvelope(TypedDict):
     error: StructuredError
 
 class GatewayHealth(TypedDict):
-    ok: True
-    role: "gateway"
+    ok: Literal[True]
+    role: Literal["gateway"]
     uptimeSeconds: int
     rssBytes: int
 
 class GatewayReadiness(TypedDict):
     ok: bool
-    role: "gateway"
+    role: Literal["gateway"]
     dependencies: dict[str, ReadinessDependency]
 
 class InboundEnvelope(TypedDict):
@@ -123,7 +123,7 @@ class MintRunTokenResponse(TypedDict):
     tokenId: str
     expiresAt: str
     scopes: list[str]
-    replayPolicy: "resource_bound_multi_use"
+    replayPolicy: Literal["resource_bound_multi_use"]
 
 class PublishArtifact(TypedDict):
     path: str
@@ -131,7 +131,7 @@ class PublishArtifact(TypedDict):
 
 class RevokeTokenResponse(TypedDict):
     tokenId: str
-    revoked: True
+    revoked: Literal[True]
 
 class ReadinessDependency(TypedDict):
     ok: bool
@@ -204,6 +204,11 @@ class RunRecord(TypedDict):
 
 RunStatus: TypeAlias = Literal["ACCEPTED", "QUEUED", "PREPARING", "RUNNING", "CHECKPOINTING", "SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"]
 
+class RunStreamError(TypedDict):
+    message: str
+
+RunStreamFrame: TypeAlias = RunEvent | RunStreamError
+
 class RunUsage(TypedDict):
     inputTokens: int
     outputTokens: int
@@ -237,7 +242,7 @@ class SteerRun(TypedDict):
     instruction: str
 
 class StructuredError(TypedDict):
-    version: 1
+    version: Literal[1]
     code: str
     message: str
     retryable: bool
@@ -288,4 +293,4 @@ API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/workspaces/{workspaceId}", "getV1WorkspacesByWorkspaceId"),
 )
 
-__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadiness","InboundEnvelope","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]
+__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadiness","InboundEnvelope","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunStreamError","RunStreamFrame","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]

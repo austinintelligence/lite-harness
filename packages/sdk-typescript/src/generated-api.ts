@@ -221,6 +221,11 @@ export type RunRecord =
   updatedAt: string;
 };
 export type RunStatus = "ACCEPTED" | "QUEUED" | "PREPARING" | "RUNNING" | "CHECKPOINTING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "TIMED_OUT" | "ORPHANED";
+export type RunStreamError =
+{
+  message: string;
+};
+export type RunStreamFrame = RunEvent | RunStreamError;
 export type RunUsage =
 {
   inputTokens: number;
@@ -320,6 +325,8 @@ export const GENERATED_API_SCHEMAS = [
   "RunEventType",
   "RunRecord",
   "RunStatus",
+  "RunStreamError",
+  "RunStreamFrame",
   "RunUsage",
   "SessionMessageRecord",
   "SessionMessageRole",

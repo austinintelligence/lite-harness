@@ -443,14 +443,20 @@ export interface ArtifactPayloadResponse {
 
 /** Public webhook payload accepted by the Gateway before connector/account binding is applied. */
 export const InboundEnvelopeSchema = Type.Object({
-  deliveryId: Type.String({ minLength: 1, maxLength: 512 }),
-  senderExternalId: Type.String({ minLength: 1, maxLength: 512 }),
-  conversationExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-  threadExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-  text: Type.String({ minLength: 1, maxLength: 200_000 }),
-  attachmentUrls: Type.Optional(Type.Array(Type.String({ format: "uri" }), { maxItems: 32 })),
-  receivedAt: Type.Optional(Type.String({ format: "date-time" })),
-}, { additionalProperties: false });
+  deliveryId: Type.String({ minLength: 1, maxLength: 512, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" }),
+  senderExternalId: Type.String({ minLength: 1, maxLength: 512, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" }),
+  conversationExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" })),
+  threadExternalId: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" })),
+  text: Type.String({ minLength: 1, maxLength: 200_000, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" }),
+  attachmentUrls: Type.Optional(Type.Array(Type.String({
+    format: "uri",
+    maxLength: 4_096,
+    pattern: "^https?:\\/\\/[^\\s/?#@]+(?:[/?#][^\\s]*)?$",
+  }), { maxItems: 32 })),
+  // Connector payloads may carry provider-specific metadata; the normalizer
+  // deliberately ignores those fields after validating the owned envelope.
+  receivedAt: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[\\s\\S]*\\S[\\s\\S]*$" })),
+}, { additionalProperties: true });
 
 export type InboundEnvelope = Static<typeof InboundEnvelopeSchema>;
 
@@ -623,6 +629,13 @@ export const RunEventSchema = Type.Object({
   payload: Type.Record(Type.String(), Type.Unknown()),
   createdAt: Type.String({ format: "date-time" }),
 }, { additionalProperties: false });
+
+/** The Gateway emits this frame when an SSE stream fails after headers are sent. */
+export const RunStreamErrorSchema = Type.Object({
+  message: Type.String({ minLength: 1, maxLength: 4_096 }),
+}, { additionalProperties: false });
+
+export const RunStreamFrameSchema = Type.Union([RunEventSchema, RunStreamErrorSchema]);
 
 export const AgentProfileRecordSchema = Type.Object({
   id: Type.String({ minLength: 1, maxLength: 128 }),

@@ -33,6 +33,8 @@ import {
   RunEventTypeSchema,
   RunRecordSchema,
   RunStatusSchema,
+  RunStreamErrorSchema,
+  RunStreamFrameSchema,
   RunUsageSchema,
   SessionMessageRecordSchema,
   SessionMessageRoleSchema,
@@ -81,6 +83,8 @@ const publicSchemas: Record<string, unknown> = {
   RunEventType: RunEventTypeSchema,
   RunRecord: RunRecordSchema,
   RunStatus: RunStatusSchema,
+  RunStreamError: RunStreamErrorSchema,
+  RunStreamFrame: RunStreamFrameSchema,
   RunUsage: RunUsageSchema,
   SessionMessageRecord: SessionMessageRecordSchema,
   SessionMessageRole: SessionMessageRoleSchema,
@@ -116,6 +120,7 @@ type RouteContract = {
   successDescription: string;
   successContentType?: string;
   parameters?: Array<Record<string, unknown>>;
+  errorStatuses?: string[];
 };
 
 const routeContracts: Record<string, RouteContract> = {
@@ -128,10 +133,13 @@ const routeContracts: Record<string, RouteContract> = {
       { name: "X-Lite-Signature", in: "header", required: true, schema: { type: "string", pattern: "^sha256=[a-fA-F0-9]{64}$" } },
     ],
   },
-  "POST /v1/runs": { requestSchema: "CreateRun", successStatus: "202", successSchema: "CreateRunResponse", successDescription: "Accepted or replayed" },
+  "POST /v1/runs": {
+    requestSchema: "CreateRun", successStatus: "202", successSchema: "CreateRunResponse", successDescription: "Accepted or replayed",
+    parameters: [{ name: "Idempotency-Key", in: "header", required: false, schema: { type: "string", minLength: 1, maxLength: 200, pattern: "^[^\\u0000\\r\\n]+$" } }],
+  },
   "GET /v1/runs/{runId}": { successStatus: "200", successSchema: "RunRecord", successDescription: "Run" },
   "GET /v1/runs/{runId}/events": {
-    successStatus: "200", successSchema: "RunEvent", successDescription: "Replayable SSE event stream", successContentType: "text/event-stream",
+    successStatus: "200", successSchema: "RunStreamFrame", successDescription: "Replayable SSE event and stream-error frames", successContentType: "text/event-stream",
     parameters: [{ name: "after", in: "query", required: false, schema: { type: "integer", minimum: 0 } }],
   },
   "GET /v1/runs/{runId}/attempts": { successStatus: "200", successSchema: "RunAttemptsResponse", successDescription: "Durable execution attempts" },
@@ -153,6 +161,35 @@ const routeContracts: Record<string, RouteContract> = {
   "DELETE /v1/tokens/{tokenId}": { successStatus: "200", successSchema: "RevokeTokenResponse", successDescription: "Run token revoked" },
 };
 
+const routeErrorStatuses: Record<string, string[]> = {
+  "POST /hooks/webhook/{accountId}": ["400", "401"],
+  "POST /v1/runs": ["400", "401", "403", "429", "500"],
+  "GET /v1/runs/{runId}": ["401", "403", "404", "429"],
+  "GET /v1/runs/{runId}/events": ["400", "401", "403", "404", "429"],
+  "GET /v1/runs/{runId}/attempts": ["401", "403", "404", "429"],
+  "GET /v1/runs/{runId}/children": ["401", "403", "404", "429"],
+  "POST /v1/runs/{runId}/cancel": ["401", "403", "404", "429"],
+  "POST /v1/runs/{runId}/steer": ["400", "401", "403", "404", "409", "429"],
+  "GET /v1/sessions/{sessionId}": ["401", "403", "404", "429"],
+  "GET /v1/sessions/{sessionId}/messages": ["401", "403", "404", "429"],
+  "POST /v1/approvals/{approvalId}": ["400", "401", "403", "404", "429"],
+  "POST /v1/runs/{runId}/artifacts": ["400", "401", "403", "404", "429"],
+  "GET /v1/artifacts/{artifactId}": ["401", "403", "404", "429"],
+  "GET /v1/agents": ["401", "403", "429"],
+  "POST /v1/agents": ["400", "401", "403", "429"],
+  "GET /v1/agents/{agentId}": ["401", "403", "404", "429"],
+  "GET /v1/workspaces": ["401", "403", "429"],
+  "POST /v1/workspaces": ["400", "401", "403", "429"],
+  "GET /v1/workspaces/{workspaceId}": ["401", "403", "404", "429"],
+  "POST /v1/tokens": ["400", "401", "403", "429"],
+  "DELETE /v1/tokens/{tokenId}": ["401", "403", "404", "429"],
+};
+for (const [key, statuses] of Object.entries(routeErrorStatuses)) {
+  const contract = routeContracts[key];
+  if (!contract) throw new Error(`OpenAPI error contract is missing its operation: ${key}`);
+  contract.errorStatuses = statuses;
+}
+
 for (const [route, pathItem] of Object.entries(document.paths ?? {}) as Array<[string, Record<string, any>]>) {
   for (const [method, operation] of Object.entries(pathItem) as Array<[string, Record<string, any>]>) {
     if (!operation || typeof operation !== "object" || !operation.responses) continue;
@@ -161,13 +198,17 @@ for (const [route, pathItem] of Object.entries(document.paths ?? {}) as Array<[s
     if (!contract) throw new Error(`OpenAPI route has no authoritative contract: ${key}`);
     operation.operationId = operationId(method, route);
     operation.security = route.startsWith("/v1/") ? [{ appToken: [] }] : [];
-    operation.responses = {
-      ...operation.responses,
-      [contract.successStatus]: {
+    const previousResponses = operation.responses as Record<string, Record<string, any>>;
+    const declaredStatuses = [...new Set([contract.successStatus, ...(contract.errorStatuses ?? []), "default"])];
+    operation.responses = Object.fromEntries(declaredStatuses.map((status) => status === contract.successStatus
+      ? [status, {
         description: contract.successDescription,
         content: { [contract.successContentType ?? "application/json"]: { schema: { $ref: `#/components/schemas/${contract.successSchema}` } } },
-      },
-    };
+      }]
+      : [status, { description: previousResponses[status]?.description ?? errorDescription(status) }]));
+    for (const status of contract.errorStatuses ?? []) {
+      operation.responses[status] ??= { description: errorDescription(status) };
+    }
     if (contract.requestSchema) {
       operation.requestBody = {
         required: contract.requestRequired ?? true,
@@ -178,7 +219,7 @@ for (const [route, pathItem] of Object.entries(document.paths ?? {}) as Array<[s
     }
     operation.parameters = mergeParameters(route, operation.parameters, contract.parameters);
     for (const [status, response] of Object.entries(operation.responses) as Array<[string, Record<string, any>]>) {
-      if (!/^[45]/.test(status)) continue;
+      if (!/^[45]/.test(status) && status !== "default") continue;
       response.content ??= {};
       response.content["application/json"] ??= {};
       response.content["application/json"].schema = { $ref: "#/components/schemas/ErrorEnvelope" };
@@ -195,14 +236,28 @@ document.paths["/readyz"].get.responses["503"] = {
 };
 
 const gateway = readFileSync(resolve(root, "apps", "gateway", "src", "server.ts"), "utf8");
-const publicRoutes = new Set(
+const publicPathLiterals = new Set(
   [...gateway.matchAll(/["`](\/(?:healthz|readyz|hooks|v1)[^"`]*)["`]/g)]
-    .map((match) => match[1] as string)
-    .filter((route) => !route.includes("${") && route !== "/hooks/" && route !== "/v1/")
-    .map((route) => route.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}")),
+    .map((match) => String(match[1]).replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}"))
+    .filter((route) => !route.includes("${") && route !== "/hooks/" && route !== "/v1/"),
 );
+const uncontractedPaths = [...publicPathLiterals].filter((route) => !Object.keys(routeContracts).some((operation) => operation.endsWith(` ${route}`)));
+if (uncontractedPaths.length) throw new Error(`OpenAPI has public Gateway paths without contracts: ${uncontractedPaths.join(", ")}`);
+const publicOperations = new Set(
+  [...gateway.matchAll(/\bapp\.(get|post|put|patch|delete)(?:<[\s\S]*?>)?\s*\(\s*["`](\/(?:healthz|readyz|hooks|v1)[^"`]*)["`]/g)]
+    .map((match) => `${String(match[1]).toUpperCase()} ${String(match[2]).replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}")}`)
+    .filter((operation) => !operation.includes("${") && !operation.endsWith(" /hooks/") && !operation.endsWith(" /v1/")),
+);
+const publicRoutes = new Set([...publicOperations].map((operation) => operation.slice(operation.indexOf(" ") + 1)));
 const missing = [...publicRoutes].filter((route) => !(route in document.paths));
 if (missing.length) throw new Error(`OpenAPI is missing public Gateway routes: ${missing.join(", ")}`);
+const missingOperations = [...publicOperations].filter((operation) => !routeContracts[operation]);
+if (missingOperations.length) throw new Error(`OpenAPI is missing public Gateway operations: ${missingOperations.join(", ")}`);
+const unparsedOperations = Object.keys(routeContracts).filter((operation) => !publicOperations.has(operation));
+if (unparsedOperations.length) throw new Error(`OpenAPI route parser did not recognize Gateway operations: ${unparsedOperations.join(", ")}`);
+const documentedOperations = new Set(apiOperations(document).map((operation) => `${operation.method} ${operation.path}`));
+const undocumentedOperations = [...publicOperations].filter((operation) => !documentedOperations.has(operation));
+if (undocumentedOperations.length) throw new Error(`OpenAPI is missing documented Gateway operations: ${undocumentedOperations.join(", ")}`);
 
 const uncontracted = Object.entries(document.paths ?? {}).flatMap(([route, item]) =>
   Object.keys(item as Record<string, unknown>)
@@ -255,6 +310,13 @@ function rewriteSchemaReferences(
 
 function stringSchema(minLength: number, maxLength: number): Record<string, unknown> {
   return { type: "string", minLength, maxLength };
+}
+
+function errorDescription(status: string): string {
+  return ({
+    "400": "Invalid request", "401": "Unauthorized", "403": "Forbidden", "404": "Not found",
+    "409": "Conflict", "429": "Rate limited", "500": "Internal server error", "503": "Unavailable",
+  } as Record<string, string>)[status] ?? "Request failed";
 }
 
 function mergeParameters(route: string, existing: unknown, explicit?: Array<Record<string, unknown>>): Array<Record<string, unknown>> | undefined {
@@ -361,7 +423,7 @@ function pythonDeclaration(name: string, schema: Record<string, any>): string {
 
 function pythonType(schema: Record<string, any>): string {
   if (schema.$ref) return String(schema.$ref).split("/").at(-1) ?? "Any";
-  if (Object.prototype.hasOwnProperty.call(schema, "const")) return pythonLiteral(schema.const);
+  if (Object.prototype.hasOwnProperty.call(schema, "const")) return `Literal[${pythonLiteral(schema.const)}]`;
   if (Array.isArray(schema.enum) && schema.enum.length) return `Literal[${schema.enum.map((value: unknown) => pythonLiteral(value)).join(", ")}]`;
   const alternatives = schema.anyOf ?? schema.oneOf;
   if (Array.isArray(alternatives)) {

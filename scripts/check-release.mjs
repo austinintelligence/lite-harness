@@ -176,7 +176,16 @@ function validateOpenApiSemantics() {
       for (const [status, response] of Object.entries(operation.responses ?? {})) {
         const media = response?.content?.["application/json"] ?? response?.content?.["text/event-stream"];
         if (/^2\d\d$/.test(status) && !media?.schema?.$ref) failures.push(`OpenAPI success ${method.toUpperCase()} ${path} ${status} has no typed schema`);
-        if (/^[45]\d\d$/.test(status) && !media?.schema?.$ref) failures.push(`OpenAPI error ${method.toUpperCase()} ${path} ${status} has no typed schema`);
+        if ((/^[45]\d\d$/.test(status) || status === "default") && !media?.schema?.$ref) failures.push(`OpenAPI error ${method.toUpperCase()} ${path} ${status} has no typed schema`);
+      }
+      const defaultError = operation.responses?.default?.content?.["application/json"]?.schema?.$ref;
+      if (defaultError !== "#/components/schemas/ErrorEnvelope") failures.push(`OpenAPI operation ${method.toUpperCase()} ${path} lacks a typed default error envelope`);
+      if (path.startsWith("/v1/")) {
+        for (const status of ["401", "403", "429"]) {
+          if (operation.responses?.[status]?.content?.["application/json"]?.schema?.$ref !== "#/components/schemas/ErrorEnvelope") {
+            failures.push(`OpenAPI authenticated operation ${method.toUpperCase()} ${path} lacks typed ${status} response`);
+          }
+        }
       }
       if (operation.requestBody && !operation.requestBody.content?.["application/json"]?.schema?.$ref) {
         failures.push(`OpenAPI request ${method.toUpperCase()} ${path} has no typed JSON schema`);

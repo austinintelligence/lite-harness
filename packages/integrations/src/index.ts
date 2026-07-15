@@ -469,7 +469,11 @@ export function normalizeInbound(value: unknown): InboundEnvelope {
       throw new Error("Inbound attachment URLs must be credential-free HTTP(S) URLs");
     }
   }
-  const receivedAt = typeof record.receivedAt === "string" ? record.receivedAt : new Date().toISOString();
+  if (record.receivedAt !== undefined &&
+      (typeof record.receivedAt !== "string" || record.receivedAt.length === 0 || record.receivedAt.length > 128 || !/[\s\S]*\S[\s\S]*/.test(record.receivedAt))) {
+    throw new Error("Inbound receivedAt is invalid");
+  }
+  const receivedAt = record.receivedAt === undefined ? new Date().toISOString() : record.receivedAt;
   if (!Number.isFinite(Date.parse(receivedAt))) throw new Error("Inbound receivedAt is invalid");
   for (const field of ["threadExternalId", "conversationExternalId"] as const) {
     if (record[field] !== undefined && (typeof record[field] !== "string" || !(record[field] as string).trim() || (record[field] as string).length > 512)) {

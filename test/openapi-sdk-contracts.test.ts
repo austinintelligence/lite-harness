@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GENERATED_API_OPERATIONS, GENERATED_API_SCHEMAS } from "@lite-harness/sdk";
+import { InboundEnvelopeSchema } from "@lite-harness/contracts";
+import { normalizeInbound } from "@lite-harness/integrations";
 
 const root = resolve(import.meta.dirname, "..");
 const document = JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "utf8")) as {
@@ -26,6 +29,13 @@ describe("authoritative OpenAPI and generated SDK contract", () => {
           expect(media?.schema?.$ref, `${method.toUpperCase()} ${path} ${status} schema`).toMatch(/^#\/components\/schemas\/[A-Za-z][A-Za-z0-9]+$/);
           const schemaName = String(media.schema.$ref).split("/").at(-1) as string;
           expect(document.components.schemas, `${schemaName} component`).toHaveProperty(schemaName);
+        }
+        const defaultError = operation.responses?.default?.content?.["application/json"]?.schema?.$ref;
+        expect(defaultError, `${method.toUpperCase()} ${path} default error schema`).toBe("#/components/schemas/ErrorEnvelope");
+        if (path.startsWith("/v1/")) {
+          for (const status of ["401", "403", "429"]) {
+            expect(operation.responses?.[status]?.content?.["application/json"]?.schema?.$ref, `${method.toUpperCase()} ${path} ${status} schema`).toBe("#/components/schemas/ErrorEnvelope");
+          }
         }
         if (operation.requestBody) {
           expect(operation.requestBody.content?.["application/json"]?.schema?.$ref, `${method.toUpperCase()} ${path} request schema`).toMatch(/^#\/components\/schemas\//);
@@ -54,5 +64,40 @@ describe("authoritative OpenAPI and generated SDK contract", () => {
       .map((match) => ({ method: match[1], path: match[2], operationId: match[3] }));
     expect(pythonOperations).toEqual(openApiOperations);
     for (const name of schemaNames) expect(pythonGenerated).toMatch(new RegExp(`(?:class|^${name}:)`, "m"));
+  });
+
+  it("keeps Python generated annotations introspectable", () => {
+    execFileSync("python", ["-c", [
+      "import importlib, typing",
+      "module = importlib.import_module('lite_harness.generated_api')",
+      "for name in module.__all__:",
+      "    value = getattr(module, name)",
+      "    if isinstance(value, type) and hasattr(value, '__annotations__'):",
+      "        typing.get_type_hints(value, vars(module), vars(module))",
+    ].join("\n")], {
+      cwd: root,
+      env: { ...process.env, PYTHONPATH: resolve(root, "sdks/python/src") },
+      stdio: "pipe",
+    });
+  });
+
+  it("keeps webhook contract and runtime normalization aligned", () => {
+    const body = {
+      deliveryId: "delivery-1",
+      senderExternalId: "sender-1",
+      text: "\nhello",
+      receivedAt: "Wed, 15 Jul 2026 16:00:00 GMT",
+      providerMetadata: { source: "fixture" },
+    };
+    expect(InboundEnvelopeSchema.additionalProperties).toBe(true);
+    expect(InboundEnvelopeSchema.properties.receivedAt).not.toHaveProperty("format");
+    expect(InboundEnvelopeSchema.properties.text.pattern).toContain("\\S");
+    expect(normalizeInbound({ ...body, connectorId: "webhook", accountId: "primary" })).toMatchObject({
+      deliveryId: "delivery-1",
+      text: "\nhello",
+    });
+
+    const invalid = { ...body, receivedAt: 42 };
+    expect(() => normalizeInbound({ ...invalid, connectorId: "webhook", accountId: "primary" })).toThrow("receivedAt");
   });
 });

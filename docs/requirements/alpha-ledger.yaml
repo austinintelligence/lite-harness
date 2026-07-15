@@ -2550,14 +2550,12 @@
         "lineStart": 553,
         "lineEnd": 553
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["packages/runtime/src/index.ts", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-040-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R07-0554",
@@ -11174,14 +11172,12 @@
         "lineStart": 1822,
         "lineEnd": 1822
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime/src/index.ts"],
+      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1824",
@@ -11196,14 +11192,12 @@
         "lineStart": 1824,
         "lineEnd": 1824
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1825",
@@ -11218,14 +11212,12 @@
         "lineStart": 1825,
         "lineEnd": 1825
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1826",
@@ -11240,14 +11232,12 @@
         "lineStart": 1826,
         "lineEnd": 1826
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile"],
+      "testIds": ["BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1827",
@@ -11284,14 +11274,12 @@
         "lineStart": 1828,
         "lineEnd": 1828
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile", "packages/runtime-docker/src/index.ts"],
+      "testIds": ["BD-040-REGRESSION", "BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1829",
@@ -11306,14 +11294,12 @@
         "lineStart": 1829,
         "lineEnd": 1829
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": ["docker/tool-runtime/Dockerfile"],
+      "testIds": ["BD-041-REGRESSION"],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [{"path": "evidence/m3/docker-policy.json", "producer": "pnpm test:docker -- --evidence evidence/m3/docker-policy.json"}],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R19-1830",

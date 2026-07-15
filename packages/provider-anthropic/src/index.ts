@@ -119,22 +119,41 @@ function toAnthropicMessages(messages: readonly ModelMessage[]): Array<{ role: "
   for (const message of messages) {
     if (message.role === "system") continue;
     if (message.role === "assistant") {
+      if (message.imageDataUrls?.length) throw new ProviderError("invalid_request", "Assistant image context is unsupported", false);
       append("assistant", [
         ...(message.content ? [{ type: "text", text: message.content }] : []),
         ...(message.toolCalls ?? []).map((call) => ({ type: "tool_use", id: call.id, name: call.name, input: call.arguments })),
       ]);
     } else if (message.role === "tool") {
+      if (message.imageDataUrls?.length) throw new ProviderError("invalid_request", "Tool results cannot contain image context", false);
       if (!message.toolCallId) throw new ProviderError("invalid_request", "Anthropic tool result is missing its tool call id", false);
       append("user", [{ type: "tool_result", tool_use_id: message.toolCallId, content: message.content }]);
     } else {
-      append("user", [{ type: "text", text: message.content }]);
+      append("user", anthropicContent(message));
     }
   }
   return output;
 }
 
 function anthropicSystem(messages: readonly ModelMessage[]): string {
-  return messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
+  return messages.filter((message) => message.role === "system").map((message) => {
+    if (message.imageDataUrls?.length) throw new ProviderError("invalid_request", "System image context is unsupported", false);
+    return message.content;
+  }).join("\n\n");
+}
+
+function anthropicContent(message: ModelMessage): unknown[] {
+  const output: unknown[] = message.content ? [{ type: "text", text: message.content }] : [];
+  let bytes = 0;
+  for (const image of message.imageDataUrls ?? []) {
+    const match = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(image);
+    if (!match) throw new ProviderError("invalid_request", "Image context must be a PNG or JPEG data URL", false);
+    const data = match[2] as string;
+    bytes += Buffer.from(data, "base64").byteLength;
+    if (bytes > 32 * 1024 * 1024) throw new ProviderError("invalid_request", "Image context exceeds the 32 MiB request limit", false);
+    output.push({ type: "image", source: { type: "base64", media_type: `image/${match[1]}`, data } });
+  }
+  return output;
 }
 
 interface AnthropicResponse {

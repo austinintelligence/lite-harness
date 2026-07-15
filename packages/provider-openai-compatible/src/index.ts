@@ -109,7 +109,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         stream_options: { include_usage: true },
         messages: params.messages.map((message) => ({
           role: message.role,
-          content: message.content,
+          content: toChatCompletionsContent(message),
           ...(message.role === "assistant" && message.toolCalls?.length ? {
             tool_calls: message.toolCalls.map((call) => ({
               id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.arguments) },
@@ -154,7 +154,10 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       yield { type: "tool.call", call: { id: toolCall.id, name: toolCall.function.name, arguments: argumentsValue } };
     }
     if (body.usage) {
-      yield { type: "usage", inputTokens: body.usage.prompt_tokens, outputTokens: body.usage.completion_tokens };
+      yield {
+        type: "usage", inputTokens: body.usage.prompt_tokens, outputTokens: body.usage.completion_tokens,
+        ...(body.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
+      };
     }
     yield { type: "completed", finishReason: choice.message.tool_calls?.length ? "tool_calls" : "stop" };
   }
@@ -169,7 +172,10 @@ async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIte
     try { chunk = JSON.parse(data) as OpenAIStreamChunk; }
     catch { throw new ProviderError("invalid_response", "Provider returned an invalid SSE payload", false); }
     if (chunk.error) throw new ProviderError("provider_stream_error", "Provider stream reported an error", false);
-    if (chunk.usage) yield { type: "usage", inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens };
+    if (chunk.usage) yield {
+      type: "usage", inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens,
+      ...(chunk.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: chunk.usage.prompt_tokens_details.cached_tokens } : {}),
+    };
     for (const choice of chunk.choices ?? []) {
       if (choice.delta?.content) yield { type: "text.delta", delta: choice.delta.content };
       for (const part of choice.delta?.tool_calls ?? []) {
@@ -193,7 +199,7 @@ async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIte
 }
 
 type ResponsesInputItem =
-  | { type: "message"; role: "system" | "user" | "assistant"; content: string }
+  | { type: "message"; role: "system" | "user" | "assistant"; content: string | ResponsesContentPart[] }
   | { type: "function_call"; call_id: string; name: string; arguments: string }
   | { type: "function_call_output"; call_id: string; output: string };
 
@@ -207,7 +213,9 @@ function toResponsesInput(messages: Parameters<ProviderAdapter["stream"]>[0]["me
       input.push({ type: "function_call_output", call_id: message.toolCallId, output: message.content });
       continue;
     }
-    if (message.content) input.push({ type: "message", role: message.role, content: message.content });
+    if (message.content || message.imageDataUrls?.length) {
+      input.push({ type: "message", role: message.role, content: toResponsesContent(message) });
+    }
     for (const call of message.role === "assistant" ? message.toolCalls ?? [] : []) {
       input.push({
         type: "function_call",
@@ -220,13 +228,52 @@ function toResponsesInput(messages: Parameters<ProviderAdapter["stream"]>[0]["me
   return input;
 }
 
+type MessageWithImages = Parameters<ProviderAdapter["stream"]>[0]["messages"][number];
+type ResponsesContentPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail: "auto" };
+
+function toChatCompletionsContent(message: MessageWithImages): string | Array<
+  { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail: "auto" } }
+> {
+  const images = validatedImages(message);
+  if (!images.length) return message.content;
+  return [
+    ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
+    ...images.map((url) => ({ type: "image_url" as const, image_url: { url, detail: "auto" as const } })),
+  ];
+}
+
+function toResponsesContent(message: MessageWithImages): string | ResponsesContentPart[] {
+  const images = validatedImages(message);
+  if (!images.length) return message.content;
+  return [
+    ...(message.content ? [{ type: "input_text" as const, text: message.content }] : []),
+    ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const })),
+  ];
+}
+
+function validatedImages(message: MessageWithImages): readonly string[] {
+  const images = message.imageDataUrls ?? [];
+  if (!images.length) return images;
+  if (message.role !== "user") throw new ProviderError("invalid_request", "Image context must use the user role", false);
+  let bytes = 0;
+  for (const image of images) {
+    const match = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(image);
+    if (!match) throw new ProviderError("invalid_request", "Image context must be a PNG or JPEG data URL", false);
+    bytes += Buffer.from(match[2] as string, "base64").byteLength;
+    if (bytes > 32 * 1024 * 1024) throw new ProviderError("invalid_request", "Image context exceeds the 32 MiB request limit", false);
+  }
+  return images;
+}
+
 interface OpenAIResponsesBody {
   id?: string;
   status?: "completed" | "failed" | "incomplete" | "cancelled" | "queued" | "in_progress";
   error?: { code?: string; message?: string } | null;
   incomplete_details?: { reason?: string } | null;
   output?: OpenAIResponseOutputItem[];
-  usage?: { input_tokens?: number; output_tokens?: number } | null;
+  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } } | null;
 }
 
 interface OpenAIResponseOutputItem {
@@ -390,7 +437,10 @@ async function* emitResponsesUsage(usage: OpenAIResponsesBody["usage"]): AsyncIt
   if (!Number.isSafeInteger(usage.input_tokens) || !Number.isSafeInteger(usage.output_tokens)) {
     throw new ProviderError("invalid_usage", "OpenAI Responses returned invalid token usage", false);
   }
-  yield { type: "usage", inputTokens: usage.input_tokens as number, outputTokens: usage.output_tokens as number };
+  yield {
+    type: "usage", inputTokens: usage.input_tokens as number, outputTokens: usage.output_tokens as number,
+    ...(usage.input_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: usage.input_tokens_details.cached_tokens } : {}),
+  };
 }
 
 function responseTerminalError(code: string, response: OpenAIResponsesBody | undefined): ProviderError {
@@ -405,7 +455,7 @@ interface OpenAIResponse {
       tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
     };
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
+  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } };
 }
 
 interface OpenAIStreamChunk {
@@ -416,7 +466,7 @@ interface OpenAIStreamChunk {
     };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number } | null;
+  usage?: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } } | null;
   error?: unknown;
 }
 

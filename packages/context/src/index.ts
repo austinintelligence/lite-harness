@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 export type ContextBlockKind = "instructions" | "conversation" | "tool-state" | "source" | "logs" | "memory";
@@ -11,6 +12,8 @@ export interface ContextBlock {
   exactText: string;
   lossyEligible: boolean;
   sensitive: boolean;
+  provenance?: string;
+  timeRange?: { start?: string; end?: string };
 }
 
 export interface RenderedContextBlock {
@@ -18,6 +21,7 @@ export interface RenderedContextBlock {
   kind: ContextBlockKind;
   representation: "text" | "image";
   content: string | readonly string[];
+  nativeLabel: string;
   exactRecoveryAvailable: true;
 }
 
@@ -120,22 +124,73 @@ export async function evaluateContextRenderer(
 }
 
 export class ContextStore {
-  readonly #blocks = new Map<string, ContextBlock>();
+  readonly #database: DatabaseSync;
+
+  constructor(path = ":memory:") {
+    this.#database = new DatabaseSync(path);
+    this.#database.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE IF NOT EXISTS context_blocks (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        exact_text TEXT NOT NULL,
+        exact_sha256 TEXT NOT NULL,
+        lossy_eligible INTEGER NOT NULL CHECK (lossy_eligible IN (0, 1)),
+        sensitive INTEGER NOT NULL CHECK (sensitive IN (0, 1)),
+        provenance TEXT,
+        time_start TEXT,
+        time_end TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+  }
 
   put(block: ContextBlock): void {
     if (!block.id || !block.exactText) throw new Error("Context block id and exact text are required");
-    this.#blocks.set(block.id, Object.freeze({ ...block }));
+    if (!CONTEXT_BLOCK_KINDS.has(block.kind)) throw new Error(`Unsupported context block kind: ${block.kind}`);
+    const digest = createHash("sha256").update(block.exactText).digest("hex");
+    const existing = this.#database.prepare("SELECT exact_sha256 FROM context_blocks WHERE id = ?").get(block.id) as { exact_sha256: string } | undefined;
+    if (existing) {
+      if (existing.exact_sha256 !== digest) throw new Error(`Context block is immutable: ${block.id}`);
+      return;
+    }
+    this.#database.prepare(`
+      INSERT INTO context_blocks (
+        id, kind, exact_text, exact_sha256, lossy_eligible, sensitive,
+        provenance, time_start, time_end, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      block.id, block.kind, block.exactText, digest, block.lossyEligible ? 1 : 0, block.sensitive ? 1 : 0,
+      block.provenance ?? null, block.timeRange?.start ?? null, block.timeRange?.end ?? null, new Date().toISOString(),
+    );
   }
 
   fetchExact(blockId: string): string {
-    const block = this.#blocks.get(blockId);
+    const block = this.#database.prepare("SELECT exact_text FROM context_blocks WHERE id = ?").get(blockId) as { exact_text: string } | undefined;
     if (!block) throw new Error(`Context block not found: ${blockId}`);
-    return block.exactText;
+    return block.exact_text;
   }
 
   list(): ContextBlock[] {
-    return [...this.#blocks.values()];
+    const rows = this.#database.prepare(`
+      SELECT id, kind, exact_text, lossy_eligible, sensitive, provenance, time_start, time_end
+      FROM context_blocks ORDER BY created_at, id
+    `).all() as Array<{
+      id: string; kind: ContextBlockKind; exact_text: string; lossy_eligible: number; sensitive: number;
+      provenance: string | null; time_start: string | null; time_end: string | null;
+    }>;
+    return rows.map((row) => ({
+      id: row.id, kind: row.kind, exactText: row.exact_text,
+      lossyEligible: row.lossy_eligible === 1, sensitive: row.sensitive === 1,
+      ...(row.provenance ? { provenance: row.provenance } : {}),
+      ...(row.time_start || row.time_end ? { timeRange: {
+        ...(row.time_start ? { start: row.time_start } : {}), ...(row.time_end ? { end: row.time_end } : {}),
+      } } : {}),
+    }));
   }
+
+  close(): void { this.#database.close(); }
 }
 
 export class ContextOptimizationGate {
@@ -182,12 +237,14 @@ export class ConservativeContextCompiler {
   async compile(
     modelId: string,
     mode: "off" | "conservative" = "off",
-    scope?: { appId: string; tenantId: string },
+    scope?: { appId: string; tenantId: string; modelCapabilities?: readonly string[] },
   ): Promise<RenderedContextBlock[]> {
     const mayRender = mode === "conservative" && this.enabledModels.has(modelId) &&
+      Boolean(scope?.modelCapabilities?.includes("vision")) &&
       (!this.policy || Boolean(scope && this.policy.gate.allows(scope.appId, modelId)));
     return Promise.all(this.store.list().map(async (block) => {
-      if (!mayRender || !block.lossyEligible || block.sensitive || block.kind === "source" || block.kind === "tool-state") {
+      if (!mayRender || !block.lossyEligible || block.sensitive || block.exactText.length < 1_024 ||
+          block.kind === "source" || block.kind === "tool-state") {
         return asText(block);
       }
       try {
@@ -198,7 +255,10 @@ export class ConservativeContextCompiler {
           throw new Error("Renderer did not return image data URLs");
         }
         if (scope && !cached) this.policy?.cache?.put(scope.tenantId, modelId, block, images);
-        return { id: block.id, kind: block.kind, representation: "image", content: images, exactRecoveryAvailable: true };
+        return {
+          id: block.id, kind: block.kind, representation: "image", content: images,
+          nativeLabel: opticalLabel(block), exactRecoveryAvailable: true,
+        };
       } catch {
         return asText(block);
       }
@@ -216,6 +276,14 @@ function asText(block: ContextBlock): RenderedContextBlock {
     kind: block.kind,
     representation: "text",
     content: block.exactText,
+    nativeLabel: block.exactText,
     exactRecoveryAvailable: true,
   };
 }
+
+function opticalLabel(block: ContextBlock): string {
+  const provenance = block.provenance ? ` from ${block.provenance}` : "";
+  return `Optical context ${block.id} (${block.kind})${provenance}. Exact canonical text is retained for recovery.`;
+}
+
+const CONTEXT_BLOCK_KINDS = new Set<ContextBlockKind>(["instructions", "conversation", "tool-state", "source", "logs", "memory"]);

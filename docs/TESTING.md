@@ -23,9 +23,11 @@ persist the upstream OpenAI credential. Run the live conformance smoke with
 `node scripts/with-hermes-model.mjs node <script> [...args]` so the local policy
 overrides ambient direct-provider variables for that invocation only.
 
-`pnpm evaluate:pxpipe` is deliberately excluded: it renders local text and
-measures PNG size/latency without calling a model. Credentialed pxpipe quality
-evaluation, when added, must use the Hermes wrapper.
+`pnpm evaluate:pxpipe` remains model-free and measures local rendering,
+latency, bytes, and exact recovery. `pnpm evaluate:pxpipe:hermes` is the only
+model-backed pxpipe evaluation: it uses the same wrapper and records a paired
+text-versus-optical quality and full-bill report without persisting upstream
+credentials.
 
 ## CI and release automation
 

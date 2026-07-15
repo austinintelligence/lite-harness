@@ -21,6 +21,7 @@ export interface AgentContextCompiler {
     allowedTools?: readonly string[];
     principal?: InternalPrincipal;
     modelId?: string;
+    modelCapabilities?: readonly ModelCapability[];
   }): Promise<readonly ModelMessage[]>;
   snapshotForRun?(params: { runId: string; principal: InternalPrincipal }): Promise<{ skills: Array<{ name: string; digest: string }> }>;
 }
@@ -94,6 +95,7 @@ export class AgentRunner {
       ...(params.allowedTools ? { allowedTools: Object.freeze([...params.allowedTools]) } : {}),
       ...(params.principal ? { principal: params.principal } : {}),
       ...(preparedRoute ? { modelId: preparedRoute.modelId } : {}),
+      ...(preparedRoute ? { modelCapabilities: preparedRoute.capabilities } : {}),
     }) ?? [];
     const messages: ModelMessage[] = [
       ...(params.instructions?.trim() ? [{ role: "system" as const, content: params.instructions.trim() }] : []),

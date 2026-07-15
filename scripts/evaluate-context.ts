@@ -1,29 +1,191 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import {
-  ContextStore, OptionalPxpipeRenderer, PXPIPE_EVALUATED_COMMIT, PXPIPE_EVALUATED_VERSION, evaluateContextRenderer,
+  assertEvaluatedPxpipeVersion,
+  ContextStore,
+  OptionalPxpipeRenderer,
+  PXPIPE_EVALUATED_COMMIT,
+  PXPIPE_EVALUATED_VERSION,
+  evaluateContextRenderer,
+  type ContextBlock,
 } from "@lite-harness/context";
+import type { ModelDescriptor, ModelEvent, ModelMessage } from "@lite-harness/provider-core";
+import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
 
 const root = process.cwd();
-const corpora = [
-  { id: "gateway-trace", kind: "logs" as const, path: "test/gateway-manager.e2e.test.ts" },
-  { id: "architecture-trace", kind: "logs" as const, path: "docs/ARCHITECTURE.md" },
-  { id: "provider-trace", kind: "logs" as const, path: "test/provider-adapters.test.ts" },
-];
-const renderer = new OptionalPxpipeRenderer();
-const evaluations = [];
-for (const corpus of corpora) {
-  const store = new ContextStore();
-  const block = { id: corpus.id, kind: corpus.kind, exactText: readFileSync(join(root, corpus.path), "utf8"), lossyEligible: true, sensitive: false };
-  evaluations.push({ source: corpus.path, ...await evaluateContextRenderer(store, renderer, block, "measurement-only") });
-}
-const report = {
-  schemaVersion: 1,
-  generatedAt: new Date().toISOString(),
-  pxpipe: { version: PXPIPE_EVALUATED_VERSION, commit: PXPIPE_EVALUATED_COMMIT },
-  policy: "measurement-only-disabled-by-default",
-  qualityConclusion: "No model-quality claim is made without credentialed paired evaluation; exact-value content remains text.",
-  evaluations,
-};
-writeFileSync(join(root, "docs", "pxpipe-evaluation.json"), `${JSON.stringify(report, null, 2)}\n`);
+const argumentsSet = new Set(process.argv.slice(2));
+const paired = argumentsSet.has("--paired-hermes");
+const evidenceIndex = process.argv.indexOf("--evidence");
+const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
+const report = paired ? await pairedHermesModelEvaluation() : await localRenderEvaluation();
+const output = resolve(root, evidencePath ?? "docs/pxpipe-evaluation.json");
+mkdirSync(dirname(output), { recursive: true });
+writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+
+async function localRenderEvaluation(): Promise<Record<string, unknown>> {
+  const corpora = [
+    { id: "gateway-trace", kind: "logs" as const, path: "test/gateway-manager.e2e.test.ts" },
+    { id: "architecture-trace", kind: "logs" as const, path: "docs/ARCHITECTURE.md" },
+    { id: "provider-trace", kind: "logs" as const, path: "test/provider-adapters.test.ts" },
+  ];
+  const renderer = new OptionalPxpipeRenderer();
+  const evaluations = [];
+  for (const corpus of corpora) {
+    const store = new ContextStore();
+    try {
+      const block = {
+        id: corpus.id, kind: corpus.kind, exactText: readFileSync(join(root, corpus.path), "utf8"),
+        lossyEligible: true, sensitive: false, provenance: corpus.path,
+      };
+      evaluations.push({ source: corpus.path, ...await evaluateContextRenderer(store, renderer, block, "measurement-only") });
+    } finally { store.close(); }
+  }
+  return {
+    schemaVersion: 2, generatedAt: new Date().toISOString(),
+    sourceCommit: currentCommit(),
+    pxpipe: { version: PXPIPE_EVALUATED_VERSION, commit: PXPIPE_EVALUATED_COMMIT },
+    policy: "measurement-only-disabled-by-default",
+    qualityConclusion: "Local rendering proves bounded rendering and durable exact recovery, not model quality or savings.",
+    evaluations,
+  };
+}
+
+/** Runs the paired quality/cost gate only through the required local Hermes proxy. */
+export async function pairedHermesModelEvaluation(): Promise<Record<string, unknown>> {
+  const baseUrl = requiredEnvironment("LITE_HARNESS_PROVIDER_BASE_URL");
+  const apiKey = requiredEnvironment("LITE_HARNESS_PROVIDER_API_KEY");
+  const modelId = requiredEnvironment("LITE_HARNESS_MODEL");
+  if (process.env.LITE_HARNESS_PROVIDER !== "openai-compatible" || baseUrl !== "http://127.0.0.1:8645/v1" || modelId !== "gpt-5.6-luna") {
+    throw new Error("Paired pxpipe evaluation must use the configured local Hermes gpt-5.6-luna route");
+  }
+  assertEvaluatedPxpipeVersion();
+  const adapter = new OpenAICompatibleProvider({ providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin] });
+  const model: ModelDescriptor = {
+    id: modelId, providerId: "openai-compatible", transport: "direct", credentialProfileId: "hermes-local",
+    capabilities: ["text", "vision"], contextWindow: 128_000, provenance: "operator", enabled: true,
+  };
+  const renderer = new OptionalPxpipeRenderer();
+  const evaluations = [];
+  for (const task of benchmarkTasks()) {
+    const store = new ContextStore();
+    try {
+      const block: ContextBlock = {
+        id: task.id, kind: "memory", exactText: task.reference,
+        lossyEligible: true, sensitive: false, provenance: `benchmark:${task.id}`,
+      };
+      const rendered = await evaluateContextRenderer(store, renderer, block, modelId);
+      const images = await renderer.render(block, modelId);
+      const text = await runEvaluationTurn(adapter, model, apiKey, [
+        { role: "system", content: "Use the supplied reference. Return only the requested exact token, with no punctuation or explanation." },
+        { role: "user", content: task.reference }, { role: "user", content: task.question },
+      ]);
+      const optical = await runEvaluationTurn(adapter, model, apiKey, [
+        { role: "system", content: "Use the supplied reference. Return only the requested exact token, with no punctuation or explanation." },
+        { role: "user", content: `Optical context ${task.id}; exact canonical text is retained for recovery.`, imageDataUrls: images },
+        { role: "user", content: task.question },
+      ]);
+      evaluations.push({
+        taskId: task.id, expected: task.expected,
+        exactRecoveryVerified: rendered.exactRecoveryVerified && store.fetchExact(task.id) === task.reference,
+        render: { pages: rendered.pages, imageBytes: rendered.imageBytes, milliseconds: rendered.renderMilliseconds },
+        text: scoredRun(text, task.expected), optical: scoredRun(optical, task.expected),
+      });
+    } finally { store.close(); }
+  }
+  const textScore = average(evaluations.map((item) => item.text.score));
+  const opticalScore = average(evaluations.map((item) => item.optical.score));
+  const textBill = sumBills(evaluations.map((item) => item.text.fullBill));
+  const opticalBill = sumBills(evaluations.map((item) => item.optical.fullBill));
+  return {
+    schemaVersion: 2, generatedAt: new Date().toISOString(), sourceCommit: currentCommit(),
+    evaluationType: "paired-model-quality-cost", testId: "BD-050-REGRESSION",
+    provider: { route: "local-hermes-openai-compatible", baseUrl, model: modelId, credential: "non-empty-placeholder-only" },
+    pxpipe: { version: PXPIPE_EVALUATED_VERSION, commit: PXPIPE_EVALUATED_COMMIT },
+    policy: "measurement-only-disabled-by-default",
+    evaluations,
+    aggregate: {
+      textQuality: textScore, opticalQuality: opticalScore, qualityDelta: opticalScore - textScore,
+      textFullBill: textBill, opticalFullBill: opticalBill,
+      inputTokensIncludeProviderBilledImageTokens: true,
+      conclusion: opticalScore >= textScore
+        ? "Optical quality was non-inferior on this bounded benchmark; production remains disabled pending repeated workload evidence."
+        : "Optical quality regressed on this bounded benchmark; keep the feature disabled.",
+    },
+  };
+}
+
+async function runEvaluationTurn(
+  adapter: OpenAICompatibleProvider,
+  model: ModelDescriptor,
+  apiKey: string,
+  messages: readonly ModelMessage[],
+): Promise<{ answer: string; latencyMilliseconds: number; fullBill: Bill }> {
+  const started = performance.now();
+  let answer = "";
+  let usage: Extract<ModelEvent, { type: "usage" }> | undefined;
+  for await (const event of adapter.stream({
+    model, messages, credential: { authorizationHeader: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(120_000),
+  })) {
+    if (event.type === "text.delta") answer += event.delta;
+    if (event.type === "usage") usage = event;
+  }
+  if (!usage) throw new Error("Hermes paired evaluation returned no provider usage");
+  const inputRate = optionalRate("LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION");
+  const outputRate = optionalRate("LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION");
+  return {
+    answer: answer.trim(), latencyMilliseconds: performance.now() - started,
+    fullBill: {
+      inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+      cachedInputTokens: usage.cachedInputTokens ?? 0,
+      costUsd: (usage.inputTokens * inputRate + usage.outputTokens * outputRate) / 1_000_000,
+    },
+  };
+}
+
+interface Bill { inputTokens: number; outputTokens: number; cachedInputTokens: number; costUsd: number }
+
+function scoredRun(run: { answer: string; latencyMilliseconds: number; fullBill: Bill }, expected: string) {
+  return { ...run, score: normalize(run.answer) === normalize(expected) ? 1 : 0 };
+}
+
+function benchmarkTasks(): Array<{ id: string; reference: string; question: string; expected: string }> {
+  const filler = Array.from({ length: 34 }, (_, index) =>
+    `Operational note ${String(index + 1).padStart(2, "0")}: Gateway authenticates public requests while Manager owns credentials, leases, and execution state.`,
+  ).join("\n");
+  return [
+    {
+      id: "recovery-token", expected: "LH-RECOVER-7Q4M",
+      reference: `${filler}\nThe immutable recovery token for workspace cold restore is LH-RECOVER-7Q4M.\n${filler}`,
+      question: "What is the immutable recovery token for workspace cold restore?",
+    },
+    {
+      id: "fencing-token", expected: "FENCE-2049-ZETA",
+      reference: `${filler}\nThe sole accepted fencing token for attempt takeover is FENCE-2049-ZETA. Older tokens must fail closed.\n${filler}`,
+      question: "What is the sole accepted fencing token for attempt takeover?",
+    },
+  ];
+}
+
+function sumBills(bills: Bill[]): Bill {
+  return bills.reduce<Bill>((total, bill) => ({
+    inputTokens: total.inputTokens + bill.inputTokens,
+    outputTokens: total.outputTokens + bill.outputTokens,
+    cachedInputTokens: total.cachedInputTokens + bill.cachedInputTokens,
+    costUsd: total.costUsd + bill.costUsd,
+  }), { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, costUsd: 0 });
+}
+
+function average(values: number[]): number { return values.reduce((total, value) => total + value, 0) / values.length; }
+function normalize(value: string): string { return value.trim().replace(/^['"`]|['"`]$/g, "").toUpperCase(); }
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim(); if (!value) throw new Error(`Missing ${name}`); return value;
+}
+function optionalRate(name: string): number {
+  const value = Number.parseFloat(process.env[name] ?? "0"); return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+function currentCommit(): string {
+  return process.env.GITHUB_SHA?.trim() || process.env.LITE_HARNESS_SOURCE_COMMIT?.trim() ||
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+}

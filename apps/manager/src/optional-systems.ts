@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { AgentContextCompiler } from "@lite-harness/agent-runtime";
 import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
 import type { McpSupervisor } from "@lite-harness/mcp";
@@ -38,8 +38,8 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
   const environment = options.environment ?? process.env;
   const stops: Array<() => Promise<void>> = [];
   const contextCompilers: AgentContextCompiler[] = [];
-  const operatorContext = await configureContext(options.dataDir, options.modelId, environment);
-  if (operatorContext) contextCompilers.push(operatorContext);
+  const operatorContext = await configureContext(options.runtime, options.dataDir, options.modelId, environment);
+  if (operatorContext) { contextCompilers.push(operatorContext.context); stops.push(operatorContext.stop); }
   const skills = await configureSkills(options.runtime, options.dataDir, environment);
   if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
   const mcp = await configureMcp(options.runtime, environment);
@@ -57,7 +57,10 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
   };
 }
 
-async function configureContext(dataDir: string, modelId: string, environment: NodeJS.ProcessEnv): Promise<AgentContextCompiler | undefined> {
+async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, modelId: string, environment: NodeJS.ProcessEnv): Promise<{
+  context: AgentContextCompiler;
+  stop(): Promise<void>;
+} | undefined> {
   const contextFile = environment.LITE_HARNESS_CONTEXT_FILE?.trim();
   if (!contextFile) return undefined;
   const { ConservativeContextCompiler, ContextOptimizationGate, ContextStore, OptionalPxpipeRenderer, TenantContextRenderCache } = await import("@lite-harness/context");
@@ -65,8 +68,24 @@ async function configureContext(dataDir: string, modelId: string, environment: N
   const metadata = statSync(path);
   if (!metadata.isFile() || metadata.size > 1024 * 1024) throw new Error("LITE_HARNESS_CONTEXT_FILE must be a file no larger than 1 MiB");
   const exactText = readFileSync(path, "utf8");
-  const store = new ContextStore();
-  store.put({ id: `operator-${createHash("sha256").update(exactText).digest("hex")}`, kind: "instructions", exactText, lossyEligible: true, sensitive: false });
+  mkdirSync(dataDir, { recursive: true });
+  const store = new ContextStore(join(dataDir, "context.sqlite"));
+  store.put({
+    id: `operator-${createHash("sha256").update(exactText).digest("hex")}`,
+    kind: "instructions", exactText, lossyEligible: true, sensitive: false,
+    provenance: `operator:${basename(path)}`, timeRange: { start: metadata.mtime.toISOString(), end: metadata.mtime.toISOString() },
+  });
+  runtime.register("context_fetch_exact", async (params) => {
+    const blockId = requiredString(params.call.arguments.blockId, "context block id");
+    const content = store.fetchExact(blockId);
+    return { callId: params.call.id, ok: true, content, metadata: { blockId, exact: true } };
+  }, {
+    description: "Fetch the exact canonical text for an optical context block by stable ID.",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["blockId"],
+      properties: { blockId: { type: "string", minLength: 1, maxLength: 256 } },
+    },
+  });
   const enabled = environment.LITE_HARNESS_CONTEXT_OPTIMIZATION === "true";
   const allowedApps = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_APPS);
   const allowedModels = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_MODELS);
@@ -77,21 +96,21 @@ async function configureContext(dataDir: string, modelId: string, environment: N
     allowedModels,
     { gate, cache: new TenantContextRenderCache() },
   );
-  return {
-    compile: async ({ principal, modelId: selectedModelId }) => {
+  const context: AgentContextCompiler = {
+    compile: async ({ principal, modelId: selectedModelId, modelCapabilities }) => {
       const blocks = await compiler.compile(
         selectedModelId ?? modelId,
         enabled ? "conservative" : "off",
-        principal ? { appId: principal.appId, tenantId: principal.tenantId } : undefined,
+        principal ? { appId: principal.appId, tenantId: principal.tenantId, modelCapabilities } : undefined,
       );
-      // Provider-core is text-canonical today. Keep exact text authoritative if
-      // an optional renderer produced a view the selected adapter cannot encode.
       return blocks.map((block) => ({
-        role: "system" as const,
-        content: block.representation === "text" ? String(block.content) : store.fetchExact(block.id),
+        role: block.representation === "text" ? "system" as const : "user" as const,
+        content: block.nativeLabel,
+        ...(block.representation === "image" ? { imageDataUrls: block.content as readonly string[] } : {}),
       }));
     },
   };
+  return { context, stop: async () => { store.close(); } };
 }
 
 async function configureSkills(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): Promise<{

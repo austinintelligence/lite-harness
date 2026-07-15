@@ -266,6 +266,9 @@ export class DelegatedRuntimeError extends Error {
 }
 
 function renderTranscript(messages: readonly ModelMessage[]): string {
+  if (messages.some((message) => message.imageDataUrls?.length)) {
+    throw new DelegatedRuntimeError("unsupported_capability", "Delegated text runtimes cannot receive image context");
+  }
   return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
 }
 

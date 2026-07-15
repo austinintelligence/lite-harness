@@ -145,7 +145,8 @@ describe("optional capability kernel", () => {
 
   it("keeps canonical context exact and only renders eligible blocks for allowlisted models", async () => {
     const store = new ContextStore();
-    store.put({ id: "logs", kind: "logs", exactText: "long logs", lossyEligible: true, sensitive: false });
+    const exactLogs = "long semantic logs ".repeat(100);
+    store.put({ id: "logs", kind: "logs", exactText: exactLogs, lossyEligible: true, sensitive: false });
     store.put({ id: "source", kind: "source", exactText: "const exact = 1", lossyEligible: true, sensitive: false });
     const compiler = new ConservativeContextCompiler(
       store,
@@ -154,9 +155,12 @@ describe("optional capability kernel", () => {
     );
     const unknown = await compiler.compile("unknown-model", "conservative");
     expect(unknown.every((block) => block.representation === "text")).toBe(true);
-    const measured = await compiler.compile("measured-model", "conservative");
+    const measured = await compiler.compile("measured-model", "conservative", {
+      appId: "app", tenantId: "tenant", modelCapabilities: ["text", "vision"],
+    });
     expect(measured.find((block) => block.id === "logs")?.representation).toBe("image");
     expect(measured.find((block) => block.id === "source")?.representation).toBe("text");
-    expect(store.fetchExact("logs")).toBe("long logs");
+    expect(store.fetchExact("logs")).toBe(exactLogs);
+    store.close();
   });
 });

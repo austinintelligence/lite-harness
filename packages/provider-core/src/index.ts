@@ -4,6 +4,8 @@ import type { InternalPrincipal, ToolCall, ToolDefinition } from "@lite-harness/
 export interface ModelMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Bounded data URLs supplied only to a route that declared vision support. */
+  imageDataUrls?: readonly string[];
   toolCallId?: string;
   toolCalls?: ToolCall[];
 }
@@ -11,7 +13,7 @@ export interface ModelMessage {
 export type ModelEvent =
   | { type: "text.delta"; delta: string }
   | { type: "tool.call"; call: ToolCall }
-  | { type: "usage"; inputTokens: number; outputTokens: number; costUsd?: number }
+  | { type: "usage"; inputTokens: number; outputTokens: number; cachedInputTokens?: number; costUsd?: number }
   | { type: "completed"; finishReason: "stop" | "tool_calls" };
 
 export type ProviderAdapterEvent = ModelEvent | { type: "request.accepted" };

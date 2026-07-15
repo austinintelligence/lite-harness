@@ -626,7 +626,7 @@
         "section": "Known baseline defects / 18",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-018-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -640,14 +640,16 @@
       },
       "regression": {
         "testId": "BD-018-REGRESSION",
-        "path": null,
-        "result": "not-run",
-        "evidenceArtifact": null
+        "path": "test/docker-archive.test.ts",
+        "result": "pass",
+        "evidenceArtifact": {
+          "path": "evidence/m3/docker-policy.json"
+        }
       },
-      "fixCommits": [],
-      "blockers": [
-        "regression-fix-required"
-      ]
+      "fixCommits": [
+        "c3e4031990a6ae3f69c84a59f117ec0f1da88e7c"
+      ],
+      "blockers": []
     },
     {
       "id": "BD-019",

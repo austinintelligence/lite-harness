@@ -16854,14 +16854,20 @@
         "lineStart": 2320,
         "lineEnd": 2320
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "R29-2320"
+      ],
+      "ciJob": "migration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/migrations.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R29-2321",

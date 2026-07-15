@@ -69,6 +69,30 @@ describe("provider plane", () => {
     expect(events).toContainEqual({ type: "text.delta", delta: "fallback worked" });
   });
 
+  it("fails closed instead of sending model-specific optical context to a fallback", async () => {
+    const registry = new ModelRegistry([
+      baseModel("first", "preferred", ["text", "vision"]),
+      baseModel("second", "fallback", ["text", "vision"]),
+    ]);
+    const broker = new InMemoryCredentialBroker();
+    broker.set("preferred-credential", { authorizationHeader: "Bearer preferred-secret" });
+    broker.set("fallback-credential", { authorizationHeader: "Bearer fallback-secret" });
+    let fallbackCalls = 0;
+    const gateway = new RoutedModelGateway(
+      registry.plan({ requiredCapabilities: ["text", "vision"] }),
+      [{ providerId: "preferred", async *stream() { throw new ProviderError("rate_limited", "retry", true, 429); } }, {
+        providerId: "fallback", async *stream() { fallbackCalls += 1; yield { type: "completed", finishReason: "stop" }; },
+      }],
+      broker,
+    );
+    await expect(async () => {
+      for await (const _event of gateway.streamTurn({
+        messages: [{ role: "user", content: "optical", imageDataUrls: ["data:image/png;base64,AAAA"] }],
+      })) { /* consume */ }
+    }).rejects.toMatchObject({ code: "context_recompile_required" });
+    expect(fallbackCalls).toBe(0);
+  });
+
   it("does not fallback after a tool call has become externally visible", async () => {
     const registry = new ModelRegistry([
       baseModel("first", "preferred", ["text", "tools"]),

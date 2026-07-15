@@ -337,7 +337,15 @@ export class RoutedModelGateway implements ModelGateway {
     let lastError: unknown;
     let externallyVisible = false;
 
-    for (const model of routes) {
+    const hasModelSpecificImages = params.messages.some((message) => message.imageDataUrls?.length);
+    for (const [routeIndex, model] of routes.entries()) {
+      if (routeIndex > 0 && hasModelSpecificImages) {
+        throw new ProviderError(
+          "context_recompile_required",
+          "An optical request must be recompiled from canonical text after selecting a fallback model",
+          true,
+        );
+      }
       if (params.context?.maxCostUsd !== undefined && !hasKnownModelPricing(model)) {
         lastError = new ProviderError(
           "unknown_model_price",

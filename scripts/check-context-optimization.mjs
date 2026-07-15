@@ -12,7 +12,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"), "run",
-    "test/context-optimization.test.ts", "test/capabilities.test.ts",
+    "test/context-optimization.test.ts", "test/capabilities.test.ts", "test/provider-core.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));

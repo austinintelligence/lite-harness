@@ -18,9 +18,12 @@ binding variables are:
 
 Send `POST /hooks/webhook/{accountId}` with a JSON envelope and an
 `X-Lite-Signature: sha256=<hex>` header. The signature is HMAC-SHA256 over the
-canonical compact JSON bytes (`JSON.stringify(envelope)`), using UTF-8. The
-Gateway never accepts app identity from this unauthenticated route; Manager
-resolves the preconfigured binding after signature verification.
+exact UTF-8 request body bytes as transmitted, including whitespace and key
+order. Gateway preserves those bytes over authenticated local IPC; Manager
+verifies them before using the parsed envelope. Semantically equivalent JSON
+with a signature for different serialization is rejected. The Gateway never
+accepts app identity from this unauthenticated route; Manager resolves the
+preconfigured binding after signature verification.
 
 Required envelope fields are `deliveryId`, `senderExternalId`, and `text`.
 Optional fields include `conversationExternalId`, `threadExternalId`,

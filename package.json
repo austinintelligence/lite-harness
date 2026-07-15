@@ -63,6 +63,7 @@
     "test:backpressure": "node scripts/check-backpressure.mjs",
     "test:browser": "node scripts/check-browser.mjs",
     "test:docker": "node scripts/check-docker.mjs",
+    "test:integrations": "node scripts/check-integrations.mjs",
     "test:migrations": "node scripts/check-migrations.mjs",
     "test:plugins": "node scripts/check-plugins.mjs",
     "test:providers": "node scripts/check-providers.mjs",

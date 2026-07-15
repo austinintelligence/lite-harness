@@ -33,6 +33,10 @@ import {
 } from "@lite-harness/contracts";
 import type { AccessTokenService } from "@lite-harness/auth";
 
+declare module "fastify" {
+  interface FastifyRequest { rawBody?: Buffer }
+}
+
 const authenticatedPrincipals = new WeakMap<object, InternalPrincipal>();
 
 export interface ManagerTransport {
@@ -57,7 +61,7 @@ export interface ManagerTransport {
   createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   listWorkspaces(principal: InternalPrincipal): Promise<WorkspaceRecord[]>;
-  ingestWebhook(accountId: string, envelope: unknown, signature: string): Promise<{ duplicate: boolean; runId?: string }>;
+  ingestWebhook(accountId: string, rawBody: Buffer, signature: string): Promise<{ duplicate: boolean; runId?: string }>;
 }
 
 export interface GatewayServerOptions {
@@ -70,6 +74,7 @@ export interface GatewayServerOptions {
 
 export function buildGatewayServer(options: GatewayServerOptions): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false });
+  installExactJsonBodyParser(app);
   const authFailureLimit = options.authFailureLimit ?? 20;
   const authFailureWindowMs = options.authFailureWindowMs ?? 60_000;
   if (!Number.isSafeInteger(authFailureLimit) || authFailureLimit < 1 ||
@@ -174,11 +179,11 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
   app.post<{ Params: { accountId: string }; Body: unknown }>("/hooks/webhook/:accountId", async (request, reply) => {
     const signature = stringHeader(request.headers["x-lite-signature"]);
-    if (!signature || !request.body || typeof request.body !== "object") {
+    if (!signature || !request.rawBody || !request.body || typeof request.body !== "object") {
       return reply.code(400).send({ error: { code: "invalid_webhook", message: "Webhook body and X-Lite-Signature are required" } });
     }
     try {
-      return reply.code(202).send(await options.manager.ingestWebhook(request.params.accountId, request.body, signature));
+      return reply.code(202).send(await options.manager.ingestWebhook(request.params.accountId, request.rawBody, signature));
     } catch (error) {
       return reply.code(401).send({ error: { code: "webhook_rejected", message: error instanceof Error ? error.message : String(error) } });
     }
@@ -472,6 +477,15 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   );
 
   return app;
+}
+
+function installExactJsonBodyParser(app: FastifyInstance): void {
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    request.rawBody = Buffer.from(body);
+    try { done(null, JSON.parse(request.rawBody.toString("utf8"))); }
+    catch (error) { done(error as Error); }
+  });
 }
 
 function isPublishArtifactRequest(value: unknown): value is PublishArtifactRequest {

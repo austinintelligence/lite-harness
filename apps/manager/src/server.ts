@@ -22,6 +22,10 @@ import type { LocalArtifactStore } from "@lite-harness/workspace";
 import type { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
 import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
 
+declare module "fastify" {
+  interface FastifyRequest { rawBody?: Buffer }
+}
+
 export interface ManagerServerOptions {
   runService: RunService;
   internalToken: string;
@@ -37,6 +41,7 @@ export interface ManagerServerOptions {
 export function buildManagerServer(options: ManagerServerOptions): FastifyInstance {
   if (!options.internalToken.trim()) throw new Error("Manager IPC token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
+  installExactJsonBodyParser(app);
 
   app.addHook("preSerialization", async (_request, reply, payload) => {
     if (reply.statusCode < 400 || !payload || typeof payload !== "object" || !("error" in payload)) return payload;
@@ -105,20 +110,20 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     });
   });
 
-  app.post<{ Params: { accountId: string }; Body: { envelope?: unknown; signature?: string } }>(
+  app.post<{ Params: { accountId: string }; Body: unknown }>(
     "/internal/integrations/webhook/:accountId/inbound",
     async (request, reply) => {
       if (!options.integrationRouter || !options.integrationStore || !options.webhookSecret ||
-          !request.body?.envelope || typeof request.body.signature !== "string") {
+          !request.rawBody || !request.body || typeof request.body !== "object") {
         return reply.code(404).send({ error: { code: "integration_unavailable", message: "Webhook integration is not configured" } });
       }
       const secret = await options.webhookSecret(request.params.accountId);
-      const canonical = Buffer.from(JSON.stringify(request.body.envelope));
-      if (!secret || !verifyHmacSha256(canonical, request.body.signature, secret)) {
+      const signature = request.headers["x-lite-signature"];
+      if (!secret || typeof signature !== "string" || !verifyHmacSha256(request.rawBody, signature, secret)) {
         return reply.code(401).send({ error: { code: "invalid_signature", message: "Webhook signature is invalid" } });
       }
       try {
-        const source = request.body.envelope as Record<string, unknown>;
+        const source = request.body as Record<string, unknown>;
         const envelope = normalizeInbound({ ...source, connectorId: "webhook", accountId: request.params.accountId });
         return reply.code(202).send(await options.integrationRouter.route(envelope));
       } catch (error) {
@@ -359,6 +364,15 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   );
 
   return app;
+}
+
+function installExactJsonBodyParser(app: FastifyInstance): void {
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    request.rawBody = Buffer.from(body);
+    try { done(null, JSON.parse(request.rawBody.toString("utf8"))); }
+    catch (error) { done(error as Error); }
+  });
 }
 
 function isInternalArtifactRequest(value: unknown): value is InternalPublishArtifactRequest {

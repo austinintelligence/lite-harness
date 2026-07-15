@@ -174,8 +174,10 @@ export class ManagerClient {
     return this.#request<{ workspaces: WorkspaceRecord[] }>("GET", "/internal/workspaces", undefined, principalHeaders(principal)).then((value) => value.workspaces);
   }
 
-  ingestWebhook(accountId: string, envelope: unknown, signature: string): Promise<{ duplicate: boolean; runId?: string }> {
-    return this.#request("POST", `/internal/integrations/webhook/${encodeURIComponent(accountId)}/inbound`, { envelope, signature });
+  ingestWebhook(accountId: string, rawBody: Buffer, signature: string): Promise<{ duplicate: boolean; runId?: string }> {
+    return this.#request("POST", `/internal/integrations/webhook/${encodeURIComponent(accountId)}/inbound`, rawBody, {
+      "x-lite-signature": signature,
+    });
   }
 
   #request<T>(
@@ -187,7 +189,7 @@ export class ManagerClient {
     allowedStatuses: readonly number[] = [],
   ): Promise<T> {
     signal?.throwIfAborted();
-    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const payload = body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body);
     return new Promise<T>((resolve, reject) => {
       const request = httpRequest(
         {

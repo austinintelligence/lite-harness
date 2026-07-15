@@ -193,10 +193,16 @@ describe("Gateway to Manager vertical slice", () => {
         return workspace;
       },
       listWorkspaces: async (principal) => service.listWorkspaces(principal),
-      ingestWebhook: async (accountId, envelope, signature) => {
+      ingestWebhook: async (accountId, rawBody, signature) => {
         const response = await manager.inject({
           method: "POST", url: `/internal/integrations/webhook/${accountId}/inbound`,
-          headers: { "x-lite-internal-token": internalToken, "x-lite-ipc-version": "1" }, payload: { envelope, signature },
+          headers: {
+            "x-lite-internal-token": internalToken,
+            "x-lite-ipc-version": "1",
+            "x-lite-signature": signature,
+            "content-type": "application/json",
+          },
+          payload: rawBody,
         });
         if (response.statusCode >= 400) throw new Error(response.body);
         return response.json<{ duplicate: boolean; runId?: string }>();
@@ -443,6 +449,24 @@ describe("Gateway to Manager vertical slice", () => {
       headers: { "x-lite-signature": webhookSignature }, payload: webhookEnvelope,
     });
     expect(replayedWebhook.json()).toMatchObject({ duplicate: true, runId: webhookRunId });
+
+    const whitespaceEnvelope = {
+      deliveryId: "hook-raw-bytes", senderExternalId: "sender", conversationExternalId: "thread", text: "exact bytes",
+    };
+    const rawWebhook = Buffer.from(`{\n  "deliveryId": "hook-raw-bytes",\n  "senderExternalId": "sender",\n  "conversationExternalId": "thread",\n  "text": "exact bytes"\n}`);
+    const canonicalOnlySignature = `sha256=${createHmac("sha256", "webhook-secret").update(JSON.stringify(whitespaceEnvelope)).digest("hex")}`;
+    const rejectedReserialization = await gateway.inject({
+      method: "POST", url: "/hooks/webhook/primary",
+      headers: { "x-lite-signature": canonicalOnlySignature, "content-type": "application/json" }, payload: rawWebhook,
+    });
+    expect(rejectedReserialization.statusCode).toBe(401);
+    const exactSignature = `sha256=${createHmac("sha256", "webhook-secret").update(rawWebhook).digest("hex")}`;
+    const exactWebhook = await gateway.inject({
+      method: "POST", url: "/hooks/webhook/primary",
+      headers: { "x-lite-signature": exactSignature, "content-type": "application/json" }, payload: rawWebhook,
+    });
+    expect(exactWebhook.statusCode).toBe(202);
+    await expect(service.waitForTerminal(exactWebhook.json<{ runId: string }>().runId)).resolves.toMatchObject({ status: "SUCCEEDED" });
   });
 
   it("rejects unauthenticated public requests", async () => {

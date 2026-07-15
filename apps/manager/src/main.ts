@@ -2,7 +2,7 @@ import { basename, join } from "node:path";
 import { accessSync, constants, mkdirSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { loadManagerConfiguration } from "@lite-harness/config";
+import { loadManagerConfiguration, type ValidatedManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import type { IntervalTrigger } from "@lite-harness/automation";
 import type { BrowserAction, BrowserOwner } from "@lite-harness/browser";
@@ -40,12 +40,16 @@ import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore, validateRegisteredBindRoot } from "@lite-harness/workspace";
 import { ManagerInstanceLock } from "@lite-harness/operations";
+import { JsonlObservabilitySink, StructuredObservability } from "@lite-harness/observability";
 import { buildManagerServer } from "./server.js";
 import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
 import { configureProductionOptionalSystems } from "./optional-systems.js";
 
-const configuration = loadManagerConfiguration();
+const configuration: ValidatedManagerConfiguration = loadManagerConfiguration();
 const { dataDir, socketPath, internalToken } = configuration;
+const observability = new StructuredObservability({
+  sinks: [new JsonlObservabilitySink(join(dataDir, "manager-observability.jsonl"))],
+});
 const instanceLock = new ManagerInstanceLock({
   dataDir,
   socketPath,
@@ -91,9 +95,9 @@ const runSnapshotConfiguration = {
     ...(runtimeImageDigest ? { imageDigest: runtimeImageDigest } : {}),
     policyDigest: createHash("sha256").update(JSON.stringify({
       runtime: configuration.runtime,
-      memory: process.env.LITE_HARNESS_RUNTIME_MEMORY ?? "512m",
-      cpus: process.env.LITE_HARNESS_RUNTIME_CPUS ?? "1",
-      pids: process.env.LITE_HARNESS_RUNTIME_PIDS ?? "128",
+      memory: configuration.runtimeMemory,
+      cpus: configuration.runtimeCpus,
+      pids: configuration.runtimePids,
       profile: process.env.LITE_HARNESS_TOOL_PROFILE ?? "node-profile",
     })).digest("hex"),
   },
@@ -113,7 +117,7 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
     ? () => true
     : () => false,
-  approvalTimeoutMs: Number.parseInt(process.env.LITE_HARNESS_APPROVAL_TIMEOUT_MS ?? "60000", 10),
+  approvalTimeoutMs: configuration.approvalTimeoutMs,
   approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
   ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
   makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
@@ -155,14 +159,15 @@ const app = buildManagerServer({
     const secret = process.env.LITE_HARNESS_WEBHOOK_SECRET;
     return accountId === configuredAccount && secret ? Buffer.from(secret) : undefined;
   } } : {}),
-  logger: true,
+  logger: false,
+  observability,
 });
 const automation = await configureAutomation(service, dataDir);
 const integrationDelivery = integrationStore ? await configureIntegrationDelivery(service, integrationStore) : undefined;
 app.addHook("onClose", async () => {
   automation?.stop();
   integrationDelivery?.stop();
-  await service.shutdown(Number.parseInt(process.env.LITE_HARNESS_SHUTDOWN_TIMEOUT_MS ?? "30000", 10));
+  await service.shutdown(configuration.shutdownTimeoutMs);
   await brokeredCapabilities.stop();
   await optionalSystems.stop();
   memoryStore?.close();
@@ -274,7 +279,7 @@ async function configureBrokeredTools(
     installationId: dataDir,
     ...(remoteCdpEndpoint ? { remoteCdpEndpoint } : {}),
   }), {
-    idleTtlMs: toolInteger(Number(process.env.LITE_HARNESS_BROWSER_IDLE_MS ?? 60_000), "browser idle", 1_000, 3_600_000, 60_000),
+    idleTtlMs: configuration.browserIdleMs,
     durabilityStore: browserStore,
     ...(profileKey ? { profileStore: new EncryptedBrowserProfileStore(join(dataDir, "browser-profiles"), profileKey) } : {}),
   });
@@ -396,7 +401,7 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
     image,
     installationId: dataDir,
     containerStore: runStore,
-    workspaceQuotaBytes: Number.parseInt(process.env.LITE_HARNESS_WORKSPACE_QUOTA_BYTES ?? String(1024 * 1024 * 1024), 10),
+    workspaceQuotaBytes: configuration.workspaceQuotaBytes,
     resolveRegisteredWorkspace: (workspaceId, principal) => {
       if (!principal) return undefined;
       const workspace = runStore.getWorkspace(workspaceId, principal);
@@ -620,7 +625,7 @@ function resolveModelGateway(
   }
 
   if (provider === "claude") {
-    const maxBudget = process.env.LITE_HARNESS_DELEGATED_MAX_BUDGET_USD;
+    const maxBudget = configuration.delegatedMaxBudgetUsd;
     const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "claude-delegated";
     const pricing = configuredModelPricing(modelId);
     return new CapabilityBoundModelGateway(delegatedDescriptor(modelId, "claude", pricing), new ClaudeCodeGateway({
@@ -629,7 +634,7 @@ function resolveModelGateway(
       ...(process.env.LITE_HARNESS_CLAUDE_COMMAND ? { command: process.env.LITE_HARNESS_CLAUDE_COMMAND } : {}),
       ...(process.env.LITE_HARNESS_MODEL ? { model: process.env.LITE_HARNESS_MODEL } : {}),
       allowedTools: (process.env.LITE_HARNESS_DELEGATED_TOOLS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
-      ...(maxBudget ? { maxBudgetUsd: Number.parseFloat(maxBudget) } : {}),
+      ...(maxBudget !== undefined ? { maxBudgetUsd: maxBudget } : {}),
     }), hooks);
   }
 
@@ -644,7 +649,7 @@ function resolveModelGateway(
     const modelId = requiredEnvironment("LITE_HARNESS_MODEL");
     const registry = new ModelRegistry(configuredDirectModels({
       id: modelId, providerId, credentialProfileId, capabilities: ["text", "tools", "json"],
-      contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "128000", 10),
+      contextWindow: configuration.modelContext ?? 128_000,
     }));
     return new RoutedModelGateway(
       registry,
@@ -661,7 +666,7 @@ function resolveModelGateway(
     const modelId = requiredEnvironment("LITE_HARNESS_MODEL");
     const registry = new ModelRegistry(configuredDirectModels({
       id: modelId, providerId: "anthropic", credentialProfileId, capabilities: ["text", "tools", "vision"],
-      contextWindow: Number.parseInt(process.env.LITE_HARNESS_MODEL_CONTEXT ?? "200000", 10),
+      contextWindow: configuration.modelContext ?? 200_000,
     }));
     return new RoutedModelGateway(
       registry,
@@ -819,10 +824,13 @@ function configuredModelPricing(modelId?: string): Pick<ModelDescriptor,
   const output = process.env.LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION?.trim();
   if (!input && !output) return modelId ? officialOpenAiModelProfile(modelId) ?? {} : {};
   if (!input || !output) throw new Error("Both model input and output prices are required when either is configured");
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(input) || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(output)) {
+    throw new Error("Model prices must be finite non-negative USD-per-million-token values");
+  }
   const inputUsdPerMillion = Number(input);
   const outputUsdPerMillion = Number(output);
   if (!Number.isFinite(inputUsdPerMillion) || inputUsdPerMillion < 0 ||
-      !Number.isFinite(outputUsdPerMillion) || outputUsdPerMillion < 0) {
+      inputUsdPerMillion > 1_000_000 || !Number.isFinite(outputUsdPerMillion) || outputUsdPerMillion < 0 || outputUsdPerMillion > 1_000_000) {
     throw new Error("Model prices must be finite non-negative USD-per-million-token values");
   }
   if (inputUsdPerMillion === 0 && outputUsdPerMillion === 0) {

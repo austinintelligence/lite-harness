@@ -46,6 +46,7 @@ export default defineConfig({
       "@lite-harness/credential-store": source("./packages/credential-store/src/index.ts"),
       "@lite-harness/operations": source("./packages/operations/src/index.ts"),
       "@lite-harness/migration-openclaw": source("./packages/migration-openclaw/src/index.ts"),
+      "@lite-harness/observability": source("./packages/observability/src/index.ts"),
     },
   },
   test: {

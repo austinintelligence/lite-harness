@@ -33,6 +33,7 @@ import {
   DEFAULT_RUN_BUDGET,
 } from "@lite-harness/contracts";
 import type { AccessTokenService } from "@lite-harness/auth";
+import { StructuredObservability, type TraceSpan } from "@lite-harness/observability";
 
 declare module "fastify" {
   interface FastifyRequest { rawBody?: Buffer }
@@ -71,10 +72,13 @@ export interface GatewayServerOptions {
   authFailureLimit?: number;
   authFailureWindowMs?: number;
   logger?: boolean;
+  observability?: StructuredObservability;
 }
 
 export function buildGatewayServer(options: GatewayServerOptions): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false });
+  const observability = options.observability ?? new StructuredObservability();
+  const requestSpans = new WeakMap<object, TraceSpan>();
   installExactJsonBodyParser(app);
   const authFailureLimit = options.authFailureLimit ?? 20;
   const authFailureWindowMs = options.authFailureWindowMs ?? 60_000;
@@ -113,6 +117,30 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "no-referrer");
     return payload;
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    const route = request.routeOptions.url ?? request.url.split("?", 1)[0];
+    const span = observability.startTrace("http.request", {
+      service: "gateway", method: request.method, route,
+    });
+    requestSpans.set(request, span);
+    reply.header("x-lite-trace-id", span.traceId);
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const span = requestSpans.get(request);
+    if (!span) return;
+    const route = request.routeOptions.url ?? request.url.split("?", 1)[0];
+    const statusCode = reply.statusCode;
+    const outcome = statusCode >= 400 ? "failed" : "completed";
+    span.end({ statusCode, outcome });
+    observability.audit("http.request", outcome, {
+      service: "gateway", method: request.method, route, statusCode,
+    }, span);
+    observability.counter("http.requests.total", 1, {
+      service: "gateway", method: request.method, route, statusCode,
+    });
   });
 
   app.addHook("onRequest", async (request, reply) => {

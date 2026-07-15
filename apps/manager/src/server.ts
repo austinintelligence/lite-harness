@@ -23,6 +23,7 @@ import {
 } from "@lite-harness/contracts";
 import { randomUUID } from "node:crypto";
 import { RunService } from "@lite-harness/control-plane";
+import { StructuredObservability, type TraceSpan } from "@lite-harness/observability";
 import type { LocalArtifactStore } from "@lite-harness/workspace";
 import type { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
 import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
@@ -49,12 +50,15 @@ export interface ManagerServerOptions {
   integrationStore?: SqliteIntegrationStore;
   webhookSecret?: (accountId: string) => Promise<Buffer | undefined>;
   logger?: boolean;
+  observability?: StructuredObservability;
   productionReadinessChecks: () => Promise<Record<string, ReadinessDependency>>;
 }
 
 export function buildManagerServer(options: ManagerServerOptions): FastifyInstance {
   if (!options.internalToken.trim()) throw new Error("Manager IPC token must be non-empty");
   const app = Fastify({ logger: options.logger ?? false });
+  const observability = options.observability ?? new StructuredObservability();
+  const requestSpans = new WeakMap<object, TraceSpan>();
   installExactJsonBodyParser(app);
 
   app.addHook("preSerialization", async (_request, reply, payload) => {
@@ -80,6 +84,30 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       status === 500 ? "internal_error" : "invalid_request",
       status === 500 ? "Internal Manager error" : caught.message,
     ));
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    const route = request.routeOptions.url ?? request.url.split("?", 1)[0];
+    const span = observability.startTrace("http.request", {
+      service: "manager", method: request.method, route,
+    });
+    requestSpans.set(request, span);
+    reply.header("x-lite-trace-id", span.traceId);
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const span = requestSpans.get(request);
+    if (!span) return;
+    const route = request.routeOptions.url ?? request.url.split("?", 1)[0];
+    const statusCode = reply.statusCode;
+    const outcome = statusCode >= 400 ? "failed" : "completed";
+    span.end({ statusCode, outcome });
+    observability.audit("http.request", outcome, {
+      service: "manager", method: request.method, route, statusCode,
+    }, span);
+    observability.counter("http.requests.total", 1, {
+      service: "manager", method: request.method, route, statusCode,
+    });
   });
 
   app.addHook("onRequest", async (request, reply) => {

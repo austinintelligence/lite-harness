@@ -43,6 +43,7 @@ const rules = [
       "@lite-harness/auth-sqlite",
       "@lite-harness/config",
       "@lite-harness/contracts",
+      "@lite-harness/observability",
     ]),
     reason: "Gateway may own its dedicated auth adapter but cannot import Manager internals, Docker, or general storage",
   },

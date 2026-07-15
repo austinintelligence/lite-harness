@@ -4,12 +4,16 @@ import { loadGatewayConfiguration } from "@lite-harness/config";
 import { SqliteAccessTokenStore } from "@lite-harness/auth-sqlite";
 import { buildGatewayServer } from "./server.js";
 import { ManagerClient } from "./manager-client.js";
+import { JsonlObservabilitySink, StructuredObservability } from "@lite-harness/observability";
 
 const configuration = loadGatewayConfiguration();
 const {
   dataDir, socketPath, internalToken, appToken, bootstrapIdentity,
   port, host, authFailureLimit, authFailureWindowMs,
 } = configuration;
+const observability = new StructuredObservability({
+  sinks: [new JsonlObservabilitySink(join(dataDir, "gateway-observability.jsonl"))],
+});
 const accessTokenStore = new SqliteAccessTokenStore(join(dataDir, "auth.db"));
 const accessTokens = new AccessTokenService(accessTokenStore);
 await accessTokens.ensureBootstrapAppToken(appToken, {
@@ -22,7 +26,8 @@ const app = buildGatewayServer({
   accessTokens,
   authFailureLimit,
   authFailureWindowMs,
-  logger: true,
+  logger: false,
+  observability,
 });
 app.addHook("onClose", async () => accessTokenStore.close());
 

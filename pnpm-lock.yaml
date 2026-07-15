@@ -76,6 +76,9 @@ importers:
       '@lite-harness/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@lite-harness/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@sinclair/typebox':
         specifier: 0.34.41
         version: 0.34.41
@@ -133,6 +136,9 @@ importers:
       '@lite-harness/memory-sqlite':
         specifier: workspace:*
         version: link:../../packages/memory-sqlite
+      '@lite-harness/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@lite-harness/operations':
         specifier: workspace:*
         version: link:../../packages/operations
@@ -264,6 +270,8 @@ importers:
   packages/memory-sqlite: {}
 
   packages/migration-openclaw: {}
+
+  packages/observability: {}
 
   packages/operations: {}
 

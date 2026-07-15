@@ -30,6 +30,7 @@
     "check:release": "node scripts/check-release.mjs",
     "check:images": "node scripts/check-image-workflow.mjs",
     "check:doctor": "node scripts/check-doctor.mjs",
+    "check:observability": "node scripts/check-observability.mjs",
     "generate:requirements": "node scripts/generate-requirements.mjs",
     "check:requirements:structure": "node scripts/check-requirements.mjs --structure",
     "check:requirements": "node scripts/check-requirements.mjs",

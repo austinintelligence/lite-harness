@@ -12,22 +12,22 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Requirement ledger
 
 - Total required rows: 922
-- Verified: 41
+- Verified: 46
 - In progress: 0
-- Blocked or unverified: 881
+- Blocked or unverified: 876
 
 | Kind | Total | Verified |
 | --- | ---: | ---: |
 | frozen-decision | 32 | 2 |
 | phase-exit | 13 | 0 |
-| alpha-gate | 22 | 2 |
-| contract-requirement | 855 | 37 |
+| alpha-gate | 22 | 3 |
+| contract-requirement | 855 | 41 |
 
 ## Alpha gates
 
 | Gate | Status | Current blocker |
 | --- | --- | --- |
-| A01 Cross-platform profile | blocked | traceability-not-yet-established |
+| A01 Cross-platform profile | verified | none |
 | A02 Installable TypeScript SDK | verified | none |
 | A03 Reconnect and replay | verified | none |
 | A04 Real model-plus-Docker loop | blocked | traceability-not-yet-established |
@@ -71,7 +71,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Open release-blocking defects
 
 - Critical: 0
-- High: 15
+- High: 14
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.
 

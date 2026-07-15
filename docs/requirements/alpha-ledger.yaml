@@ -15705,14 +15705,22 @@
         "lineStart": 2234,
         "lineEnd": 2234
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-029-REGRESSION"
+      ],
+      "ciJob": "approval-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/approval-security.json",
+          "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2235",
@@ -15727,14 +15735,23 @@
         "lineStart": 2235,
         "lineEnd": 2235
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
-      "status": "blocked",
-      "blockers": [
-        "traceability-not-yet-established"
-      ]
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "packages/control-plane/src/index.ts"
+      ],
+      "testIds": [
+        "BD-028-REGRESSION",
+        "BD-029-REGRESSION"
+      ],
+      "ciJob": "approval-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/approval-security.json",
+          "producer": "pnpm test:approvals -- --evidence evidence/m6/approval-security.json"
+        }
+      ],
+      "status": "verified",
+      "blockers": []
     },
     {
       "id": "R27-2236",

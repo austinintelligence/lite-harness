@@ -57,7 +57,7 @@ function writeEvidence(output, report) {
     },
     testIds: [
       "BD-028-REGRESSION", "BD-029-REGRESSION",
-      "R11-0885", "R27-2237", "R34-2900",
+      "R11-0885", "R27-2234", "R27-2235", "R27-2237", "R34-2900",
     ],
   };
   const absolute = resolve(root, output);

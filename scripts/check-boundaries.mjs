@@ -38,8 +38,13 @@ const rules = [
   },
   {
     prefix: "apps/gateway/",
-    allowed: new Set(["@lite-harness/config", "@lite-harness/contracts"]),
-    reason: "Gateway cannot import Manager internals, Docker, or storage",
+    allowed: new Set([
+      "@lite-harness/auth",
+      "@lite-harness/auth-sqlite",
+      "@lite-harness/config",
+      "@lite-harness/contracts",
+    ]),
+    reason: "Gateway may own its dedicated auth adapter but cannot import Manager internals, Docker, or general storage",
   },
 ];
 

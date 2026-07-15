@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AccessTokenService } from "@lite-harness/auth";
-import { SqliteAccessTokenStore } from "@lite-harness/storage-sqlite";
+import { SqliteAccessTokenStore } from "@lite-harness/auth-sqlite";
 
 const roots: string[] = [];
 

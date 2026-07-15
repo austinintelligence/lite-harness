@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { AccessTokenService, DEFAULT_APP_SCOPES } from "@lite-harness/auth";
 import { loadGatewayConfiguration } from "@lite-harness/config";
-import { SqliteAccessTokenStore } from "@lite-harness/storage-sqlite";
+import { SqliteAccessTokenStore } from "@lite-harness/auth-sqlite";
 import { buildGatewayServer } from "./server.js";
 import { ManagerClient } from "./manager-client.js";
 

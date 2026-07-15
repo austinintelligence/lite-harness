@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:df205808-4852-4349-a8f6-0681a6a75884",
+  "serialNumber": "urn:uuid:cd5114a9-a99e-44c5-a2ab-1efce6c5dec4",
   "version": 1,
   "metadata": {
     "component": {
@@ -284,6 +284,20 @@
       "version": "link:../agent-runtime",
       "bom-ref": "@lite-harness/agent-runtime@link:../agent-runtime",
       "purl": "pkg:npm/%40lite-harness/agent-runtime@link%3A..%2Fagent-runtime"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/auth-sqlite",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/auth-sqlite@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/auth-sqlite@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/auth-sqlite",
+      "version": "link:../../packages/auth-sqlite",
+      "bom-ref": "@lite-harness/auth-sqlite@link:../../packages/auth-sqlite",
+      "purl": "pkg:npm/%40lite-harness/auth-sqlite@link%3A..%2F..%2Fpackages%2Fauth-sqlite"
     },
     {
       "type": "library",

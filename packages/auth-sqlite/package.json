@@ -1,0 +1,1 @@
+{"name":"@lite-harness/auth-sqlite","version":"0.0.0","private":true,"type":"module","dependencies":{"@lite-harness/auth":"workspace:*","@lite-harness/contracts":"workspace:*"}}

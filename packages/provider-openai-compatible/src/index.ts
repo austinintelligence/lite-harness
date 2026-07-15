@@ -77,12 +77,14 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   readonly providerId: string;
   readonly #baseUrl: URL;
   readonly #fetch: typeof globalThis.fetch;
+  readonly #stream: boolean;
 
   constructor(options: {
     providerId?: string;
     baseUrl: string;
     allowedOrigins: readonly string[];
     fetch?: typeof globalThis.fetch;
+    stream?: boolean;
   }) {
     this.providerId = options.providerId ?? "openai";
     this.#baseUrl = new URL(options.baseUrl);
@@ -94,6 +96,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       throw new Error("Plain HTTP provider endpoints must be loopback-local");
     }
     this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#stream = options.stream ?? true;
   }
 
   async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
@@ -105,8 +108,8 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       },
       body: JSON.stringify({
         model: params.model.id,
-        stream: true,
-        stream_options: { include_usage: true },
+        stream: this.#stream,
+        ...(this.#stream ? { stream_options: { include_usage: true } } : {}),
         messages: params.messages.map((message) => ({
           role: message.role,
           content: toChatCompletionsContent(message),
@@ -135,7 +138,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       );
     }
     yield { type: "request.accepted" };
-    if (response.headers.get("content-type")?.includes("text/event-stream")) {
+    if (this.#stream && response.headers.get("content-type")?.includes("text/event-stream")) {
       yield* streamOpenAi(response, params.signal);
       return;
     }

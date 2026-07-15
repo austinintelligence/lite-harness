@@ -61,7 +61,9 @@ export async function pairedHermesModelEvaluation(): Promise<Record<string, unkn
     throw new Error("Paired pxpipe evaluation must use the configured local Hermes gpt-5.6-luna route");
   }
   assertEvaluatedPxpipeVersion();
-  const adapter = new OpenAICompatibleProvider({ providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin] });
+  const adapter = new OpenAICompatibleProvider({
+    providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin], stream: false,
+  });
   const model: ModelDescriptor = {
     id: modelId, providerId: "openai-compatible", transport: "direct", credentialProfileId: "hermes-local",
     capabilities: ["text", "vision"], contextWindow: 128_000, provenance: "operator", enabled: true,

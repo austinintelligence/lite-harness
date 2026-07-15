@@ -3,10 +3,13 @@ import {
   createDecipheriv,
   createHash,
   randomBytes,
+  webcrypto,
 } from "node:crypto";
 import { availableParallelism, loadavg } from "node:os";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { createGunzip, createGzip } from "node:zlib";
 import {
+  createReadStream,
+  createWriteStream,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -14,12 +17,18 @@ import {
   writeFileSync,
   statfsSync,
 } from "node:fs";
+import { mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { once } from "node:events";
+import { Readable, Transform, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { ArtifactRecord, InternalPrincipal } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import { validateWorkspacePath } from "@lite-harness/runtime";
 
-const SNAPSHOT_MAGIC = "LHS1\n";
+const SNAPSHOT_MAGIC = "LHS2\n";
+const SNAPSHOT_TAG_BYTES = 16;
+const SNAPSHOT_HEADER_BYTES = 16 * 1024;
 
 export interface SnapshotKeyProvider {
   getKey(workspaceId: string): Promise<Buffer>;
@@ -43,6 +52,16 @@ export interface SnapshotRecord {
   path: string;
 }
 
+interface SnapshotHeader {
+  schemaVersion: 2;
+  workspaceId: string;
+  createdAt: string;
+  plaintextBytes: number;
+  sha256: string;
+  nonce: string;
+  algorithm: "aes-256-gcm+gzip";
+}
+
 export class LocalWorkspaceSnapshotStore {
   constructor(
     private readonly root: string,
@@ -54,33 +73,26 @@ export class LocalWorkspaceSnapshotStore {
     if (archive.length > this.maxArchiveBytes) throw new Error("Workspace snapshot exceeds the archive limit");
     const key = await this.keys.getKey(workspaceId);
     const nonce = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, nonce);
-    const compressed = gzipSync(archive, { level: 6 });
-    const ciphertext = Buffer.concat([cipher.update(compressed), cipher.final()]);
-    const header = {
-      schemaVersion: 1,
+    const header: SnapshotHeader = {
+      schemaVersion: 2,
       workspaceId,
       createdAt: new Date().toISOString(),
       plaintextBytes: archive.length,
-      sha256: createHash("sha256").update(archive).digest("hex"),
+      sha256: Buffer.from(await webcrypto.subtle.digest("SHA-256", archive as unknown as BufferSource)).toString("hex"),
       nonce: nonce.toString("base64"),
-      tag: cipher.getAuthTag().toString("base64"),
       algorithm: "aes-256-gcm+gzip",
     };
     const paths = this.#paths(workspaceId);
-    mkdirSync(dirname(paths.current), { recursive: true });
-    writeFileSync(paths.staging, Buffer.concat([
-      Buffer.from(SNAPSHOT_MAGIC),
-      Buffer.from(`${JSON.stringify(header)}\n`),
-      ciphertext,
-    ]), { mode: 0o600 });
-    rmSync(paths.previous, { force: true });
+    await mkdir(dirname(paths.current), { recursive: true });
     try {
-      renameSync(paths.current, paths.previous);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await createStreamingSnapshotPipeline(archive, paths.staging, key, nonce, header);
+      await this.#verifySnapshotBeforeRotation(workspaceId, paths.staging, header.sha256);
+      await this.#rotateVerifiedSnapshots(workspaceId, paths);
+      await rename(paths.staging, paths.current);
+      await rm(paths.previousBackup, { force: true });
+    } finally {
+      await rm(paths.staging, { force: true });
     }
-    renameSync(paths.staging, paths.current);
     return {
       workspaceId,
       sha256: header.sha256,
@@ -101,38 +113,28 @@ export class LocalWorkspaceSnapshotStore {
     try {
       return { archive: await this.#read(workspaceId, paths.previous), recoveredFromPrevious: true };
     } catch (previousError) {
-      throw new AggregateError([currentError, previousError], `No valid snapshot is available for ${workspaceId}`);
+      try {
+        return { archive: await this.#read(workspaceId, paths.previousBackup), recoveredFromPrevious: true };
+      } catch (backupError) {
+        throw new AggregateError([currentError, previousError, backupError], `No valid snapshot is available for ${workspaceId}`);
+      }
     }
   }
 
   async #read(workspaceId: string, path: string): Promise<Buffer> {
-    const encoded = readFileSync(path);
-    const firstNewline = encoded.indexOf(0x0a);
-    const secondNewline = encoded.indexOf(0x0a, firstNewline + 1);
-    if (encoded.subarray(0, firstNewline + 1).toString("utf8") !== SNAPSHOT_MAGIC || secondNewline < 0) {
-      throw new Error("Snapshot header is malformed");
-    }
-    const header = JSON.parse(encoded.subarray(firstNewline + 1, secondNewline).toString("utf8")) as {
-      schemaVersion: number;
-      workspaceId: string;
-      plaintextBytes: number;
-      sha256: string;
-      nonce: string;
-      tag: string;
-      algorithm: string;
-    };
-    if (header.schemaVersion !== 1 || header.workspaceId !== workspaceId || !["aes-256-gcm", "aes-256-gcm+gzip"].includes(header.algorithm) ||
-        !Number.isSafeInteger(header.plaintextBytes) || header.plaintextBytes < 0 || header.plaintextBytes > this.maxArchiveBytes ||
-        !/^[a-f0-9]{64}$/.test(header.sha256)) {
-      throw new Error("Snapshot identity or version is invalid");
-    }
+    const descriptor = await readSnapshotDescriptor(path, this.maxArchiveBytes);
+    const header = descriptor.header;
+    if (header.workspaceId !== workspaceId) throw new Error("Snapshot identity or version is invalid");
     const key = await this.keys.getKey(workspaceId);
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(header.nonce, "base64"));
-    decipher.setAuthTag(Buffer.from(header.tag, "base64"));
-    const decrypted = Buffer.concat([decipher.update(encoded.subarray(secondNewline + 1)), decipher.final()]);
-    const archive = header.algorithm === "aes-256-gcm+gzip"
-      ? gunzipSync(decrypted, { maxOutputLength: this.maxArchiveBytes })
-      : decrypted;
+    decipher.setAAD(snapshotAssociatedData(header));
+    decipher.setAuthTag(descriptor.tag);
+    const archive = await collectSnapshotArchive(
+      createReadStream(path, { start: descriptor.ciphertextStart, end: descriptor.ciphertextEnd }),
+      decipher,
+      header.plaintextBytes,
+      this.maxArchiveBytes,
+    );
     const digest = createHash("sha256").update(archive).digest("hex");
     if (digest !== header.sha256 || archive.length !== header.plaintextBytes) {
       throw new Error("Snapshot content verification failed");
@@ -140,15 +142,179 @@ export class LocalWorkspaceSnapshotStore {
     return archive;
   }
 
-  #paths(workspaceId: string): { current: string; previous: string; staging: string } {
+  async #verifySnapshotBeforeRotation(workspaceId: string, path: string, expectedSha256: string): Promise<void> {
+    const archive = await this.#read(workspaceId, path);
+    if (createHash("sha256").update(archive).digest("hex") !== expectedSha256) {
+      throw new Error("Staged snapshot verification failed before rotation");
+    }
+  }
+
+  async #rotateVerifiedSnapshots(
+    workspaceId: string,
+    paths: { current: string; previous: string; previousBackup: string },
+  ): Promise<void> {
+    let currentIsValid = false;
+    try {
+      await this.#read(workspaceId, paths.current);
+      currentIsValid = true;
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") await rm(paths.current, { force: true });
+    }
+    if (!currentIsValid) return;
+
+    await rm(paths.previousBackup, { force: true });
+    let previousMoved = false;
+    try {
+      await rename(paths.previous, paths.previousBackup);
+      previousMoved = true;
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") throw error;
+    }
+    try {
+      await rename(paths.current, paths.previous);
+    } catch (error) {
+      if (previousMoved) await rename(paths.previousBackup, paths.previous).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  #paths(workspaceId: string): { current: string; previous: string; previousBackup: string; staging: string } {
     const name = createHash("sha256").update(workspaceId).digest("hex");
     const directory = join(this.root, name.slice(0, 2), name);
     return {
       current: join(directory, "current.lhs"),
       previous: join(directory, "previous.lhs"),
-      staging: join(directory, `staging-${process.pid}.lhs`),
+      previousBackup: join(directory, "previous-backup.lhs"),
+      staging: join(directory, `staging-${process.pid}-${randomBytes(6).toString("hex")}.lhs`),
     };
   }
+}
+
+export function snapshotAssociatedData(header: SnapshotHeader): Buffer {
+  return Buffer.from(`${SNAPSHOT_MAGIC}${JSON.stringify(normalizeSnapshotHeader(header))}\n`);
+}
+
+export async function createStreamingSnapshotPipeline(
+  archive: Buffer,
+  path: string,
+  key: Buffer,
+  nonce: Buffer,
+  header: SnapshotHeader,
+): Promise<void> {
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  cipher.setAAD(snapshotAssociatedData(header));
+  const destination = createWriteStream(path, { flags: "wx", mode: 0o600 });
+  if (!destination.write(snapshotAssociatedData(header))) await once(destination, "drain");
+  const appendTag = new Transform({
+    transform(chunk, _encoding, callback) { callback(null, chunk); },
+    flush(callback) {
+      try { this.push(cipher.getAuthTag()); callback(); }
+      catch (error) { callback(error as Error); }
+    },
+  });
+  try {
+    await pipeline(Readable.from(snapshotChunks(archive)), createGzip({ level: 6 }), cipher, appendTag, destination);
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  }
+}
+
+async function readSnapshotDescriptor(path: string, maxArchiveBytes: number): Promise<{
+  header: SnapshotHeader;
+  ciphertextStart: number;
+  ciphertextEnd: number;
+  tag: Buffer;
+}> {
+  const handle = await open(path, "r");
+  try {
+    const metadata = await handle.stat();
+    if (metadata.size > maxArchiveBytes + 1024 * 1024 || metadata.size < SNAPSHOT_MAGIC.length + SNAPSHOT_TAG_BYTES + 3) {
+      throw new Error("Snapshot encoded size is invalid");
+    }
+    const prefix = Buffer.alloc(Math.min(metadata.size, SNAPSHOT_HEADER_BYTES));
+    await handle.read(prefix, 0, prefix.length, 0);
+    const firstNewline = prefix.indexOf(0x0a);
+    const secondNewline = prefix.indexOf(0x0a, firstNewline + 1);
+    if (prefix.subarray(0, firstNewline + 1).toString("utf8") !== SNAPSHOT_MAGIC || secondNewline < 0) {
+      throw new Error("Snapshot header is malformed");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(prefix.subarray(firstNewline + 1, secondNewline).toString("utf8")); }
+    catch { throw new Error("Snapshot header is malformed"); }
+    const header = validateSnapshotHeader(parsed, maxArchiveBytes);
+    const ciphertextStart = secondNewline + 1;
+    const ciphertextEnd = metadata.size - SNAPSHOT_TAG_BYTES - 1;
+    if (ciphertextEnd < ciphertextStart) throw new Error("Snapshot ciphertext is missing");
+    const tag = Buffer.alloc(SNAPSHOT_TAG_BYTES);
+    await handle.read(tag, 0, tag.length, metadata.size - SNAPSHOT_TAG_BYTES);
+    return { header, ciphertextStart, ciphertextEnd, tag };
+  } finally {
+    await handle.close();
+  }
+}
+
+function validateSnapshotHeader(value: unknown, maxArchiveBytes: number): SnapshotHeader {
+  if (!value || typeof value !== "object") throw new Error("Snapshot header is malformed");
+  const record = value as Record<string, unknown>;
+  const nonce = typeof record.nonce === "string" ? Buffer.from(record.nonce, "base64") : Buffer.alloc(0);
+  if (record.schemaVersion !== 2 || typeof record.workspaceId !== "string" || !record.workspaceId ||
+      typeof record.createdAt !== "string" || !Number.isFinite(Date.parse(record.createdAt)) ||
+      !Number.isSafeInteger(record.plaintextBytes) || (record.plaintextBytes as number) < 0 ||
+      (record.plaintextBytes as number) > maxArchiveBytes || typeof record.sha256 !== "string" ||
+      !/^[a-f0-9]{64}$/.test(record.sha256) || nonce.length !== 12 || record.algorithm !== "aes-256-gcm+gzip") {
+    throw new Error("Snapshot identity or version is invalid");
+  }
+  return normalizeSnapshotHeader(record as unknown as SnapshotHeader);
+}
+
+function normalizeSnapshotHeader(header: SnapshotHeader): SnapshotHeader {
+  return {
+    schemaVersion: 2,
+    workspaceId: header.workspaceId,
+    createdAt: header.createdAt,
+    plaintextBytes: header.plaintextBytes,
+    sha256: header.sha256,
+    nonce: header.nonce,
+    algorithm: "aes-256-gcm+gzip",
+  };
+}
+
+async function* snapshotChunks(archive: Buffer): AsyncIterable<Buffer> {
+  const chunkBytes = 64 * 1024;
+  for (let offset = 0; offset < archive.length; offset += chunkBytes) {
+    yield archive.subarray(offset, Math.min(offset + chunkBytes, archive.length));
+    await Promise.resolve();
+  }
+}
+
+async function collectSnapshotArchive(
+  source: ReturnType<typeof createReadStream>,
+  decipher: ReturnType<typeof createDecipheriv>,
+  expectedBytes: number,
+  maxBytes: number,
+): Promise<Buffer> {
+  const output = Buffer.allocUnsafe(expectedBytes);
+  let offset = 0;
+  const collector = new Writable({
+    write(value: Buffer, _encoding, callback) {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      if (offset + chunk.length > expectedBytes || offset + chunk.length > maxBytes) {
+        callback(new Error("Snapshot expands beyond its declared limit"));
+        return;
+      }
+      chunk.copy(output, offset);
+      offset += chunk.length;
+      callback();
+    },
+  });
+  await pipeline(source, decipher, createGunzip(), collector);
+  if (offset !== expectedBytes) throw new Error("Snapshot plaintext length does not match its header");
+  return output;
+}
+
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
 export class SnapshotCompactorQueue {

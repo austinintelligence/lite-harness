@@ -14,6 +14,7 @@ export interface DockerRuntimeConfig {
   pidsLimit?: number;
   maxOutputBytes?: number;
   workspaceQuotaBytes?: number;
+  maxArchiveFiles?: number;
   /** Trusted Manager-owned lookup. Arbitrary run input never becomes a bind source. */
   resolveRegisteredWorkspace?: (workspaceId: string, principal?: InternalPrincipal) => string | undefined;
 }
@@ -40,6 +41,9 @@ export class DockerToolRuntime implements ToolRuntime {
     }
     if (config.workspaceQuotaBytes !== undefined && (!Number.isSafeInteger(config.workspaceQuotaBytes) || config.workspaceQuotaBytes < 1024 * 1024)) {
       throw new Error("Workspace quota must be an integer of at least 1 MiB");
+    }
+    if (config.maxArchiveFiles !== undefined && (!Number.isSafeInteger(config.maxArchiveFiles) || config.maxArchiveFiles < 1)) {
+      throw new Error("Workspace archive file limit must be a positive integer");
     }
     this.#docker = config.dockerCommand ?? "docker";
     this.#maxOutputBytes = config.maxOutputBytes ?? 4 * 1024 * 1024;
@@ -114,23 +118,29 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async exportWorkspace(workspaceId: string, principal?: InternalPrincipal, signal?: AbortSignal): Promise<Buffer> {
     const mount = await this.#workspaceMount(workspaceId, signal, principal);
+    const quotaBytes = this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024;
     const result = await runCommandBytes(
       this.#docker,
       [
-        "run", "--rm", "--user", "1000:1000", "--network", "none", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges", ...mountArgs(mount, true),
+        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, { user: "1000:1000" }),
+        ...mountArgs(mount, true),
         this.config.image, "tar", "-C", "/workspace", "-cf", "-", ".",
       ],
       undefined,
       signal,
-      this.#maxOutputBytes * 16,
+      quotaBytes + 64 * 1024 * 1024,
     );
     if (result.code !== 0) throw new Error(`Could not export workspace: ${result.stderr.toString("utf8")}`);
+    validateArchiveEntries(result.stdout, { maxBytes: quotaBytes, maxFiles: this.config.maxArchiveFiles });
     return result.stdout;
   }
 
   async importWorkspace(workspaceId: string, archive: Buffer, principal?: InternalPrincipal, signal?: AbortSignal): Promise<void> {
     if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be replaced by snapshot restore");
+    validateArchiveEntries(archive, {
+      maxBytes: this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024,
+      maxFiles: this.config.maxArchiveFiles,
+    });
     const target = volumeName(workspaceIdentity(workspaceId, principal));
     await this.#ensureVolume(target, signal);
     const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
@@ -142,8 +152,10 @@ export class DockerToolRuntime implements ToolRuntime {
       const extract = await runCommandBytes(
         this.#docker,
         [
-          "run", "--rm", "--interactive", "--network", "none", "--cap-drop", "ALL",
-          "--security-opt", "no-new-privileges", "--volume", `${staging}:/staging`,
+          "run", "--rm", "--interactive", ...dockerMaintenanceHardeningArgs(this.config, {
+            capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+          }),
+          "--volume", `${staging}:/staging`,
           this.config.image, "tar", "-C", "/staging", "-xf", "-",
         ],
         archive,
@@ -185,16 +197,7 @@ export class DockerToolRuntime implements ToolRuntime {
       [
         "run",
         "--rm",
-        "--network",
-        "none",
-        "--cap-drop",
-        "ALL",
-        "--cap-add",
-        "CHOWN",
-        "--cap-add",
-        "FOWNER",
-        "--security-opt",
-        "no-new-privileges",
+        ...dockerMaintenanceHardeningArgs(this.config, { capabilities: ["CHOWN", "FOWNER"] }),
         "--volume",
         `${volume}:/workspace`,
         this.config.image,
@@ -220,9 +223,9 @@ export class DockerToolRuntime implements ToolRuntime {
     const result = await runCommand(
       this.#docker,
       [
-        "run", "--rm", "--network", "none", "--cap-drop", "ALL",
-        "--cap-add", "CHOWN", "--cap-add", "FOWNER", "--cap-add", "DAC_OVERRIDE",
-        "--security-opt", "no-new-privileges",
+        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
+          capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+        }),
         "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination`,
         this.config.image, "sh", "-c", "cp -a /source/. /destination/",
       ],
@@ -236,9 +239,9 @@ export class DockerToolRuntime implements ToolRuntime {
     const result = await runCommand(
       this.#docker,
       [
-        "run", "--rm", "--network", "none", "--cap-drop", "ALL",
-        "--cap-add", "CHOWN", "--cap-add", "FOWNER", "--cap-add", "DAC_OVERRIDE",
-        "--security-opt", "no-new-privileges",
+        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
+          capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
+        }),
         "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination`,
         this.config.image, "sh", "-c",
         "find /destination -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a /source/. /destination/ && chown -R 1000:1000 /destination",
@@ -320,6 +323,101 @@ export class DockerToolRuntime implements ToolRuntime {
 }
 
 interface WorkspaceMount { kind: "volume" | "bind"; source: string }
+
+export function dockerMaintenanceHardeningArgs(
+  config: Pick<DockerRuntimeConfig, "memory" | "cpus" | "pidsLimit">,
+  options: { user?: string; capabilities?: readonly string[] } = {},
+): string[] {
+  const capabilities = options.capabilities ?? [];
+  return [
+    "--network", "none",
+    "--read-only",
+    "--cap-drop", "ALL",
+    ...capabilities.flatMap((capability) => ["--cap-add", capability]),
+    "--security-opt", "no-new-privileges=true",
+    "--pids-limit", String(config.pidsLimit ?? 64),
+    "--memory", config.memory ?? "256m",
+    "--cpus", config.cpus ?? "1",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+    ...(options.user ? ["--user", options.user] : []),
+  ];
+}
+
+export function validateArchiveEntries(
+  archive: Buffer,
+  limits: { maxBytes: number; maxFiles?: number },
+): { files: number; payloadBytes: number } {
+  const maxFiles = limits.maxFiles ?? 100_000;
+  if (!Number.isSafeInteger(limits.maxBytes) || limits.maxBytes < 0 ||
+      !Number.isSafeInteger(maxFiles) || maxFiles < 1 || archive.length % 512 !== 0) {
+    throw new Error("Workspace archive limits or framing are invalid");
+  }
+  let offset = 0;
+  let files = 0;
+  let payloadBytes = 0;
+  let endBlocks = 0;
+  while (offset + 512 <= archive.length) {
+    const header = archive.subarray(offset, offset + 512);
+    offset += 512;
+    if (header.every((byte) => byte === 0)) {
+      endBlocks += 1;
+      if (endBlocks === 2) break;
+      continue;
+    }
+    if (endBlocks > 0) throw new Error("Workspace archive contains data after an end marker");
+    verifyTarChecksum(header);
+    const name = tarString(header.subarray(0, 100));
+    const prefix = tarString(header.subarray(345, 500));
+    const path = prefix ? `${prefix}/${name}` : name;
+    validateArchivePath(path);
+    const type = header[156] === 0 ? "0" : String.fromCharCode(header[156] ?? 0);
+    if (type !== "0" && type !== "5") throw new Error(`Workspace archive entry type is denied: ${type}`);
+    if (tarString(header.subarray(157, 257))) throw new Error("Workspace archive links are denied");
+    const size = parseTarOctal(header.subarray(124, 136), "size");
+    if (type === "5" && size !== 0) throw new Error("Workspace archive directory has a payload");
+    files += 1;
+    payloadBytes += size;
+    if (files > maxFiles || payloadBytes > limits.maxBytes) throw new Error("Workspace archive exceeds file or byte limits");
+    const padded = Math.ceil(size / 512) * 512;
+    if (offset + padded > archive.length) throw new Error("Workspace archive entry is truncated");
+    offset += padded;
+  }
+  if (endBlocks < 2 || archive.subarray(offset).some((byte) => byte !== 0)) {
+    throw new Error("Workspace archive is missing a canonical end marker");
+  }
+  return { files, payloadBytes };
+}
+
+function verifyTarChecksum(header: Buffer): void {
+  const expected = parseTarOctal(header.subarray(148, 156), "checksum");
+  let actual = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    actual += index >= 148 && index < 156 ? 0x20 : (header[index] ?? 0);
+  }
+  if (actual !== expected) throw new Error("Workspace archive header checksum is invalid");
+}
+
+function parseTarOctal(field: Buffer, label: string): number {
+  const value = field.toString("ascii").replaceAll("\0", "").trim();
+  if (!/^[0-7]+$/.test(value)) throw new Error(`Workspace archive ${label} is invalid`);
+  const parsed = Number.parseInt(value, 8);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Workspace archive ${label} is invalid`);
+  return parsed;
+}
+
+function tarString(field: Buffer): string {
+  const end = field.indexOf(0);
+  return field.subarray(0, end < 0 ? field.length : end).toString("utf8");
+}
+
+function validateArchivePath(path: string): void {
+  const normalized = path.replace(/^\.\//, "");
+  if (!normalized || normalized === "." || normalized.startsWith("/") || normalized.includes("\\") ||
+      /^[A-Za-z]:/.test(normalized) || normalized.split("/").some((part) => !part || part === ".." || part === ".")) {
+    if (normalized === "." || normalized === "") return;
+    throw new Error("Workspace archive entry path is unsafe");
+  }
+}
 
 function mountArgs(mount: WorkspaceMount, readOnly = false): string[] {
   const options = [`type=${mount.kind}`, `src=${mount.source}`, "dst=/workspace"];

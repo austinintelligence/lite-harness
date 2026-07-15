@@ -30,7 +30,25 @@ screenshot, PDF, and quarantined download return values. Binary results are
 bounded to 16 MiB and returned to the trusted host for artifact publication.
 
 Every action can be audited with app, tenant, user, run, session, target,
-decision, timestamp, and error. Idle sessions stop their sidecar automatically.
+decision, timestamp, and error. `DurableBrowserSessionStore` records sessions,
+actions, and upload/download artifact links in WAL/FULL-synchronous SQLite.
+Manager startup marks interrupted sessions terminal, reaps installation-labeled
+browser/proxy containers and networks, and removes stale quarantine files. Idle
+sessions stop their sidecar automatically and durably transition to expired.
+
+## Artifact boundary
+
+The model-facing upload command accepts an `artifactId`, never file bytes or a
+host path. The Manager verifies app/tenant/user and workspace ownership, then
+streams and authenticates the encrypted artifact into a per-session quarantine
+mount. Chromium receives only the opaque quarantine ID.
+
+Screenshots, PDFs, and downloads are written directly into that bounded mount.
+The Manager rejects links and size/digest mismatches, streams the regular file
+into encrypted transactional artifact storage, records the session/artifact
+relationship, deletes the quarantine file, and returns only the durable
+artifact record. Quarantine host paths and browser-supplied base64 never enter
+tool results.
 
 ## Network policy
 
@@ -55,6 +73,7 @@ not a hostile multi-tenant micro-VM boundary.
 Remote CDP fails closed in the managed lane because a remote browser cannot be
 proven to use this external egress boundary.
 Owner-scoped browser profiles are encrypted with AES-GCM and generation-safe
-atomic replacement. Host-session attachment, extension relay, and noVNC remain
+atomic replacement; the durable session row records the selected profile ID
+without recording cookies. Host-session attachment, extension relay, and noVNC remain
 outside the managed alpha lane because they require separate high-trust UX and
 credential isolation.

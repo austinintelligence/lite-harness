@@ -1,9 +1,10 @@
 import { createInterface } from "node:readline";
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { writeFile, rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
@@ -124,19 +125,21 @@ async function invoke(command) {
   if (command.action === "keyboard") { await page.keyboard.press(command.key); return metadata(); }
   if (command.action === "snapshot") return await snapshot();
   if (command.action === "screenshot") {
-    const data = await page.screenshot({ type: "png", fullPage: command.fullPage === true });
-    return await artifact("screenshot.png", "image/png", data);
+    return await quarantineArtifact("screenshot.png", "image/png", async (path) => {
+      await page.screenshot({ path, type: "png", fullPage: command.fullPage === true });
+    });
   }
   if (command.action === "pdf") {
-    const data = await page.pdf({ format: "Letter" });
-    return await artifact("page.pdf", "application/pdf", data);
+    return await quarantineArtifact("page.pdf", "application/pdf", async (path) => {
+      await page.pdf({ path, format: "Letter" });
+    });
   }
   if (command.action === "upload") {
     assertRef(command.ref);
-    const data = Buffer.from(command.dataBase64, "base64");
-    if (data.length > 16 * 1024 * 1024) throw new Error("Upload is too large");
-    const path = join("/tmp", `upload-${Date.now()}-${safeName(command.name)}`);
-    await writeFile(path, data, { mode: 0o600 });
+    assertQuarantineId(command.quarantineId);
+    const path = join("/quarantine", command.quarantineId);
+    const file = await stat(path);
+    if (!file.isFile() || file.size > 16 * 1024 * 1024) throw new Error("Upload artifact is invalid");
     try { await page.locator(`[data-lite-ref="${command.ref}"]`).setInputFiles(path); }
     finally { await rm(path, { force: true }); }
     return metadata();
@@ -146,10 +149,9 @@ async function invoke(command) {
     const locator = page.locator(`[data-lite-ref="${command.ref}"]`);
     if (command.action === "click" && command.expectDownload) {
       const [download] = await Promise.all([page.waitForEvent("download"), locator.click()]);
-      const stream = await download.createReadStream();
-      const chunks = []; let size = 0;
-      for await (const chunk of stream) { size += chunk.length; if (size > 16 * 1024 * 1024) throw new Error("Download is too large"); chunks.push(chunk); }
-      return await artifact(safeName(download.suggestedFilename()), "application/octet-stream", Buffer.concat(chunks));
+      return await quarantineArtifact(safeName(download.suggestedFilename()), "application/octet-stream", async (path) => {
+        await download.saveAs(path);
+      });
     }
     if (command.action === "click") await locator.click();
     if (command.action === "type") await locator.fill(command.text);
@@ -175,11 +177,21 @@ async function snapshot() {
 }
 
 async function metadata() { return { url: page.url(), title: await page.title() }; }
-async function artifact(name, mediaType, data) {
-  if (data.length > 16 * 1024 * 1024) throw new Error("Browser artifact is too large");
-  return { ...await metadata(), artifact: { name, mediaType, dataBase64: data.toString("base64"), sizeBytes: data.length } };
+async function quarantineArtifact(name, mediaType, writer) {
+  const quarantineId = `q_${randomUUID().replaceAll("-", "")}`;
+  const path = join("/quarantine", quarantineId);
+  try {
+    await writer(path);
+    const file = await stat(path);
+    if (!file.isFile() || file.size > 16 * 1024 * 1024) throw new Error("Browser artifact is too large or invalid");
+    return { ...await metadata(), artifact: { name: safeName(name), mediaType, quarantineId, sizeBytes: file.size } };
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  }
 }
 function assertRef(ref) { if (!/^e[1-9][0-9]{0,4}$/.test(ref)) throw new Error("Invalid browser element reference"); }
+function assertQuarantineId(value) { if (!/^q_[a-f0-9]{32}$/.test(value)) throw new Error("Invalid browser quarantine id"); }
 function safeName(name) { return String(name).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 128) || "file"; }
 
 function attachPageObservers(target) {

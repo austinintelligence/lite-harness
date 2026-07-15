@@ -1,5 +1,7 @@
 import { createHmac, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -84,8 +86,44 @@ describe("managed browser broker", () => {
       await expect(driver.execute({ action: "snapshot" })).resolves.toMatchObject({
         snapshot: { text: expect.stringContaining("Example Domain") },
       });
+      const screenshot = await driver.execute({ action: "screenshot" });
+      expect(screenshot.artifact).toMatchObject({ name: "screenshot.png", mediaType: "image/png" });
+      expect(readFileSync(screenshot.artifact?.localPath as string).subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+      driver.releaseArtifact(screenshot.artifact?.localPath as string);
     } finally {
       await driver.stop();
+    }
+  }, 90_000);
+
+  it.skipIf(!process.env.LITE_HARNESS_TEST_BROWSER_IMAGE)("uploads an authorized file and quarantines a streamed download", async () => {
+    const server = createServer((request, response) => {
+      if (request.url === "/download") {
+        response.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=fixture.txt" });
+        response.end("downloaded-through-quarantine");
+        return;
+      }
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end('<!doctype html><input type="file" aria-label="Upload fixture"><a href="/download" aria-label="Download fixture">Download</a>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve));
+    const origin = `http://host.docker.internal:${(server.address() as AddressInfo).port}`;
+    const driver = new DockerBrowserDriver({ image: process.env.LITE_HARNESS_TEST_BROWSER_IMAGE as string, timeoutMs: 60_000 });
+    try {
+      await driver.start({ allowedOrigins: [origin], allowPrivateNetworks: true });
+      await driver.execute({ action: "navigate", url: origin });
+      const snapshot = await driver.execute({ action: "snapshot" });
+      expect(snapshot.snapshot?.elements).toMatchObject([
+        { ref: "e1", name: "Upload fixture" },
+        { ref: "e2", name: "Download fixture" },
+      ]);
+      const quarantineId = await driver.prepareUpload("fixture.txt", async (path) => writeFileSync(path, "authorized-upload"));
+      await expect(driver.execute({ action: "upload", ref: "e1", quarantineId, name: "fixture.txt" })).resolves.toBeDefined();
+      const download = await driver.execute({ action: "click", ref: "e2", expectDownload: true });
+      expect(readFileSync(download.artifact?.localPath as string, "utf8")).toBe("downloaded-through-quarantine");
+      driver.releaseArtifact(download.artifact?.localPath as string);
+    } finally {
+      await driver.stop();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   }, 90_000);
 });

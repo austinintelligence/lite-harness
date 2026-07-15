@@ -11,11 +11,15 @@ import { createGunzip, createGzip } from "node:zlib";
 import {
   createReadStream,
   createWriteStream,
+  appendFileSync,
   closeSync,
+  fstatSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -528,6 +532,153 @@ export class LocalArtifactStore {
     }
   }
 
+  async publishFromFile(params: {
+    runId: string;
+    workspaceId: string;
+    principal: InternalPrincipal;
+    path: string;
+    mediaType: string;
+    sourcePath: string;
+  }): Promise<ArtifactRecord> {
+    validateWorkspacePath(params.path);
+    if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(params.mediaType)) {
+      throw new Error("Artifact media type is invalid");
+    }
+    const source = lstatSync(params.sourcePath);
+    if (!source.isFile() || source.isSymbolicLink() || source.size > this.maxBytes) {
+      throw new Error(`Artifact source must be a regular file no larger than ${this.maxBytes} bytes`);
+    }
+    const firstDigest = createHash("sha256");
+    for await (const chunk of createReadStream(params.sourcePath)) firstDigest.update(chunk as Buffer);
+    const record: ArtifactRecord = {
+      id: createId("art"), runId: params.runId,
+      appId: params.principal.appId, tenantId: params.principal.tenantId, userId: params.principal.userId,
+      workspaceId: params.workspaceId, path: params.path, mediaType: params.mediaType,
+      sizeBytes: source.size, sha256: firstDigest.digest("hex"), createdAt: new Date().toISOString(),
+    };
+    const paths = this.#paths(record.id);
+    mkdirSync(dirname(paths.data), { recursive: true, mode: 0o700 });
+    const staging = `${paths.data}.staging-${process.pid}-${randomBytes(6).toString("hex")}`;
+    const header: ArtifactBlobHeader = {
+      schemaVersion: 1, id: record.id, nonce: randomBytes(12).toString("base64"), algorithm: "aes-256-gcm+hkdf-sha256",
+    };
+    const cipher = createCipheriv("aes-256-gcm", artifactDataKey(this.#rootKey, record.id), Buffer.from(header.nonce, "base64"));
+    cipher.setAAD(artifactAssociatedData(record, header));
+    const verificationDigest = createHash("sha256");
+    let verificationBytes = 0;
+    const verifier = new Transform({
+      transform(chunk, _encoding, callback) {
+        verificationBytes += chunk.length;
+        verificationDigest.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    writeFileSync(staging, `${ARTIFACT_MAGIC}${JSON.stringify(header)}\n`, { flag: "wx", mode: 0o600 });
+    let promoted = false;
+    try {
+      await pipeline(createReadStream(params.sourcePath), verifier, cipher, createWriteStream(staging, { flags: "a", mode: 0o600 }));
+      appendFileSync(staging, cipher.getAuthTag());
+      if (verificationBytes !== record.sizeBytes || verificationDigest.digest("hex") !== record.sha256) {
+        throw new Error("Artifact source changed during streaming promotion");
+      }
+      const descriptor = openSync(staging, "r+");
+      try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+      const database = this.#database();
+      try {
+        database.exec("BEGIN IMMEDIATE");
+        database.prepare(`
+          INSERT INTO artifacts (
+            id, run_id, app_id, tenant_id, user_id, workspace_id, path,
+            media_type, size_bytes, sha256, created_at, blob_path
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          record.id, record.runId, record.appId, record.tenantId, record.userId,
+          record.workspaceId, record.path, record.mediaType, record.sizeBytes,
+          record.sha256, record.createdAt, paths.relative,
+        );
+        renameSync(staging, paths.data);
+        promoted = true;
+        database.exec("COMMIT");
+        return record;
+      } catch (error) {
+        try { database.exec("ROLLBACK"); } catch { /* no open transaction */ }
+        if (promoted) rmSync(paths.data, { force: true });
+        throw error;
+      } finally {
+        database.close();
+      }
+    } finally {
+      rmSync(staging, { force: true });
+    }
+  }
+
+  async materializeToFile(id: string, principal: InternalPrincipal, destination: string): Promise<ArtifactRecord> {
+    const paths = this.#paths(id);
+    const database = this.#database();
+    let row: ArtifactMetadataRow | undefined;
+    try {
+      row = database.prepare(`
+        SELECT id, run_id, app_id, tenant_id, user_id, workspace_id, path,
+               media_type, size_bytes, sha256, created_at, blob_path
+        FROM artifacts
+        WHERE id = ? AND app_id = ? AND tenant_id = ? AND user_id = ?
+      `).get(id, principal.appId, principal.tenantId, principal.userId) as ArtifactMetadataRow | undefined;
+    } finally {
+      database.close();
+    }
+    if (!row) throw new Error("Artifact is unavailable or not owned by this principal");
+    const record = artifactRecordFromRow(row);
+    if (row.blob_path !== paths.relative) throw new Error(`Artifact metadata path is invalid: ${id}`);
+    const descriptor = openSync(paths.data, "r");
+    let encodedSize: number;
+    let headerEnd: number;
+    let header: ArtifactBlobHeader;
+    let tag: Buffer;
+    try {
+      encodedSize = fstatSync(descriptor).size;
+      if (encodedSize > this.maxBytes + 16 * 1024) throw new Error(`Artifact encoded size is invalid: ${id}`);
+      const prefix = Buffer.alloc(Math.min(encodedSize, 4096));
+      readSync(descriptor, prefix, 0, prefix.length, 0);
+      if (!prefix.subarray(0, ARTIFACT_MAGIC.length).equals(Buffer.from(ARTIFACT_MAGIC))) throw new Error(`Artifact envelope is invalid: ${id}`);
+      headerEnd = prefix.indexOf(0x0a, ARTIFACT_MAGIC.length);
+      if (headerEnd < 0 || encodedSize < headerEnd + 1 + ARTIFACT_TAG_BYTES) throw new Error(`Artifact envelope is invalid: ${id}`);
+      try { header = JSON.parse(prefix.subarray(ARTIFACT_MAGIC.length, headerEnd).toString("utf8")) as ArtifactBlobHeader; }
+      catch { throw new Error(`Artifact envelope is invalid: ${id}`); }
+      tag = Buffer.alloc(ARTIFACT_TAG_BYTES);
+      readSync(descriptor, tag, 0, tag.length, encodedSize - ARTIFACT_TAG_BYTES);
+    } finally {
+      closeSync(descriptor);
+    }
+    const nonce = typeof header.nonce === "string" ? Buffer.from(header.nonce, "base64") : Buffer.alloc(0);
+    if (header.schemaVersion !== 1 || header.id !== id || nonce.length !== 12 || header.algorithm !== "aes-256-gcm+hkdf-sha256") {
+      throw new Error(`Artifact envelope is invalid: ${id}`);
+    }
+    const decipher = createDecipheriv("aes-256-gcm", artifactDataKey(this.#rootKey, id), nonce);
+    decipher.setAAD(artifactAssociatedData(record, header));
+    decipher.setAuthTag(tag);
+    const digest = createHash("sha256");
+    let bytes = 0;
+    const verifier = new Transform({
+      transform(chunk, _encoding, callback) { bytes += chunk.length; digest.update(chunk); callback(null, chunk); },
+    });
+    const ciphertext = record.sizeBytes === 0
+      ? Readable.from([])
+      : createReadStream(paths.data, { start: headerEnd + 1, end: encodedSize - ARTIFACT_TAG_BYTES - 1 });
+    try {
+      await pipeline(
+        ciphertext,
+        decipher,
+        verifier,
+        createWriteStream(destination, { flags: "wx", mode: 0o600 }),
+      );
+      if (bytes !== record.sizeBytes || digest.digest("hex") !== record.sha256) throw new Error(`Artifact integrity check failed: ${id}`);
+      return record;
+    } catch (error) {
+      rmSync(destination, { force: true });
+      throw error;
+    }
+  }
+
   get(id: string, principal: InternalPrincipal): ArtifactPayload | undefined {
     const paths = this.#paths(id);
     const database = this.#database();
@@ -551,6 +702,24 @@ export class LocalArtifactStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
+    } finally {
+      database.close();
+    }
+  }
+
+  describe(id: string, principal: InternalPrincipal): ArtifactRecord | undefined {
+    const paths = this.#paths(id);
+    const database = this.#database();
+    try {
+      const row = database.prepare(`
+        SELECT id, run_id, app_id, tenant_id, user_id, workspace_id, path,
+               media_type, size_bytes, sha256, created_at, blob_path
+        FROM artifacts
+        WHERE id = ? AND app_id = ? AND tenant_id = ? AND user_id = ?
+      `).get(id, principal.appId, principal.tenantId, principal.userId) as ArtifactMetadataRow | undefined;
+      if (!row) return undefined;
+      if (row.blob_path !== paths.relative) throw new Error(`Artifact metadata path is invalid: ${id}`);
+      return artifactRecordFromRow(row);
     } finally {
       database.close();
     }

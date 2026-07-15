@@ -30,6 +30,10 @@
   link-local metadata targets, and non-allowlisted origins. Chromium has only
   an internal Docker network; a separate constrained proxy is the only member
   with an external route and rechecks DNS/origin policy for every request.
+- Browser uploads originate from owner/workspace-authorized encrypted artifact
+  records. Browser outputs cross through an opaque, size-bounded quarantine,
+  are verified as regular files, streamed into authenticated storage, and
+  removed before model-visible results are formed.
 - Skills cannot widen policy; plugin grants are intersections, never unions.
 - Provider secrets can be resolved through the OS secret store and never enter
   run state, Gateway, or ordinary tool containers.

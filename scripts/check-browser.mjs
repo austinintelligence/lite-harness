@@ -12,7 +12,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   execFileSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/browser-profile-isolation.test.ts", "test/browser-egress.test.ts",
+    "run", "test/browser-profile-isolation.test.ts", "test/browser-egress.test.ts", "test/browser-durability-artifacts.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -44,8 +44,10 @@ function writeEvidence(output, report) {
       sameSlugIsolation: true,
       externalEgressBroker: true,
       chromiumInternalNetworkOnly: true,
+      durableSessionsAndActions: true,
+      authorizedStreamingArtifacts: true,
     },
-    testIds: ["BD-009-REGRESSION", "BD-042-REGRESSION"],
+    testIds: ["BD-009-REGRESSION", "BD-042-REGRESSION", "BD-043-REGRESSION"],
   };
   const absolute = resolve(root, output);
   mkdirSync(dirname(absolute), { recursive: true });

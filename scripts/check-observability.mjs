@@ -38,6 +38,7 @@ try {
           structuredRequestMetrics: true,
           runLifecycleTelemetry: true,
           runUsageAndFirstEventLatency: true,
+          runOutcomeCounters: true,
           durableJsonlAuditSink: true,
           promptFilePathStackAndSecretRedaction: true,
         },

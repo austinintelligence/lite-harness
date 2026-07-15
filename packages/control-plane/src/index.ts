@@ -681,6 +681,7 @@ export class RunService {
         status: finalStatus,
       };
       this.#safeCounter("runs.terminal.total", 1, terminalAttributes);
+      this.#safeCounter(`runs.${finalStatus.toLowerCase()}.total`, 1, terminalAttributes);
       this.#safeAudit("run.terminal", finalStatus === "SUCCEEDED" ? "completed" : "failed", terminalAttributes, executionTrace);
       try { executionTrace?.end({ status: finalStatus }); } catch { /* telemetry must not affect finalization */ }
     }

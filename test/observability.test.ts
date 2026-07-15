@@ -126,6 +126,7 @@ describe("structured observability", () => {
       expect(snapshot.events.some((event) => event.kind === "audit" && event.name === "run.terminal" && event.traceId === snapshot.events.find((candidate) => candidate.kind === "trace" && candidate.name === "run.execute")?.traceId)).toBe(true);
       expect(snapshot.counters["runs.accepted.total"]).toBe(1);
       expect(snapshot.counters["runs.terminal.total"]).toBe(1);
+      expect(snapshot.counters["runs.succeeded.total"]).toBe(1);
       expect(snapshot.counters["model.input_tokens.total"]).toBeGreaterThan(0);
       expect(snapshot.counters["model.output_tokens.total"]).toBeGreaterThan(0);
       expect(snapshot.events.some((event) => event.kind === "metric" && event.name === "model.input_tokens.total" && typeof event.attributes.attemptId === "string")).toBe(true);

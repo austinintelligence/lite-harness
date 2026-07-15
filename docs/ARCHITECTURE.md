@@ -53,6 +53,8 @@ observability port so the durable execution lifecycle is covered as well. All
 telemetry calls are fail-open to the run path: a broken sink cannot change run
 state. Usage totals and first-model-token/first-visible-event latency are
 recorded from sanitized agent events without retaining event content.
+Terminal outcomes also expose status-specific counters for success, failure,
+cancellation, timeout, and orphaned-run aggregation.
 `StructuredObservability` accepts only finite bounded metric values and
 sanitizes attributes before retaining them in a bounded in-memory ring or a
 mode-600 JSONL sink. Prompt, file, path, stack, and credential fields are

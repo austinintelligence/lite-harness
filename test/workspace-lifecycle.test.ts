@@ -9,18 +9,26 @@ import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import {
   LocalWorkspaceSnapshotStore, ManagedWorkspaceLifecycle, StaticSnapshotKeyProvider,
-  workspaceSnapshotIdentity, type WorkspaceLifecycleRuntime,
+  workspaceSnapshotIdentity, type SnapshotKeyProvider, type WorkspaceLifecycleRuntime, type WorkspaceLifecycleStore,
 } from "@lite-harness/workspace";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("automatic workspace snapshot lifecycle", () => {
-  it("restores cold state before use and deletes warm data only after a verified checkpoint", async () => {
+  it("A10-STATE-MACHINE restores cold state before use and deletes warm data only after a verified checkpoint", async () => {
     const store = new SqliteRunStore(temporary("state.sqlite"));
     const snapshots = new LocalWorkspaceSnapshotStore(temporary("snapshots"), new StaticSnapshotKeyProvider(Buffer.alloc(32, 7)));
     const runtime = new MemoryWorkspaceRuntime();
-    const lifecycle = new ManagedWorkspaceLifecycle(store, runtime, snapshots);
+    const transitions: string[] = [];
+    const lifecycleStore: WorkspaceLifecycleStore = {
+      getWorkspace: (id, owner) => store.getWorkspace(id, owner),
+      updateWorkspaceState: (id, owner, expected, state) => {
+        transitions.push(`${expected}->${state}`);
+        return store.updateWorkspaceState(id, owner, expected, state);
+      },
+    };
+    const lifecycle = new ManagedWorkspaceLifecycle(lifecycleStore, runtime, snapshots);
     const run = owner("workspace-cold");
     createWorkspace(store, run, "WARM");
 
@@ -38,6 +46,40 @@ describe("automatic workspace snapshot lifecycle", () => {
     expect(store.getWorkspace(run.workspaceId, run)?.state).toBe("IN_USE");
     await lifecycle.checkpoint(run);
     expect(store.getWorkspace(run.workspaceId, run)?.state).toBe("WARM");
+    expect(transitions).toEqual([
+      "WARM->IN_USE",
+      "IN_USE->SNAPSHOTTING",
+      "SNAPSHOTTING->COLD",
+      "COLD->RESTORING",
+      "RESTORING->WARM",
+      "WARM->IN_USE",
+      "IN_USE->SNAPSHOTTING",
+      "SNAPSHOTTING->WARM",
+    ]);
+    store.close();
+  });
+
+  it("A10-VERIFICATION-FENCE retains the warm volume when authenticated staged-snapshot verification fails", async () => {
+    const store = new SqliteRunStore(temporary("state.sqlite"));
+    let keyRead = 0;
+    const changingKey: SnapshotKeyProvider = {
+      getKey: async () => Buffer.alloc(32, keyRead++ === 0 ? 3 : 4),
+    };
+    const snapshots = new LocalWorkspaceSnapshotStore(temporary("snapshots"), changingKey);
+    const runtime = new MemoryWorkspaceRuntime();
+    runtime.exists = true;
+    runtime.archive = Buffer.from("warm data must survive failed staged verification");
+    const lifecycle = new ManagedWorkspaceLifecycle(store, runtime, snapshots);
+    const run = owner("workspace-verification-failure");
+    createWorkspace(store, run, "WARM");
+
+    await lifecycle.prepare(run);
+    await expect(lifecycle.checkpoint(run, { makeCold: true })).rejects.toThrow(/authentic|snapshot|decrypt/i);
+    expect(keyRead).toBe(2);
+    expect(runtime.removals).toBe(0);
+    expect(runtime.exists).toBe(true);
+    expect(runtime.archive.toString()).toBe("warm data must survive failed staged verification");
+    expect(store.getWorkspace(run.workspaceId, run)?.state).toBe("ERROR");
     store.close();
   });
 
@@ -57,7 +99,7 @@ describe("automatic workspace snapshot lifecycle", () => {
     store.close();
   });
 
-  it("checkpoints after releasing the writer lease and before terminal success", async () => {
+  it("A10-RUN-CHECKPOINT enters run checkpointing and completes the workspace checkpoint before terminal success", async () => {
     const store = new SqliteRunStore(":memory:");
     let released = false;
     const lifecycle: WorkspaceRunLifecycle = {

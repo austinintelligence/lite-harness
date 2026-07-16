@@ -721,9 +721,9 @@ export function validateArchiveEntries(
     const name = tarString(header.subarray(0, 100));
     const prefix = tarString(header.subarray(345, 500));
     const path = prefix ? `${prefix}/${name}` : name;
-    validateArchivePath(path);
     const type = header[156] === 0 ? "0" : String.fromCharCode(header[156] ?? 0);
     if (type !== "0" && type !== "5") throw new Error(`Workspace archive entry type is denied: ${type}`);
+    validateArchivePath(path, type === "5");
     if (tarString(header.subarray(157, 257))) throw new Error("Workspace archive links are denied");
     const size = parseTarOctal(header.subarray(124, 136), "size");
     if (type === "5" && size !== 0) throw new Error("Workspace archive directory has a payload");
@@ -762,8 +762,9 @@ function tarString(field: Buffer): string {
   return field.subarray(0, end < 0 ? field.length : end).toString("utf8");
 }
 
-function validateArchivePath(path: string): void {
-  const normalized = path.replace(/^\.\//, "");
+function validateArchivePath(path: string, directory: boolean): void {
+  const rooted = path.replace(/^\.\//, "");
+  const normalized = directory && rooted.endsWith("/") ? rooted.slice(0, -1) : rooted;
   if (!normalized || normalized === "." || normalized.startsWith("/") || normalized.includes("\\") ||
       /^[A-Za-z]:/.test(normalized) || normalized.split("/").some((part) => !part || part === ".." || part === ".")) {
     if (normalized === "." || normalized === "") return;

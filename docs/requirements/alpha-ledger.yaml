@@ -1577,13 +1577,27 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts",
+        "packages/control-plane/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "A10-STATE-MACHINE",
+        "A10-VERIFICATION-FENCE",
+        "A10-RUN-CHECKPOINT",
+        "A10-REAL-RESTORE"
+      ],
+      "ciJob": "workspace-lifecycle-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m4/automatic-workspace-lifecycle.json",
+          "producer": "pnpm test:workspace-lifecycle"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -1656,13 +1670,25 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "A13-CACHE-KEYS",
+        "A13-CACHE-IMMUTABLE",
+        "A13-CACHE-POISON",
+        "A13-CACHE-EVICTION"
+      ],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

@@ -8,7 +8,7 @@ const cleanup: string[] = [];
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
 describe("verified cache lifecycle BD-046-REGRESSION", () => {
-  it("keys every compatibility and owner boundary deterministically", () => {
+  it("A13-CACHE-KEYS keys every compatibility and owner boundary deterministically", () => {
     const catalog = createCatalog();
     const descriptor = cache("workspace-private", "pnpm/store");
     const baseline = catalog.resolve(descriptor).key;
@@ -25,7 +25,7 @@ describe("verified cache lifecycle BD-046-REGRESSION", () => {
     expect(variants.every((entry) => catalog.resolve(entry).key !== baseline)).toBe(true);
   });
 
-  it("fences staged population and promotes a verified read-only generation", () => {
+  it("A13-CACHE-IMMUTABLE fences staged population and promotes a verified read-only generation", () => {
     const catalog = createCatalog();
     const descriptor = cache("global-immutable", "public/tool");
     expect(() => catalog.acquirePopulation(descriptor, publisher(false))).toThrow(/trusted publisher/);
@@ -44,7 +44,7 @@ describe("verified cache lifecycle BD-046-REGRESSION", () => {
     catalog.releaseRead(read);
   });
 
-  it("enforces private scope and quarantines a modified generation", () => {
+  it("A13-CACHE-POISON enforces private scope and quarantines a modified generation", () => {
     const catalog = createCatalog();
     const descriptor = cache("workspace-private", "pnpm/store");
     const owner = publisher(false, "tenant", "workspace");
@@ -62,7 +62,7 @@ describe("verified cache lifecycle BD-046-REGRESSION", () => {
     expect(catalog.resolve(descriptor).state).toBe("MISSING");
   });
 
-  it("expires abandoned staging and applies lease-aware LRU quotas", () => {
+  it("A13-CACHE-EVICTION expires abandoned staging and applies lease-aware LRU quotas without evicting active readers", () => {
     const catalog = createCatalog();
     const firstDescriptor = cache("global-immutable", "one");
     const secondDescriptor = cache("global-immutable", "two");

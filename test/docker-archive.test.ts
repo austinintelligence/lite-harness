@@ -3,8 +3,11 @@ import { dockerMaintenanceHardeningArgs, validateArchiveEntries } from "@lite-ha
 
 describe("Docker workspace maintenance boundaries", () => {
   it("BD-018-REGRESSION validates bounded archives and applies the full maintenance hardening profile", () => {
-    const archive = tar([{ path: "safe/file.txt", body: Buffer.from("safe") }]);
-    expect(validateArchiveEntries(archive, { maxBytes: 1024, maxFiles: 4 })).toEqual({ files: 1, payloadBytes: 4 });
+    const archive = tar([
+      { path: "safe/", body: Buffer.alloc(0), type: "5" },
+      { path: "safe/file.txt", body: Buffer.from("safe") },
+    ]);
+    expect(validateArchiveEntries(archive, { maxBytes: 1024, maxFiles: 4 })).toEqual({ files: 2, payloadBytes: 4 });
     expect(() => validateArchiveEntries(tar([{ path: "../escape", body: Buffer.from("no") }]), {
       maxBytes: 1024,
     })).toThrow(/path.*unsafe/i);
@@ -12,6 +15,9 @@ describe("Docker workspace maintenance boundaries", () => {
       maxBytes: 1024,
     })).toThrow(/type.*denied/i);
     expect(() => validateArchiveEntries(archive, { maxBytes: 3 })).toThrow(/limits/i);
+    expect(() => validateArchiveEntries(tar([{ path: "safe//", body: Buffer.alloc(0), type: "5" }]), {
+      maxBytes: 1024,
+    })).toThrow(/path.*unsafe/i);
 
     const hardening = dockerMaintenanceHardeningArgs({}, { capabilities: ["CHOWN"], user: "1000:1000" });
     expect(hardening).toEqual(expect.arrayContaining([

@@ -30,7 +30,7 @@ try {
       command: "pnpm test:workspace-lifecycle",
       report: evidenceReport,
       requirementIds: [
-        "D17", "R07-0488", "R22-1941", "R22-1942", "R22-1948", "R22-1949", "R22-1950",
+        "A10", "D17", "R07-0488", "R22-1941", "R22-1942", "R22-1948", "R22-1949", "R22-1950",
         "R22-1951", "R22-1958", "R26-2152", "R27-2181", "R27-2208", "R34-2877", "R34-2897",
       ],
       regressionIds: ["BD-015-REGRESSION", "BD-016-REGRESSION", "BD-017-REGRESSION", "BD-047-REGRESSION"],

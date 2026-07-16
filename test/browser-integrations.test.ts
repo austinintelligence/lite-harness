@@ -1,4 +1,4 @@
-import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -166,6 +166,50 @@ describe("managed browser broker", () => {
       await reconcileBrowserResources({ installationId }).catch(() => undefined);
     }
   }, 90_000);
+
+  it("A05-BROWSER-CONTAINER-SECRET-SENTINELS keeps app, provider, integration, root, and IPC sentinels out of live browser containers", async () => {
+    const installationId = mkdtempSync(join(tmpdir(), "lite-browser-a05-secrets-")); cleanup.push(installationId);
+    const quarantineRoot = join(installationId, "quarantine");
+    const suffix = randomUUID().replaceAll("-", "");
+    const label = createHash("sha256").update(installationId).digest("hex").slice(0, 32);
+    const sentinels = [
+      `A05_BROWSER_APP_${suffix}`,
+      `A05_BROWSER_PROVIDER_${suffix}`,
+      `A05_BROWSER_INTEGRATION_${suffix}`,
+      `A05_BROWSER_ROOT_${suffix}`,
+      `A05_BROWSER_IPC_${suffix}`,
+    ];
+    const env = {
+      LITE_A05_BROWSER_APP_SENTINEL: sentinels[0]!,
+      LITE_A05_BROWSER_PROVIDER_SENTINEL: sentinels[1]!,
+      LITE_A05_BROWSER_INTEGRATION_SENTINEL: sentinels[2]!,
+      LITE_A05_BROWSER_ROOT_SENTINEL: sentinels[3]!,
+      LITE_A05_BROWSER_IPC_SENTINEL: sentinels[4]!,
+    };
+    const previous = new Map<string, string | undefined>();
+    const driver = new DockerBrowserDriver({ image: browserImage, installationId, quarantineRoot, timeoutMs: 60_000 });
+    try {
+      for (const [name, value] of Object.entries(env)) {
+        previous.set(name, process.env[name]);
+        process.env[name] = value;
+      }
+      await driver.start({ allowedOrigins: [], allowPrivateNetworks: false });
+      await expect(driver.execute({ action: "snapshot" })).resolves.toMatchObject({ snapshot: expect.any(Object) });
+      await waitFor(() => browserDockerContainers(label).length >= 2, 15_000);
+      for (const container of browserDockerContainers(label)) {
+        assertNoSentinels(dockerText(["container", "inspect", container]), sentinels);
+        assertNoSentinels(dockerText(["container", "logs", container]), sentinels);
+      }
+    } finally {
+      await driver.stop().catch(() => undefined);
+      await reconcileBrowserResources({ installationId }).catch(() => undefined);
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      expect(browserDockerResources(label)).toEqual([]);
+    }
+  }, 120_000);
 
   it("uploads an authorized file and quarantines a streamed download", async () => {
     const server = createServer((request, response) => {
@@ -633,6 +677,26 @@ function browserDockerResources(installationLabel: string): string[] {
   const networks = spawnSync("docker", ["network", "ls", ...filter], { encoding: "utf8", windowsHide: true });
   if (containers.status !== 0 || networks.status !== 0) throw new Error("Could not inspect browser scale-to-zero resources");
   return `${containers.stdout}\n${networks.stdout}`.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function browserDockerContainers(installationLabel: string): string[] {
+  const result = spawnSync("docker", [
+    "ps", "--all", "--quiet", "--filter", `label=lite-harness.installation=${installationLabel}`,
+  ], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Could not inspect browser containers: ${result.stderr || result.stdout}`);
+  return (result.stdout ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function dockerText(args: readonly string[]): string {
+  const result = spawnSync("docker", [...args], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Docker command failed: ${result.stderr || result.stdout}`);
+  return result.stdout ?? "";
+}
+
+function assertNoSentinels(value: string, sentinels: readonly string[]): void {
+  for (const sentinel of sentinels) expect(value).not.toContain(sentinel);
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

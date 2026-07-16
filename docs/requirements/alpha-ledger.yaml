@@ -1486,12 +1486,18 @@
       },
       "implementationPaths": [
         "apps/manager/src/main.ts",
+        "packages/browser/src/index.ts",
+        "packages/mcp/src/index.ts",
         "packages/observability/src/index.ts",
+        "packages/plugin-core/src/index.ts",
         "packages/provider-core/src/index.ts",
         "packages/runtime-docker/src/index.ts"
       ],
       "testIds": [
-        "A05-PACKAGED-CONTAINER-SECRET-SENTINELS"
+        "A05-PACKAGED-CONTAINER-SECRET-SENTINELS",
+        "A05-PLUGIN-CONTAINER-SECRET-SENTINELS",
+        "A05-MCP-CONTAINER-SECRET-SENTINELS",
+        "A05-BROWSER-CONTAINER-SECRET-SENTINELS"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [
@@ -1502,8 +1508,7 @@
       ],
       "status": "blocked",
       "blockers": [
-        "current-evidence-stale",
-        "container-surface-coverage-gap"
+        "current-evidence-stale"
       ]
     },
     {

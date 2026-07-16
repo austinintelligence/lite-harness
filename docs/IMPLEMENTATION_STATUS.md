@@ -32,7 +32,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A02 Installable TypeScript SDK | blocked | current-evidence-stale |
 | A03 Reconnect and replay | blocked | current-evidence-stale |
 | A04 Real model-plus-Docker loop | blocked | current-evidence-stale |
-| A05 Zero permanent container secrets | blocked | current-evidence-stale, container-surface-coverage-gap |
+| A05 Zero permanent container secrets | blocked | current-evidence-stale |
 | A06 One writer with fencing | blocked | current-evidence-stale, two-manager-process-mutation-gap |
 | A07 Limits always | blocked | traceability-not-yet-established |
 | A08 Cleanup and reconciliation | blocked | current-evidence-stale, manager-death-process-inventory-gap |

@@ -39,6 +39,47 @@ input.on('line',(line)=>{
 `;
 
 describe("Docker stdio MCP integration", () => {
+  it("A05-MCP-CONTAINER-SECRET-SENTINELS keeps app, provider, integration, root, and IPC sentinels out of the live MCP container", async () => {
+    const suffix = randomUUID().replaceAll("-", "");
+    const containerName = `lite-harness-mcp-a05-${suffix}`;
+    const installationId = `a05-mcp-installation-${suffix}`;
+    const sentinels = [
+      `A05_MCP_APP_${suffix}`,
+      `A05_MCP_PROVIDER_${suffix}`,
+      `A05_MCP_INTEGRATION_${suffix}`,
+      `A05_MCP_ROOT_${suffix}`,
+      `A05_MCP_IPC_${suffix}`,
+    ];
+    const env = {
+      LITE_A05_MCP_APP_SENTINEL: sentinels[0]!,
+      LITE_A05_MCP_PROVIDER_SENTINEL: sentinels[1]!,
+      LITE_A05_MCP_INTEGRATION_SENTINEL: sentinels[2]!,
+      LITE_A05_MCP_ROOT_SENTINEL: sentinels[3]!,
+      LITE_A05_MCP_IPC_SENTINEL: sentinels[4]!,
+    };
+    const previous = new Map<string, string | undefined>();
+    const transport = new DockerStdioMcpTransport({
+      image, command: "node", args: ["-e", SERVER], containerName, installationId, timeoutMs: 30_000,
+    });
+    try {
+      for (const [name, value] of Object.entries(env)) {
+        previous.set(name, process.env[name]);
+        process.env[name] = value;
+      }
+      await expect(transport.listTools()).resolves.toMatchObject([{ name: "echo" }]);
+      await waitFor(() => containerExists(containerName), 15_000);
+      assertNoSentinels(dockerText(["container", "inspect", containerName]), sentinels);
+      assertNoSentinels(dockerText(["container", "logs", containerName]), sentinels);
+    } finally {
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await transport.stop();
+      expect(containerExists(containerName)).toBe(false);
+    }
+  }, 90_000);
+
   it("executes the MCP protocol in a no-network immutable container", async () => {
     const transport = new DockerStdioMcpTransport({
       image,
@@ -143,6 +184,17 @@ function requiredImage(name: string): string {
 
 function containerExists(name: string): boolean {
   return spawnSync("docker", ["container", "inspect", name], { stdio: "ignore" }).status === 0;
+}
+
+function dockerText(args: readonly string[]): string {
+  const result = spawnSync("docker", [...args], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Docker command failed: ${result.stderr || result.stdout}`);
+  return result.stdout ?? "";
+}
+
+function assertNoSentinels(value: string, sentinels: readonly string[]): void {
+  for (const sentinel of sentinels) expect(value).not.toContain(sentinel);
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

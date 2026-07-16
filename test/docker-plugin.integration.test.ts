@@ -23,6 +23,48 @@ afterEach(async () => {
 });
 
 describe("managed Docker plugin lifecycle", () => {
+  it("A05-PLUGIN-CONTAINER-SECRET-SENTINELS keeps app, provider, integration, root, and IPC sentinels out of the live plugin container", async () => {
+    const installationId = uniqueInstallation("a05-secrets");
+    const sandbox = managedSandbox(installationId);
+    const supervisor = pluginSupervisor(fixturePlugin(`export default {
+      invoke(action, input) { return { action, input, isolated: true }; }
+    };`), sandbox, { idleTtlMs: 60_000 });
+    const suffix = randomUUID();
+    const sentinels = [
+      `A05_PLUGIN_APP_${suffix}`,
+      `A05_PLUGIN_PROVIDER_${suffix}`,
+      `A05_PLUGIN_INTEGRATION_${suffix}`,
+      `A05_PLUGIN_ROOT_${suffix}`,
+      `A05_PLUGIN_IPC_${suffix}`,
+    ];
+    const env = {
+      LITE_A05_PLUGIN_APP_SENTINEL: sentinels[0]!,
+      LITE_A05_PLUGIN_PROVIDER_SENTINEL: sentinels[1]!,
+      LITE_A05_PLUGIN_INTEGRATION_SENTINEL: sentinels[2]!,
+      LITE_A05_PLUGIN_ROOT_SENTINEL: sentinels[3]!,
+      LITE_A05_PLUGIN_IPC_SENTINEL: sentinels[4]!,
+    };
+    const previous = new Map<string, string | undefined>();
+    try {
+      for (const [name, value] of Object.entries(env)) {
+        previous.set(name, process.env[name]);
+        process.env[name] = value;
+      }
+      await expect(supervisor.invoke("echo", { value: "a05" })).resolves.toMatchObject({ isolated: true });
+      await waitFor(() => managedContainers(installationId).length === 1, 15_000);
+      const container = managedContainers(installationId)[0]!;
+      assertNoSentinels(docker(["container", "inspect", container]), sentinels);
+      assertNoSentinels(docker(["container", "logs", container]), sentinels);
+    } finally {
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await supervisor.stop();
+      expect(managedContainers(installationId)).toEqual([]);
+    }
+  }, 90_000);
+
   it("A22-REAL-PLUGIN-IDLE-ZERO invokes in a managed container and authoritatively reaps it after idle", async () => {
     const installationId = uniqueInstallation("idle");
     const sandbox = managedSandbox(installationId);
@@ -160,6 +202,10 @@ function docker(args: readonly string[]): string {
 
 function labelDigest(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+
+function assertNoSentinels(value: string, sentinels: readonly string[]): void {
+  for (const sentinel of sentinels) expect(value).not.toContain(sentinel);
 }
 
 function uniqueInstallation(suffix: string): string {

@@ -118,6 +118,7 @@ try {
         boundaries: {
           dockerToolExecution: true,
           packagedToolContainerSecretSentinelsAbsent: true,
+          pluginMcpBrowserContainerSecretSentinelsAbsent: true,
           mcpContainersInstallationScopedForReconciliation: true,
           expiredLeaseReacquisitionIncrementsFence: true,
           pausedWriterMutationRejectedAndResumed: true,

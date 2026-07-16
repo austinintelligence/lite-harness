@@ -50,6 +50,14 @@ only an isolated evidence runner should set
 `LITE_HARNESS_ALLOW_DOCKER_RESTART=1`. The required CI runtime job sets that
 variable explicitly; ordinary local commands never restart Docker implicitly.
 
+The required host matrix is produced only by the manual, pinned
+`.github/workflows/external-platform-evidence.yml` workflow. Its
+`pnpm evidence:external --gate <lane>` producer requires GitHub Actions,
+validates the declared OS, architecture, Docker mode, and Docker Desktop
+identity, then builds immutable runtime images before invoking the real suite.
+The restart opt-in is scoped to that CI child process; do not run this producer
+locally while preserving a Docker Desktop session.
+
 GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from
 hosted CI and must be run locally with `pnpm test:hermes`; their evidence belongs

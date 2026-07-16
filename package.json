@@ -44,6 +44,7 @@
     "check:defects": "node scripts/check-defects.mjs",
     "check:defects:closed": "node scripts/check-defects.mjs --closed-only",
     "evidence:collect": "node scripts/collect-release-evidence.mjs",
+    "evidence:external": "node scripts/evidence-external.mjs",
     "generate:status": "node scripts/generate-status.mjs",
     "check:status": "node scripts/generate-status.mjs --check",
     "generate:blockers": "node scripts/generate-blockers.mjs",

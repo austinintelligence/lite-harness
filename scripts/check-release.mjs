@@ -21,6 +21,7 @@ const required = [
   ".github/workflows/ci.yml", ".github/workflows/images.yml", ".gitattributes", ".gitignore",
   "docker/tool-runtime/Dockerfile", "docker/tool-runtime/.dockerignore",
   "docker/browser-runtime/Dockerfile", "docker/browser-runtime/.dockerignore", "sdks/python/pyproject.toml",
+  ".github/workflows/external-platform-evidence.yml", "scripts/evidence-external.mjs",
 ];
 const failures = required.filter((file) => !existsSync(resolve(root, file))).map((file) => `missing ${file}`);
 
@@ -94,6 +95,7 @@ try {
   if (error.status !== 1) failures.push(".env.example ignore exception verification failed");
 }
 const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
+const externalWorkflow = readFileSync(resolve(root, ".github/workflows/external-platform-evidence.yml"), "utf8");
 for (const command of [
   "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
   "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure", "pnpm check:evidence",
@@ -113,6 +115,9 @@ if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("a
 if (!ciWorkflow.includes("LITE_HARNESS_ALLOW_DOCKER_RESTART: \"1\"")) {
   failures.push("required real-runtime CI must explicitly opt in to the destructive Docker restart evidence");
 }
+for (const token of ["rootless-product-evidence:", "pnpm evidence:external --gate", "linuxRootless", "macosAppleSiliconDockerDesktop", "windows11DockerDesktopWsl2"]) {
+  if (!externalWorkflow.includes(token)) failures.push(`external platform evidence workflow is missing: ${token}`);
+}
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
   if (!imageWorkflow.includes(command)) failures.push(`release workflow is missing required gate: ${command}`);
@@ -121,7 +126,7 @@ if (!/publish:\s*[\s\S]*?needs:\s*\[[^\]]*release-gate[^\]]*candidate[^\]]*\]/.t
   failures.push("container publishing must depend on the strict release gate and tested candidates");
 }
 if (/lite-harness-\$\{\{ matrix\.name \}\}:latest/.test(imageWorkflow)) failures.push("prerelease tags must not promote mutable latest images");
-for (const workflowName of ["ci.yml", "images.yml"]) {
+for (const workflowName of ["ci.yml", "images.yml", "external-platform-evidence.yml"]) {
   const workflow = readFileSync(resolve(root, ".github/workflows", workflowName), "utf8");
   for (const match of workflow.matchAll(/uses:\s*[^@\s]+@([^\s#]+)/g)) {
     if (!/^[a-f0-9]{40}$/.test(match[1])) failures.push(`${workflowName} contains an unpinned action reference: ${match[0]}`);

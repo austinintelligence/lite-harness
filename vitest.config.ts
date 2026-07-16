@@ -20,6 +20,9 @@ const mcpAlphaEvidenceFiles = [
   "test/mcp-http.test.ts",
   "test/optional-systems-manager.test.ts",
 ];
+const pluginAlphaEvidenceFiles = [
+  "test/plugin-lifecycle-manager.test.ts",
+];
 const scaleToZeroEvidenceFiles = [
   "test/config.test.ts",
   "test/optional-packs.test.ts",
@@ -29,7 +32,8 @@ const scaleToZeroEvidenceFiles = [
   "test/process-extensions.test.ts",
 ];
 const realRuntimeFiles = [
-  ...deterministicWorkspaceFiles, ...realRuntimeOnlyFiles, ...mcpAlphaEvidenceFiles, ...scaleToZeroEvidenceFiles,
+  ...deterministicWorkspaceFiles, ...realRuntimeOnlyFiles, ...mcpAlphaEvidenceFiles, ...pluginAlphaEvidenceFiles,
+  ...scaleToZeroEvidenceFiles,
 ];
 const hermesFiles = ["test/hermes-provider.live.test.ts"];
 const realRuntime = process.env.LITE_HARNESS_REAL_RUNTIME_TEST === "1";

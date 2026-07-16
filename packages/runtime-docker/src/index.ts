@@ -29,6 +29,8 @@ export interface DockerRuntimeConfig {
   commandRunner?: DockerCommandRunner;
   /** Trusted Manager-owned lookup. Arbitrary run input never becomes a bind source. */
   resolveRegisteredWorkspace?: (workspaceId: string, principal?: InternalPrincipal) => string | undefined;
+  /** Optional Manager-owned lease fence checked immediately before Docker mutations. */
+  validateExecutionLease?: (params: ToolExecutionContext) => boolean | Promise<boolean>;
 }
 
 export interface DockerCommandResult {
@@ -135,6 +137,7 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async execute(params: ToolExecutionContext): Promise<ToolResult> {
     params.signal?.throwIfAborted();
+    await this.#assertExecutionLease(params);
     const mount = await this.#workspaceMount(params.workspaceId, params.signal, params.principal);
 
     if (params.call.name === "write_file") {
@@ -242,6 +245,7 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async readWorkspaceArtifact(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer> {
     params.signal?.throwIfAborted();
+    await this.#assertExecutionLease(params);
     validateWorkspacePath(params.path);
     if (!Number.isSafeInteger(params.fencingToken) || (params.fencingToken as number) < 1) {
       throw new Error("Artifact fencing token is invalid");
@@ -465,6 +469,7 @@ export class DockerToolRuntime implements ToolRuntime {
     if (!containerStore || !installationId) {
       throw new Error("Docker tool execution requires durable container storage and an installation identity");
     }
+    await this.#assertExecutionLease(params);
     const identity = workspaceIdentity(params.workspaceId, params.principal);
     const containerName = deterministicContainerName(
       installationId,
@@ -543,6 +548,7 @@ export class DockerToolRuntime implements ToolRuntime {
       await containerStore.recordRuntimeContainer(record);
       recorded = true;
       await containerStore.updateRuntimeContainerState(runtimeContainerId, "RUNNING", new Date().toISOString());
+      await this.#assertExecutionLease(params);
       result = await this.#run(
         ["start", "--attach", "--interactive", runtimeContainerId],
         { ...(input === undefined ? {} : { input }), signal: toolSignal, maxOutputBytes },
@@ -611,6 +617,14 @@ export class DockerToolRuntime implements ToolRuntime {
     }
     if (failures.length) throw new AggregateError(failures, "Docker startup reconciliation failed");
     return reaped;
+  }
+
+  async #assertExecutionLease(params: ToolExecutionContext): Promise<void> {
+    if (!this.config.validateExecutionLease) return;
+    if (!params.runId || !params.attemptId || !params.principal || params.fencingToken === undefined ||
+        !await this.config.validateExecutionLease(params)) {
+      throw new Error("Workspace fence is not active");
+    }
   }
 
   #run(args: readonly string[], options: DockerCommandOptions = {}): Promise<DockerCommandResult> {

@@ -2,7 +2,7 @@ import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 import { killAndReapContainer, type DockerCommandResult, type DockerCommandRunner } from "@lite-harness/runtime-docker";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -115,6 +115,7 @@ export class DockerStdioMcpTransport extends StdioMcpTransport {
     timeoutMs?: number;
     maxPayloadBytes?: number;
     containerName?: string;
+    installationId?: string;
     cleanupRunner?: DockerCommandRunner;
   }) {
     const containerName = options.containerName ?? managedMcpContainerName();
@@ -150,6 +151,7 @@ export function createDockerMcpProcessSpec(options: {
   cpus?: string;
   pidsLimit?: number;
   containerName?: string;
+  installationId?: string;
 }): ProcessSpec {
   if (!options.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(options.image)) throw new Error("MCP image must be pinned by sha256 digest");
   if (!options.command || options.command.length > 4096 || /[\0\r\n]/.test(options.command)) throw new Error("MCP container command is invalid");
@@ -157,11 +159,13 @@ export function createDockerMcpProcessSpec(options: {
   if (args.length > 256 || args.some((arg) => arg.length > 4096 || /\0/.test(arg))) throw new Error("MCP container arguments are invalid");
   const containerName = options.containerName ?? managedMcpContainerName();
   if (!/^lite-harness-mcp-[a-z0-9][a-z0-9_.-]{0,96}$/.test(containerName)) throw new Error("MCP container name is invalid");
+  if (options.installationId !== undefined && !options.installationId.trim()) throw new Error("MCP installation identity is invalid");
   return {
     command: options.dockerCommand ?? "docker",
     args: [
       "run", "--pull=never", "--interactive", "--init", "--name", containerName,
       "--label", "lite-harness.managed=true", "--label", "lite-harness.component=mcp",
+      ...(options.installationId ? ["--label", `lite-harness.installation=${digestLabel(options.installationId)}`] : []),
       "--network", "none",
       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
       "--security-opt", `seccomp=${options.seccompProfile ?? join(process.cwd(), "docker", "browser-runtime", "seccomp_profile.json")}`,
@@ -171,6 +175,10 @@ export function createDockerMcpProcessSpec(options: {
       options.image, options.command, ...args,
     ],
   };
+}
+
+function digestLabel(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
 function managedMcpContainerName(): string {

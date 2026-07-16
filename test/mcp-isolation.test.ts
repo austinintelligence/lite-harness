@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   BrokeredMcpToolPolicy,
@@ -11,6 +12,17 @@ import {
 const processFixture = fileURLToPath(new URL("./fixtures/process-peer.mjs", import.meta.url));
 
 describe("brokered MCP isolation BD-045-REGRESSION", () => {
+  it("A08-MCP-ORPHAN-OWNERSHIP scopes stdio MCP containers to the Manager installation for restart reconciliation", () => {
+    const installationId = "C:\\lite-harness\\a08-installation";
+    const spec = createDockerMcpProcessSpec({
+      image: `sha256:${"a".repeat(64)}`,
+      command: "node",
+      installationId,
+    });
+    const digest = createHash("sha256").update(installationId).digest("hex").slice(0, 32);
+    expect(spec.args).toContain("lite-harness.installation=" + digest);
+  });
+
   it("A21-STDIO-SANDBOX builds stdio MCP only as a disposable hardened no-network Docker process", () => {
     const spec = createDockerMcpProcessSpec({
       image: `sha256:${"a".repeat(64)}`,

@@ -1484,13 +1484,26 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "packages/observability/src/index.ts",
+        "packages/provider-core/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "A05-PACKAGED-CONTAINER-SECRET-SENTINELS"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale",
+        "container-surface-coverage-gap"
       ]
     },
     {
@@ -1550,13 +1563,26 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/mcp/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "A08-MCP-ORPHAN-OWNERSHIP"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale",
+        "packaged-cleanup-matrix-gap"
       ]
     },
     {

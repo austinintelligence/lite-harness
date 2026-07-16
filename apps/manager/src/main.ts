@@ -34,7 +34,7 @@ import {
   type RoutePlan,
 } from "@lite-harness/provider-core";
 import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
-import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolRuntime } from "@lite-harness/runtime";
+import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolExecutionContext, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalArtifactStore, validateRegisteredBindRoot } from "@lite-harness/workspace";
@@ -63,7 +63,8 @@ const artifactStore = new LocalArtifactStore(
   join(dataDir, "artifacts"),
   snapshotRootKey,
 );
-const baseRuntime = resolveRuntime(store, configuration.runtime);
+const validateExecutionLease = (params: ToolExecutionContext): boolean => hasActiveWorkspaceFence(store, params);
+const baseRuntime = resolveRuntime(store, configuration.runtime, validateExecutionLease);
 if (baseRuntime instanceof DockerToolRuntime) {
   const reapedContainers = await baseRuntime.reconcileContainers();
   if (reapedContainers > 0) {
@@ -75,16 +76,7 @@ const runtime = new ArtifactPublishingRuntime(
   brokeredRuntime,
   artifactStore,
   16 * 1024 * 1024,
-  (params) => {
-    if (!params.runId || !params.attemptId || !params.principal || params.fencingToken === undefined) return false;
-    const run = store.getRun(params.runId);
-    if (!run || run.workspaceId !== params.workspaceId || run.appId !== params.principal.appId ||
-        run.tenantId !== params.principal.tenantId || run.userId !== params.principal.userId) return false;
-    const attempt = store.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
-    const lease = store.getWorkspaceLease(run.workspaceId, run.id);
-    return attempt?.id === params.attemptId && lease?.fencingToken === params.fencingToken &&
-      (lease ? store.validateWorkspaceLease(lease) : false);
-  },
+  validateExecutionLease,
 );
 const modelGateway = resolveModelGateway(
   configuration.provider,
@@ -349,7 +341,11 @@ try {
 }
 installShutdownHandlers(app);
 
-function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): ToolRuntime {
+function resolveRuntime(
+  runStore: SqliteRunStore,
+  kind: "fake" | "docker",
+  validateExecutionLease: (params: ToolExecutionContext) => boolean,
+): ToolRuntime {
   if (kind === "fake") {
     process.stderr.write("lite-harness manager: using development in-memory tool runtime\n");
     return new InMemoryToolRuntime();
@@ -366,6 +362,7 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
     cpus: configuration.runtimeCpus,
     pidsLimit: configuration.runtimePids,
     workspaceQuotaBytes: configuration.workspaceQuotaBytes,
+    validateExecutionLease,
     resolveRegisteredWorkspace: (workspaceId, principal) => {
       if (!principal) return undefined;
       const workspace = runStore.getWorkspace(workspaceId, principal);
@@ -374,6 +371,17 @@ function resolveRuntime(runStore: SqliteRunStore, kind: "fake" | "docker"): Tool
         : undefined;
     },
   });
+}
+
+function hasActiveWorkspaceFence(store: SqliteRunStore, params: ToolExecutionContext): boolean {
+  if (!params.runId || !params.attemptId || !params.principal || params.fencingToken === undefined) return false;
+  const run = store.getRun(params.runId);
+  if (!run || run.workspaceId !== params.workspaceId || run.appId !== params.principal.appId ||
+      run.tenantId !== params.principal.tenantId || run.userId !== params.principal.userId) return false;
+  const attempt = store.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
+  const lease = store.getWorkspaceLease(run.workspaceId, run.id);
+  return attempt?.id === params.attemptId && lease?.fencingToken === params.fencingToken &&
+    store.validateWorkspaceLease(lease);
 }
 
 function createProductionReadinessChecks(

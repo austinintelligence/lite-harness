@@ -58,7 +58,7 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
   if (operatorContext) { contextCompilers.push(operatorContext.context); stops.push(operatorContext.stop); }
   const skills = await configureSkills(options.runtime, options.dataDir, environment);
   if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
-  const mcp = await configureMcp(options.runtime, environment, offline);
+  const mcp = await configureMcp(options.runtime, environment, offline, options.dataDir);
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = await configurePlugins(options.runtime, options.dataDir, environment, featureFlags.plugins);
   if (plugins.lifecycle) stops.push(() => plugins.lifecycle!.stop());
@@ -222,7 +222,12 @@ function composeContextCompilers(compilers: readonly AgentContextCompiler[]): Ag
   };
 }
 
-async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv, offline: boolean): Promise<McpSupervisor | undefined> {
+async function configureMcp(
+  runtime: BrokeredToolRuntime,
+  environment: NodeJS.ProcessEnv,
+  offline: boolean,
+  installationId: string,
+): Promise<McpSupervisor | undefined> {
   const raw = environment.LITE_HARNESS_MCP_SERVERS?.trim();
   if (!raw) return undefined;
   const { BrokeredMcpToolPolicy, DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } = await import("@lite-harness/mcp");
@@ -248,7 +253,7 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
         throw new Error(`MCP server ${id} cannot request host cwd or environment inheritance`);
       }
       supervisor.register(id, () => new DockerStdioMcpTransport({
-        image, command, args, ...(seccompProfile ? { seccompProfile } : {}),
+        image, command, args, installationId, ...(seccompProfile ? { seccompProfile } : {}),
       }), { include, exclude, expectedTools: advertisedTools });
     } else if (server.transport === "http") {
       const url = requiredString(server.url, "MCP URL");

@@ -151,6 +151,131 @@ describe("packaged model-to-Docker vertical slice", () => {
     if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "A04 cleanup failed");
     expect(namedVolumeExists(volume)).toBe(false);
   }, 180_000);
+
+  it("A05-PACKAGED-CONTAINER-SECRET-SENTINELS keeps app, provider, integration, root, and IPC sentinels out of a live Docker tool container", async () => {
+    const suffix = randomUUID().replaceAll("-", "");
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "lite-a05-secrets-"));
+    const dataDir = join(fixtureRoot, "data");
+    const socketPath = process.platform === "win32"
+      ? `\\\\.\\pipe\\lite-a05-${suffix}`
+      : join(fixtureRoot, "manager.sock");
+    const owner = { appId: "a05-app", tenantId: "a05-tenant", userId: `a05-user-${suffix}` };
+    const workspaceId = `a05-workspace-${suffix}`;
+    const agentId = `a05-agent-${suffix}`;
+    const expectedArtifact = `A05 safe artifact ${suffix}\n`;
+    const volume = dockerWorkspaceVolumeName(workspaceId, { ...owner, scopes: [] });
+    const internalToken = `a05-ipc-${suffix}`;
+    const appToken = `a05-app-${suffix}`;
+    const providerToken = `a05-provider-${suffix}`;
+    const integrationSecret = `a05-integration-${suffix}`;
+    const snapshotKey = Buffer.from(`a05-root-${suffix}`.slice(0, 32).padEnd(32, "x"), "utf8").toString("base64");
+    const sentinels = [internalToken, appToken, providerToken, integrationSecret, snapshotKey];
+    let provider: FixtureProvider | undefined;
+    let manager: PackagedProcess | undefined;
+    let gateway: PackagedProcess | undefined;
+    let testFailure: unknown;
+
+    try {
+      expect(namedVolumeExists(volume)).toBe(false);
+      provider = await FixtureProvider.start(providerToken, expectedArtifact, { modelId: "a05-fixture-model", mode: "a05" });
+      activeProviders.add(provider);
+      const environment = {
+        ...process.env,
+        LITE_HARNESS_CONFIG_VERSION: "1",
+        LITE_HARNESS_DATA_DIR: dataDir,
+        LITE_HARNESS_MANAGER_SOCKET: socketPath,
+        LITE_HARNESS_INTERNAL_TOKEN: internalToken,
+        LITE_HARNESS_APP_TOKEN: appToken,
+        LITE_HARNESS_APP_ID: owner.appId,
+        LITE_HARNESS_TENANT_ID: owner.tenantId,
+        LITE_HARNESS_USER_ID: owner.userId,
+        LITE_HARNESS_HOST: "127.0.0.1",
+        LITE_HARNESS_PROVIDER: "openai-compatible",
+        LITE_HARNESS_PROVIDER_BASE_URL: provider.baseUrl,
+        LITE_HARNESS_PROVIDER_API_KEY: providerToken,
+        LITE_HARNESS_MODEL: "a05-fixture-model",
+        LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION: "0",
+        LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION: "0",
+        LITE_HARNESS_RUNTIME: "docker",
+        LITE_HARNESS_RUNTIME_IMAGE: image,
+        LITE_HARNESS_MODE: "production",
+        LITE_HARNESS_OFFLINE: "true",
+        LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT: "false",
+        LITE_HARNESS_SHUTDOWN_TIMEOUT_MS: "15000",
+        LITE_HARNESS_WEBHOOK_SECRET: integrationSecret,
+        LITE_HARNESS_WEBHOOK_ACCOUNT: "a05-account",
+        LITE_HARNESS_SNAPSHOT_KEY: snapshotKey,
+      };
+
+      manager = PackagedProcess.start("Manager", packagedManager, environment, fixtureRoot);
+      activeProcesses.add(manager);
+      const startedGateway = await startPackagedGateway(environment, fixtureRoot, manager);
+      gateway = startedGateway.gateway;
+      const sdkRoot = join(fixtureRoot, "packed-sdk");
+      mkdirSync(sdkRoot, { recursive: true });
+      extractTarball(packagedSdk, sdkRoot);
+      const sdkEntry = join(sdkRoot, "package", "dist", "index.js");
+      if (!existsSync(sdkEntry)) throw new Error("The packed SDK did not contain dist/index.js");
+      const clientScript = join(fixtureRoot, "secret-client.mjs");
+      writeFileSync(clientScript, secretQualificationClientSource(pathToFileURL(sdkEntry).href), "utf8");
+
+      const clientPromise = runCleanClient(clientScript, fixtureRoot, {
+        A05_BASE_URL: startedGateway.baseUrl,
+        A05_APP_TOKEN: appToken,
+        A05_AGENT_ID: agentId,
+        A05_WORKSPACE_ID: workspaceId,
+      });
+      const observed = await observeContainerSecrets(dataDir, sentinels, clientPromise);
+      const client = await clientPromise;
+      expect(observed.length).toBeGreaterThan(0);
+      for (const snapshot of observed) {
+        assertNoSentinels(snapshot.inspect, sentinels);
+        assertNoSentinels(snapshot.mounts, sentinels);
+        assertNoSentinels(snapshot.logs, sentinels);
+      }
+      expect(client.status).toBe("SUCCEEDED");
+      expect(Buffer.from(client.artifactBase64, "base64").toString("utf8")).toBe(expectedArtifact);
+      expect(provider.failure).toBeUndefined();
+      expect(provider.requests).toHaveLength(4);
+      assertNoSentinels(manager.logs, sentinels);
+      assertNoSentinels(gateway.logs, sentinels);
+      assertNoSentinels(JSON.stringify(client), sentinels);
+      assertNoSentinels(JSON.stringify(provider.requests), sentinels);
+      expect(namedVolumeExists(volume)).toBe(true);
+      expect(readNamedVolumeFile(volume, "output/a05-safe.txt")).toBe(expectedArtifact);
+      await waitForNoManagedContainers(dataDir);
+    } catch (error) {
+      testFailure = provider?.failure ? new AggregateError([error, provider.failure], "A05 fixture provider rejected the qualification") : error;
+    }
+
+    const cleanupFailures: unknown[] = [];
+    for (const process of [gateway, manager]) {
+      if (!process) continue;
+      try {
+        await process.stop();
+        activeProcesses.delete(process);
+      } catch (error) { cleanupFailures.push(error); }
+    }
+    if (provider) {
+      try {
+        await provider.stop();
+        activeProviders.delete(provider);
+      } catch (error) { cleanupFailures.push(error); }
+    }
+    try { await waitForNoManagedContainers(dataDir); } catch (error) { cleanupFailures.push(error); }
+    try { removeNamedVolumeIfPresent(volume); } catch (error) { cleanupFailures.push(error); }
+    if ([gateway, manager].every((process) => !process || process.stopped)) {
+      try { rmSync(fixtureRoot, { recursive: true, force: true }); } catch (error) { cleanupFailures.push(error); }
+    } else {
+      cleanupFailures.push(new Error(`A05 cleanup preserved Manager data at ${fixtureRoot} because a packaged process did not stop`));
+    }
+    if (testFailure && cleanupFailures.length) {
+      throw new AggregateError([testFailure, ...cleanupFailures], "A05 qualification and cleanup both failed");
+    }
+    if (testFailure) throw testFailure;
+    if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "A05 cleanup failed");
+    expect(namedVolumeExists(volume)).toBe(false);
+  }, 180_000);
 });
 
 interface ProviderMessage {
@@ -175,9 +300,15 @@ class FixtureProvider {
     readonly baseUrl: string,
     private readonly token: string,
     private readonly artifactContent: string,
+    private readonly modelId = "a04-fixture-model",
+    private readonly mode: "a04" | "a05" = "a04",
   ) {}
 
-  static async start(token: string, artifactContent: string): Promise<FixtureProvider> {
+  static async start(
+    token: string,
+    artifactContent: string,
+    options: { modelId?: string; mode?: "a04" | "a05" } = {},
+  ): Promise<FixtureProvider> {
     let provider: FixtureProvider;
     const server = createHttpServer((request, response) => void provider.handle(request, response));
     await new Promise<void>((resolveListen, rejectListen) => {
@@ -186,7 +317,10 @@ class FixtureProvider {
     });
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Fixture provider did not bind a TCP port");
-    provider = new FixtureProvider(server, `http://127.0.0.1:${address.port}/v1/`, token, artifactContent);
+    provider = new FixtureProvider(
+      server, `http://127.0.0.1:${address.port}/v1/`, token, artifactContent,
+      options.modelId ?? "a04-fixture-model", options.mode ?? "a04",
+    );
     return provider;
   }
 
@@ -199,13 +333,17 @@ class FixtureProvider {
         throw new Error("Fixture provider authorization was invalid");
       }
       const body = await readProviderRequest(request);
-      if (body.model !== "a04-fixture-model") throw new Error("Fixture provider received an unexpected model");
+      if (body.model !== this.modelId) throw new Error("Fixture provider received an unexpected model");
       const toolNames = body.tools?.map((tool) => tool.function.name) ?? [];
       if (!toolNames.includes("write_file") || !toolNames.includes("artifact_publish")) {
         throw new Error("Fixture provider did not receive the required advertised tools");
       }
       this.requests.push(body);
       const turn = this.requests.length;
+      if (this.mode === "a05") {
+        this.handleA05(body, response, turn);
+        return;
+      }
       if (turn === 1) {
         if (body.messages.some((message) => message.role === "tool")) {
           throw new Error("First provider turn unexpectedly contained a tool result");
@@ -236,6 +374,39 @@ class FixtureProvider {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { message: "fixture provider rejected the request" } }));
     }
+  }
+
+  private handleA05(body: ProviderRequest, response: ServerResponse, turn: number): void {
+    if (turn === 1) {
+      if (body.messages.some((message) => message.role === "tool")) throw new Error("A05 first provider turn unexpectedly contained a tool result");
+      sendSse(response, toolCallChunk("a05-sleep", "shell_exec", {
+        script: "sleep 4; printf 'a05-safe-output\\n'",
+      }));
+      return;
+    }
+    if (turn === 2) {
+      assertToolPair(body.messages, "a05-sleep", "shell_exec", /^a05-safe-output/);
+      sendSse(response, toolCallChunk("a05-write", "write_file", {
+        path: "output/a05-safe.txt", content: this.artifactContent,
+      }));
+      return;
+    }
+    if (turn === 3) {
+      assertToolPair(body.messages, "a05-write", "write_file", "ok");
+      sendSse(response, toolCallChunk("a05-publish", "artifact_publish", {
+        path: "output/a05-safe.txt", mediaType: "text/plain",
+      }));
+      return;
+    }
+    if (turn === 4) {
+      assertToolPair(body.messages, "a05-publish", "artifact_publish", /^Published artifact art_/);
+      sendSse(response, {
+        choices: [{ delta: { content: "Published the safe A05 artifact." }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 24, completion_tokens: 7 },
+      });
+      return;
+    }
+    throw new Error("A05 fixture provider received more than four model turns");
   }
 
   async stop(): Promise<void> {
@@ -370,6 +541,94 @@ process.stdout.write(JSON.stringify({
 `;
 }
 
+function secretQualificationClientSource(sdkUrl: string): string {
+  return `import { LiteHarnessClient } from ${JSON.stringify(sdkUrl)};
+const client = new LiteHarnessClient({ baseUrl: process.env.A05_BASE_URL, token: process.env.A05_APP_TOKEN });
+await client.createAgent({
+  id: process.env.A05_AGENT_ID,
+  name: "A05 container secret qualification agent",
+  instructions: "Run the qualification tools, write the safe artifact, and stop.",
+  modelCapabilities: ["text", "tools"],
+  allowedTools: ["shell_exec", "write_file", "artifact_publish"],
+  defaultBudget: { maxTurns: 5, maxToolCalls: 5, totalTimeoutMs: 120000, modelIdleTimeoutMs: 10000, commandTimeoutMs: 30000 },
+});
+await client.createWorkspace({ id: process.env.A05_WORKSPACE_ID });
+const created = await client.createRun({
+  agent: process.env.A05_AGENT_ID,
+  workspace: process.env.A05_WORKSPACE_ID,
+  input: "Run the A05 container secret qualification.",
+}, "a05-packed-secret-qualification");
+let run;
+for (let attempt = 0; attempt < 1200; attempt += 1) {
+  run = await client.getRun(created.runId);
+  if (["SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"].includes(run.status)) break;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+if (run?.status !== "SUCCEEDED") throw new Error("A05 run did not succeed: " + JSON.stringify(run));
+const events = [];
+for await (const event of client.events(created.runId)) events.push(event);
+const artifactId = events.find((event) => event.type === "artifact.created")?.payload?.artifactId;
+if (typeof artifactId !== "string") throw new Error("A05 run did not emit artifact.created");
+const artifact = await client.downloadArtifact(artifactId);
+process.stdout.write(JSON.stringify({
+  status: run.status,
+  artifactId,
+  artifactBase64: Buffer.from(artifact.data).toString("base64"),
+  requestedTools: events.filter((event) => event.type === "tool.call.requested").map((event) => event.payload.name),
+  completedTools: events.filter((event) => event.type === "tool.call.completed").map((event) => event.payload.ok),
+  eventTypes: events.map((event) => event.type),
+}));
+`;
+}
+
+interface ContainerSecretObservation {
+  id: string;
+  inspect: string;
+  mounts: string;
+  logs: string;
+}
+
+async function observeContainerSecrets(
+  dataDir: string,
+  sentinels: readonly string[],
+  clientPromise: Promise<CleanClientResult>,
+): Promise<ContainerSecretObservation[]> {
+  const observations: ContainerSecretObservation[] = [];
+  const seen = new Set<string>();
+  let clientSettled = false;
+  void clientPromise.then(() => { clientSettled = true; }, () => { clientSettled = true; });
+  const deadline = Date.now() + 90_000;
+  while (!clientSettled && Date.now() < deadline) {
+    for (const id of managedContainerIds(dataDir)) {
+      if (seen.has(id)) continue;
+      let inspect: string;
+      let mounts: string;
+      let logs: string;
+      try {
+        inspect = dockerText(["inspect", id]);
+        const parsed = JSON.parse(inspect) as Array<{ Mounts?: unknown[] }>;
+        mounts = JSON.stringify(parsed[0]?.Mounts ?? []);
+        logs = dockerText(["logs", id]);
+      } catch {
+        // A tool can be reaped between inventory and inspect; the next poll can observe its successor.
+        continue;
+      }
+      assertNoSentinels(inspect, sentinels);
+      assertNoSentinels(mounts, sentinels);
+      assertNoSentinels(logs, sentinels);
+      observations.push({ id, inspect, mounts, logs });
+      seen.add(id);
+    }
+    await delay(100);
+  }
+  if (!clientSettled) throw new Error("A05 client did not finish while observing managed containers");
+  return observations;
+}
+
+function assertNoSentinels(value: string, sentinels: readonly string[]): void {
+  for (const sentinel of sentinels) expect(value).not.toContain(sentinel);
+}
+
 async function readProviderRequest(request: IncomingMessage): Promise<ProviderRequest> {
   const chunks: Buffer[] = [];
   let bytes = 0;
@@ -491,6 +750,13 @@ function managedContainers(dataDir: string): string[] {
   return dockerText([
     "ps", "--all", "--filter", "label=lite-harness.managed=true",
     "--filter", `label=lite-harness.installation=${labelDigest(dataDir)}`, "--format", "{{.Names}}",
+  ]).split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function managedContainerIds(dataDir: string): string[] {
+  return dockerText([
+    "ps", "--all", "--filter", "label=lite-harness.managed=true",
+    "--filter", `label=lite-harness.installation=${labelDigest(dataDir)}`, "--format", "{{.ID}}",
   ]).split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 }
 

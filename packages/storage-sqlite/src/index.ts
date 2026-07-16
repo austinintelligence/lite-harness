@@ -983,9 +983,14 @@ export class SqliteRunStore implements RunStore {
     if (!row) {
       throw new Error(`Run not found: ${params.runId}`);
     }
-    if (isTerminalRunStatus(row.status)) {
+    const detachedSubagentSummary = params.type === "subagent.completed" &&
+      params.status === undefined && params.usage === undefined;
+    if (isTerminalRunStatus(row.status) && !detachedSubagentSummary) {
       throw new Error(`Run ${params.runId} is terminal; cannot append event ${params.type}`);
     }
+    // Detached subagents may finish after their parent run has terminalized.
+    // Their completion is an append-only informational summary; it cannot
+    // change parent status, usage, errors, or attempt state.
     const sequence = row.last_sequence + 1;
     const createdAt = new Date().toISOString();
     const payload = params.payload ?? {};

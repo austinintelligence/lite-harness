@@ -30,6 +30,23 @@ describe("AgentRunner", () => {
     ]);
   });
 
+  it.each([99, 3_600_001, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects an invalid direct command timeout (%s) before executing the tool",
+    async (commandTimeoutMs) => {
+      const runtime = new InMemoryToolRuntime();
+      const execute = vi.spyOn(runtime, "execute");
+
+      await expect(new AgentRunner(new FakeModelGateway(), runtime).run({
+        input: "make the demo file",
+        allowedTools: ["write_file"],
+        workspaceId: "invalid-command-timeout",
+        commandTimeoutMs,
+        onEvent: () => undefined,
+      })).rejects.toThrow(new RangeError("Command timeout must be between 100 and 3600000 milliseconds"));
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
   it("advertises only profile-approved tools and prepends agent instructions", async () => {
     const observed: Array<{ roles: string[]; tools: string[] }> = [];
     let compiledAllowedTools: readonly string[] | undefined;

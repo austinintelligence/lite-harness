@@ -1,3 +1,4 @@
+import { createHook } from "node:async_hooks";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,18 +15,20 @@ afterEach(() => {
 
 describe("disabled optional packs", () => {
   it("A22-DISABLED-ZERO-RESOURCES D24 BD-049-REGRESSION keeps removable capability packs lazy and creates zero resources while disabled", async () => {
-    const disabledPackResourceProbe = () => resourceCounts(process.getActiveResourcesInfo());
-    const before = disabledPackResourceProbe();
+    const resources = trackWatchedResources();
     const parent = mkdtempSync(join(tmpdir(), "lite-disabled-packs-")); roots.push(parent);
     const dataDir = join(parent, "must-not-be-created");
     const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
-    const systems = await configureProductionOptionalSystems({ dataDir, modelId: "model", runtime, environment: {} });
-    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    let systems: Awaited<ReturnType<typeof configureProductionOptionalSystems>> | undefined;
+    try {
+      systems = await configureProductionOptionalSystems({ dataDir, modelId: "model", runtime, environment: {} });
+      await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+      expect(resources.counts()).toEqual({});
+    } finally { resources.stop(); }
     expect(runtime.listTools().map((tool) => tool.name)).toEqual(["read_file", "write_file"]);
-    expect(systems.context).toBeUndefined(); expect(systems.workspaceLifecycle).toBeUndefined(); expect(systems.plugins).toEqual([]);
+    expect(systems?.context).toBeUndefined(); expect(systems?.workspaceLifecycle).toBeUndefined(); expect(systems?.plugins).toEqual([]);
     expect(existsSync(dataDir)).toBe(false);
-    expect(disabledPackResourceProbe()).toEqual(before);
-    await systems.stop();
+    await systems?.stop();
 
     for (const path of ["apps/manager/src/main.ts", "apps/manager/src/optional-systems.ts"]) {
       const source = readFileSync(resolve(path), "utf8");
@@ -39,25 +42,45 @@ describe("disabled optional packs", () => {
   });
 
   it("A22-PRELOADED-OFFLINE-FAKE completes locally without a pull or outbound request and returns to its resource baseline", async () => {
-    const offlineResourceProbe = () => resourceCounts(process.getActiveResourcesInfo());
-    const before = offlineResourceProbe();
+    const resources = trackWatchedResources();
     const fetch = vi.fn(async () => { throw new Error("offline fake run attempted outbound fetch"); });
     vi.stubGlobal("fetch", fetch);
     const runtime = new InMemoryToolRuntime();
-    await new AgentRunner(new FakeModelGateway(), runtime, 4).run({
-      input: "create the offline fixture", workspaceId: "offline-workspace", allowedTools: ["write_file"],
-      onEvent: () => undefined,
-    });
+    try {
+      await new AgentRunner(new FakeModelGateway(), runtime, 4).run({
+        input: "create the offline fixture", workspaceId: "offline-workspace", allowedTools: ["write_file"],
+        onEvent: () => undefined,
+      });
+      await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+      expect(resources.counts()).toEqual({});
+    } finally { resources.stop(); }
     expect(runtime.readFile("offline-workspace", "hello.txt")).toContain("Lite-Harness completed");
     expect(fetch).not.toHaveBeenCalled();
-    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
-    expect(offlineResourceProbe()).toEqual(before);
   });
 });
 
-function resourceCounts(resources: string[]): Record<string, number> {
-  const watched = new Set(["Worker", "MessagePort", "TCPSERVERWRAP", "TCPWRAP", "UDPSocket", "Timeout"]);
-  return resources.filter((resource) => watched.has(resource)).reduce<Record<string, number>>((counts, resource) => {
-    counts[resource] = (counts[resource] ?? 0) + 1; return counts;
-  }, {});
+function trackWatchedResources(): { counts(): Record<string, number>; stop(): void } {
+  const normalizedTypes = new Map([
+    ["WORKER", "Worker"], ["Worker", "Worker"],
+    ["MESSAGEPORT", "MessagePort"], ["MessagePort", "MessagePort"],
+    ["TCPSERVERWRAP", "TCPSERVERWRAP"], ["TCPWRAP", "TCPWRAP"],
+    ["UDPWRAP", "UDPSocket"], ["UDPSocket", "UDPSocket"],
+    ["Timeout", "Timeout"], ["TIMERWRAP", "Timeout"],
+  ]);
+  const live = new Map<number, string>();
+  const hook = createHook({
+    init(asyncId, type) {
+      const normalized = normalizedTypes.get(type);
+      if (normalized) live.set(asyncId, normalized);
+    },
+    destroy(asyncId) { live.delete(asyncId); },
+  });
+  hook.enable();
+  return {
+    counts: () => [...live.values()].reduce<Record<string, number>>((counts, resource) => {
+      counts[resource] = (counts[resource] ?? 0) + 1;
+      return counts;
+    }, {}),
+    stop: () => hook.disable(),
+  };
 }

@@ -198,19 +198,31 @@ export class AgentRunner {
         });
         const assertAuthorized = await params.beforeToolCall?.(call);
         assertAuthorized?.();
+        const commandController = new AbortController();
+        const commandTimeoutMs = params.commandTimeoutMs ?? 300_000;
+        if (!Number.isSafeInteger(commandTimeoutMs) || commandTimeoutMs < 100 || commandTimeoutMs > 3_600_000) {
+          throw new RangeError("Command timeout must be between 100 and 3600000 milliseconds");
+        }
+        const commandTimer = setTimeout(() => commandController.abort(
+          new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+        ), commandTimeoutMs);
+        commandTimer.unref?.();
         const commandSignal = params.signal
-          ? AbortSignal.any([params.signal, AbortSignal.timeout(params.commandTimeoutMs ?? 300_000)])
-          : AbortSignal.timeout(params.commandTimeoutMs ?? 300_000);
-        const result = await this.tools.execute({
-          workspaceId: params.workspaceId,
-          ...(params.runId ? { runId: params.runId } : {}),
-          ...(params.attemptId ? { attemptId: params.attemptId } : {}),
-          ...(params.fencingToken !== undefined ? { fencingToken: params.fencingToken } : {}),
-          allowedTools: Object.freeze([...allowed]),
-          ...(params.principal ? { principal: params.principal } : {}),
-          call,
-          signal: commandSignal,
-        });
+          ? AbortSignal.any([params.signal, commandController.signal])
+          : commandController.signal;
+        let result: ToolResult;
+        try {
+          result = await this.tools.execute({
+            workspaceId: params.workspaceId,
+            ...(params.runId ? { runId: params.runId } : {}),
+            ...(params.attemptId ? { attemptId: params.attemptId } : {}),
+            ...(params.fencingToken !== undefined ? { fencingToken: params.fencingToken } : {}),
+            allowedTools: Object.freeze([...allowed]),
+            ...(params.principal ? { principal: params.principal } : {}),
+            call,
+            signal: commandSignal,
+          });
+        } finally { clearTimeout(commandTimer); }
         const artifactPayload = artifactCreatedPayload(call, result);
         params.onEvent({
           type: "tool.call.completed",

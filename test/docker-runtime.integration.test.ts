@@ -93,7 +93,7 @@ describe("Docker runtime integration", () => {
       };
 
       await new Promise((resolve) => setTimeout(resolve, 100));
-      const secondLease = storeB.acquireWorkspaceLease(workspaceId, "a06-run-b", 10_000);
+      const secondLease = storeB.acquireWorkspaceLease(workspaceId, "a06-run-b", 60_000);
       expect(secondLease).toMatchObject({ ownerRunId: "a06-run-b", fencingToken: 2 });
       expect(storeA.validateWorkspaceLease(firstLease!)).toBe(false);
       expect(storeB.validateWorkspaceLease(secondLease!)).toBe(true);

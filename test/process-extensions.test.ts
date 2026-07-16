@@ -193,7 +193,7 @@ describe("process-backed extensions", () => {
     ), { idleTtlMs: 25 });
     await expect(worker.invoke("echo", { value: 2 })).resolves.toEqual({ action: "echo", input: { value: 2 } });
     expect(worker.active).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitForCondition(() => !worker.active, 2_000, "Timed out waiting for plugin idle cleanup");
     expect(worker.active).toBe(false);
     expect(process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length).toBeLessThanOrEqual(processResourcesBefore);
     await worker.stop();
@@ -419,6 +419,14 @@ async function waitForProcessWrapCount(maximum: number): Promise<void> {
   const deadline = Date.now() + 2_000;
   while (process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length > maximum) {
     if (Date.now() >= deadline) throw new Error("Timed out waiting for plugin process reap");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForCondition(predicate: () => boolean, timeoutMs: number, message: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }

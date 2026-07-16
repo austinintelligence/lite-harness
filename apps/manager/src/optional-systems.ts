@@ -209,7 +209,7 @@ function composeContextCompilers(compilers: readonly AgentContextCompiler[]): Ag
 async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): Promise<McpSupervisor | undefined> {
   const raw = environment.LITE_HARNESS_MCP_SERVERS?.trim();
   if (!raw) return undefined;
-  const { DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } = await import("@lite-harness/mcp");
+  const { BrokeredMcpToolPolicy, DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } = await import("@lite-harness/mcp");
   const entries = parseJson(raw, "LITE_HARNESS_MCP_SERVERS") as unknown;
   if (!Array.isArray(entries)) throw new Error("LITE_HARNESS_MCP_SERVERS must be a JSON array");
   const supervisor = new McpSupervisor();
@@ -219,6 +219,9 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
     const tools = validateAdvertisedTools(server.tools, `MCP server ${id}`);
     const include = optionalStringArray(server.include, "MCP include");
     const exclude = optionalStringArray(server.exclude, "MCP exclude");
+    const advertisedPolicy = new BrokeredMcpToolPolicy({ include, exclude });
+    const advertisedToolNames = new Set(advertisedPolicy.filterTools(tools).map((tool) => tool.name));
+    const advertisedTools = tools.filter((tool) => advertisedToolNames.has(tool.name));
     if (server.transport === "stdio") {
       const image = requiredString(server.image, "MCP image");
       if (!image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error(`MCP server ${id} image must be pinned by sha256 digest`);
@@ -230,7 +233,7 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
       }
       supervisor.register(id, () => new DockerStdioMcpTransport({
         image, command, args, ...(seccompProfile ? { seccompProfile } : {}),
-      }), { include, exclude });
+      }), { include, exclude, expectedTools: advertisedTools });
     } else if (server.transport === "http") {
       const url = requiredString(server.url, "MCP URL");
       const allowedOrigins = optionalStringArray(server.allowedOrigins, "MCP allowed origins") ?? [];
@@ -239,14 +242,14 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
       supervisor.register(id, () => new StreamableHttpMcpTransport({
         url, allowedOrigins,
         ...(authorizationEnvironment ? { authorization: async () => environment[authorizationEnvironment] } : {}),
-      }), { include, exclude });
+      }), { include, exclude, expectedTools: advertisedTools });
     } else {
       throw new Error(`MCP server ${id} transport must be stdio or http`);
     }
-    for (const tool of tools) {
+    for (const tool of advertisedTools) {
       const publicName = tool.alias ?? `mcp_${id}_${tool.name}`.replace(/[^a-z0-9_]/g, "_");
       runtime.register(publicName, async (params) => {
-        if (params.allowedTools && !params.allowedTools.includes(publicName)) throw new Error(`MCP tool was not advertised to this run: ${publicName}`);
+        if (!params.allowedTools?.includes(publicName)) throw new Error(`MCP tool was not advertised to this run: ${publicName}`);
         return {
           callId: params.call.id, ok: true,
           content: JSON.stringify(await supervisor.call(id, tool.name, params.call.arguments, params.signal)),

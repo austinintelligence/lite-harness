@@ -15,6 +15,9 @@ const requiredTestFiles = [
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-mcp.integration.test.ts",
+  "test/mcp-isolation.test.ts",
+  "test/mcp-http.test.ts",
+  "test/optional-systems-manager.test.ts",
   "test/browser-integrations.test.ts",
 ];
 assertLocallyAvailable(toolImage);
@@ -65,7 +68,8 @@ try {
       suite: "required-real-runtime",
       command: "pnpm test:real-runtime",
       report: evidenceReport,
-      regressionIds: ["BD-047-REGRESSION", "BD-055-REGRESSION"],
+      requirementIds: ["A21"],
+      regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-055-REGRESSION"],
       images: [
         imageArtifact("tool-runtime", toolImage),
         imageArtifact("mcp-runtime", mcpImage),
@@ -76,6 +80,8 @@ try {
           dockerToolExecution: true,
           coldWorkspaceRestore: true,
           isolatedMcpTransport: true,
+          mcpContainerFailureChaosReaped: true,
+          mcpGrantCatalogAndHttpIsolation: true,
           managedChromiumSidecar: true,
           browserUploadAndQuarantinedDownload: true,
           everyRequiredRuntimeFileExecuted: true,

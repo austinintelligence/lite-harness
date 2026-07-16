@@ -43,7 +43,7 @@ if (mode !== "rpc-side-effect") lines.on("line", (line) => {
   const response = (result) => send({ ...(message.jsonrpc ? { jsonrpc: "2.0" } : {}), id: message.id, result });
 
   if (message.method === "initialize") {
-    response(mode === "mcp"
+    response(mode.startsWith("mcp")
       ? { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
       : { platformFamily: "test" });
   } else if (message.method === "thread/start") {
@@ -56,12 +56,26 @@ if (mode !== "rpc-side-effect") lines.on("line", (line) => {
       send({ method: "turn/completed", params: { turn: { id: "turn-fixture", status: "completed" } } });
     });
   } else if (message.method === "tools/list") {
-    response({ tools: [
-      { name: "safe.echo", description: "echo", inputSchema: { type: "object" } },
-      { name: "denied.tool", inputSchema: {} },
-    ] });
+    response(mode === "mcp-chaos"
+      ? { tools: [{ name: "poison", inputSchema: { type: "not-a-json-schema-type" } }] }
+      : { tools: [
+          { name: "safe.echo", description: "echo", inputSchema: { type: "object" } },
+          { name: "denied.tool", inputSchema: {} },
+        ] });
   } else if (message.method === "tools/call") {
-    response({ content: [{ type: "text", text: JSON.stringify(message.params.arguments) }] });
+    if (mode === "mcp-chaos" && message.params.name === "server.pid") {
+      response({ pid: process.pid });
+    } else if (mode === "mcp-chaos" && message.params.name === "hang") {
+      // Intentionally never answer; the client must time out and reap this process.
+    } else if (mode === "mcp-chaos" && message.params.name === "crash") {
+      process.exit(23);
+    } else if (mode === "mcp-chaos" && message.params.name === "huge") {
+      response({ content: "x".repeat(2048) });
+    } else if (mode === "mcp-chaos" && message.params.name === "malformed") {
+      process.stdout.write("{not-json}\n");
+    } else {
+      response({ content: [{ type: "text", text: JSON.stringify(message.params.arguments) }] });
+    }
   } else if (message.method === "health") {
     response({ ok: true });
   } else if (message.method === "invoke") {

@@ -1887,13 +1887,43 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/mcp/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/runtime/src/index.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/process-rpc/src/index.ts"
+      ],
+      "testIds": [
+        "A21-STDIO-SANDBOX",
+        "A21-STDIO-CONTAINER-REAP",
+        "A21-POLICY-GRANTS",
+        "A21-SCHEMA-COMPLEXITY-BOUND",
+        "A21-SCHEMA-SEMANTIC-VALIDATION",
+        "A21-FAILURE-ISOLATION",
+        "A21-REAL-PROCESS-ISOLATION",
+        "A21-REAL-CONTAINER-CHAOS",
+        "A21-HTTP-TRANSPORT",
+        "A21-HTTP-OVERSIZE-CANCEL",
+        "A21-CONCURRENT-START-SINGLE-FLIGHT",
+        "A21-CALLER-CANCEL-ISOLATION",
+        "A21-CONCURRENT-IDLE-LIFECYCLE",
+        "A21-HTTP-LIFECYCLE-AUTHORITY",
+        "A21-HTTP-ORIGIN-POLICY",
+        "A21-NORMAL-GRANTS",
+        "A21-MANAGER-SCHEMA-ISOLATION"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

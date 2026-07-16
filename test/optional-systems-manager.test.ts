@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureProductionOptionalSystems } from "../apps/manager/src/optional-systems.js";
 import { AgentRunner, type ModelGateway } from "@lite-harness/agent-runtime";
 import { RunService } from "@lite-harness/control-plane";
@@ -12,7 +12,10 @@ import { BrokeredToolRuntime, InMemoryToolRuntime } from "@lite-harness/runtime"
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("production optional-system composition", () => {
   it("creates no optional tools or resources when every pack is disabled", async () => {
@@ -119,6 +122,141 @@ describe("production optional-system composition", () => {
     expect(JSON.parse(first.content).key).not.toBe(JSON.parse(second.content).key);
     expect(first.content).not.toContain(root);
     await systems.stop();
+  });
+
+  it("A21-NORMAL-GRANTS A21-MANAGER-SCHEMA-ISOLATION exposes only granted MCP tools and quarantines a malicious server catalog", async () => {
+    const root = temporaryRoot();
+    const requests: Array<{ url: string; method: string; headers: Headers; body?: Record<string, unknown> }> = [];
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const pathname = new URL(url).pathname;
+      const method = init?.method ?? "GET";
+      const headers = new Headers(init?.headers);
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+      requests.push({ url, method, headers, ...(body ? { body } : {}) });
+      if (method === "DELETE") return new Response(null, { status: 204 });
+      if (body?.method === "initialize") {
+        return Response.json({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-11-25" } }, {
+          headers: { "mcp-session-id": `manager-${pathname.slice(1)}` },
+        });
+      }
+      if (body?.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (body?.method === "tools/list") {
+        const tools = pathname === "/poison"
+          ? [{ name: "safe", inputSchema: { type: "not-a-json-schema-type" } }]
+          : [{ name: "echo", inputSchema: {
+              type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false,
+            } }];
+        return Response.json({ jsonrpc: "2.0", id: body.id, result: { tools } });
+      }
+      if (body?.method === "tools/call") {
+        return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "echo-ok" }] } });
+      }
+      throw new Error(`Unexpected MCP request: ${String(body?.method ?? method)}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    const objectSchema = { type: "object", additionalProperties: false };
+    const echoSchema = {
+      type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false,
+    };
+    const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
+    const systems = await configureProductionOptionalSystems({
+      dataDir: root, modelId: "mcp-model", runtime,
+      environment: {
+        LITE_HARNESS_MCP_TOKEN: "Bearer fixture-mcp-token",
+        LITE_HARNESS_MCP_SERVERS: JSON.stringify([
+          {
+            transport: "stdio", id: "local", image: `sha256:${"d".repeat(64)}`, command: "must-remain-lazy",
+            include: ["safe", "hidden"], exclude: ["hidden"],
+            tools: [{ name: "safe", inputSchema: objectSchema }, { name: "hidden", inputSchema: objectSchema }],
+          },
+          {
+            transport: "http", id: "remote", url: "https://mcp.example.test/rpc",
+            allowedOrigins: ["https://mcp.example.test"], authorizationEnvironment: "LITE_HARNESS_MCP_TOKEN",
+            include: ["echo", "hidden"], exclude: ["hidden"],
+            tools: [{ name: "echo", inputSchema: echoSchema }, { name: "hidden", inputSchema: objectSchema }],
+          },
+          {
+            transport: "http", id: "poison", url: "https://mcp.example.test/poison",
+            allowedOrigins: ["https://mcp.example.test"], authorizationEnvironment: "LITE_HARNESS_MCP_TOKEN",
+            tools: [{ name: "safe", inputSchema: objectSchema }],
+          },
+        ]),
+      },
+    });
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] };
+    try {
+      const toolNames = runtime.listTools().map((tool) => tool.name);
+      expect(toolNames).toEqual(expect.arrayContaining(["mcp_local_safe", "mcp_remote_echo", "mcp_poison_safe"]));
+      expect(toolNames).not.toEqual(expect.arrayContaining(["mcp_local_hidden", "mcp_remote_hidden"]));
+
+      await expect(runtime.execute(execution("mcp_remote_echo", { value: 1 }, principal))).rejects.toThrow(/not advertised to this run/);
+      await expect(runtime.execute({
+        ...execution("mcp_remote_echo", { value: 1 }, principal), allowedTools: [],
+      })).rejects.toThrow(/not advertised to this run/);
+      expect(fetch).not.toHaveBeenCalled();
+
+      const deniedModel: ModelGateway = {
+        async *streamTurn(params) {
+          expect(params.tools).toBeUndefined();
+          yield { type: "tool.call", call: { id: "denied", name: "mcp_remote_hidden", arguments: {} } };
+          yield { type: "completed", finishReason: "tool_calls" };
+        },
+      };
+      await expect(new AgentRunner(deniedModel, runtime, 1).run({
+        input: "invoke a policy-excluded tool", workspaceId: "workspace", principal,
+        allowedTools: ["mcp_remote_hidden"], onEvent: () => undefined,
+      })).rejects.toThrow(/tool_not_advertised: mcp_remote_hidden/);
+      expect(fetch).not.toHaveBeenCalled();
+
+      const stdioAdvertisementModel: ModelGateway = {
+        async *streamTurn(params) {
+          expect(params.tools?.map((tool) => tool.name)).toEqual(["mcp_local_safe"]);
+          yield { type: "completed", finishReason: "stop" };
+        },
+      };
+      await new AgentRunner(stdioAdvertisementModel, runtime, 1).run({
+        input: "inspect the granted stdio tool", workspaceId: "workspace", principal,
+        allowedTools: ["mcp_local_safe"], onEvent: () => undefined,
+      });
+      expect(fetch).not.toHaveBeenCalled();
+
+      await expect(runtime.execute({
+        ...execution("mcp_poison_safe", {}, principal), allowedTools: ["mcp_poison_safe"],
+      })).rejects.toThrow(/valid JSON Schema/);
+      expect(requests.filter((request) => request.url.endsWith("/poison") && request.body?.method === "tools/call")).toEqual([]);
+
+      let turns = 0;
+      const httpModel: ModelGateway = {
+        async *streamTurn(params) {
+          turns += 1;
+          expect(params.tools?.map((tool) => tool.name)).toEqual(["mcp_remote_echo"]);
+          const result = params.messages.findLast((message) => message.role === "tool");
+          if (!result) {
+            yield { type: "tool.call", call: { id: "echo", name: "mcp_remote_echo", arguments: { value: 42 } } };
+            yield { type: "completed", finishReason: "tool_calls" };
+            return;
+          }
+          expect(JSON.parse(result.content)).toMatchObject({ content: [{ type: "text", text: "echo-ok" }] });
+          yield { type: "completed", finishReason: "stop" };
+        },
+      };
+      await new AgentRunner(httpModel, runtime, 2).run({
+        input: "invoke the granted HTTP tool", workspaceId: "workspace", principal,
+        allowedTools: ["mcp_remote_echo", "mcp_remote_hidden"], onEvent: () => undefined,
+      });
+      expect(turns).toBe(2);
+      expect(requests.map((request) => request.body?.method).filter(Boolean)).toEqual([
+        "initialize", "notifications/initialized", "tools/list",
+        "initialize", "notifications/initialized", "tools/list", "tools/call",
+      ]);
+      expect(requests.every((request) => new URL(request.url).origin === "https://mcp.example.test")).toBe(true);
+      expect(requests.every((request) => request.headers.get("authorization") === "Bearer fixture-mcp-token")).toBe(true);
+    } finally {
+      await systems.stop();
+    }
+    expect(requests.at(-1)?.method).toBe("DELETE");
   });
 
   it("A19-REAL-RUN-LAZY freezes an exact skill digest before the first model turn and loads its immutable body only through skill_view", async () => {

@@ -12,7 +12,7 @@ const temporary = mkdtempSync(resolve(tmpdir(), "lite-optional-report-"));
 const reportPath = resolve(temporary, "vitest.json");
 try {
   const vitest = spawnSync(process.execPath, [
-    resolve(root, "node_modules", "vitest", "vitest.mjs"), "run", "test/optional-systems-manager.test.ts", "test/optional-packs.test.ts", "test/skill-lifecycle.test.ts", "test/mcp-isolation.test.ts", "test/cache-lifecycle.test.ts", "test/workspace-lifecycle.test.ts",
+    resolve(root, "node_modules", "vitest", "vitest.mjs"), "run", "test/optional-systems-manager.test.ts", "test/optional-packs.test.ts", "test/skill-lifecycle.test.ts", "test/mcp-isolation.test.ts", "test/mcp-http.test.ts", "test/cache-lifecycle.test.ts", "test/workspace-lifecycle.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -35,7 +35,7 @@ try {
         "R34-2951",
       ],
       regressionIds: [
-        "BD-038-REGRESSION", "BD-044-REGRESSION", "BD-045-REGRESSION",
+        "BD-038-REGRESSION", "BD-044-REGRESSION",
         "BD-046-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION",
       ],
       claims: {
@@ -44,6 +44,8 @@ try {
           contextCompiledAtRunBoundary: true,
           skillsFrozenAndLazy: true,
           mcpWorkersLazy: true,
+          mcpTransportsGrantAndPolicyFiltered: true,
+          mcpFailureIsolationStopsBrokenServer: true,
           snapshotLifecycleAutomaticAndEncrypted: true,
           cacheKeysOwnerScoped: true,
         },

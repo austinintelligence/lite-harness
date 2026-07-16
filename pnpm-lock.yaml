@@ -272,6 +272,15 @@ importers:
       '@lite-harness/process-rpc':
         specifier: workspace:*
         version: link:../process-rpc
+      '@lite-harness/runtime-docker':
+        specifier: workspace:*
+        version: link:../runtime-docker
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: 3.0.1
+        version: 3.0.1(ajv@8.20.0)
 
   packages/memory-sqlite: {}
 

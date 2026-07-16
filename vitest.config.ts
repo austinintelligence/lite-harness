@@ -13,7 +13,12 @@ const realRuntimeOnlyFiles = [
   "test/docker-mcp.integration.test.ts",
   "test/browser-integrations.test.ts",
 ];
-const realRuntimeFiles = [...deterministicWorkspaceFiles, ...realRuntimeOnlyFiles];
+const mcpAlphaEvidenceFiles = [
+  "test/mcp-isolation.test.ts",
+  "test/mcp-http.test.ts",
+  "test/optional-systems-manager.test.ts",
+];
+const realRuntimeFiles = [...deterministicWorkspaceFiles, ...realRuntimeOnlyFiles, ...mcpAlphaEvidenceFiles];
 const hermesFiles = ["test/hermes-provider.live.test.ts"];
 const realRuntime = process.env.LITE_HARNESS_REAL_RUNTIME_TEST === "1";
 const liveHermes = process.env.LITE_HARNESS_LIVE_MODEL_TEST === "hermes";

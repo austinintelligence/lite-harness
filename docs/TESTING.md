@@ -44,6 +44,12 @@ The branch workflow is safe to run for every pull request and `lite-main` push:
   uploads the current readiness documents as a short-lived artifact.
 - Both runtime Docker contexts are built without publishing.
 
+The A09 workspace durability case includes a real Docker daemon restart and is
+destructive to a local Docker Desktop session. It is fail-closed by default;
+only an isolated evidence runner should set
+`LITE_HARNESS_ALLOW_DOCKER_RESTART=1`. The required CI runtime job sets that
+variable explicitly; ordinary local commands never restart Docker implicitly.
+
 GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from
 hosted CI and must be run locally with `pnpm test:hermes`; their evidence belongs

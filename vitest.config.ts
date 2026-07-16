@@ -10,6 +10,7 @@ const realRuntimeOnlyFiles = [
   "test/required-real-runtime.test.ts",
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
+  "test/docker-workspace-restart.integration.test.ts",
   "test/docker-plugin.integration.test.ts",
   "test/docker-plugin-manager.integration.test.ts",
   "test/docker-mcp.integration.test.ts",

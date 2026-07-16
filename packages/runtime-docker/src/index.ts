@@ -352,18 +352,21 @@ export class DockerToolRuntime implements ToolRuntime {
     if (create.code !== 0) {
       throw new Error(`Could not create workspace volume: ${create.stderr}`);
     }
+    // Root ownership is the trusted initialization commit: untrusted tool containers run as
+    // 1000:1000 with every capability dropped, and maintenance writes the root owner last.
+    // Workspace content (including the compatibility marker) is intentionally not trusted.
     const initialize = await this.#run(
       [
         "run",
         "--pull=never",
         "--rm",
-        ...dockerMaintenanceHardeningArgs(this.config, { capabilities: ["CHOWN", "FOWNER"] }),
-        "--volume",
-        `${volume}:/workspace`,
+        ...dockerMaintenanceHardeningArgs(this.config, { capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"], user: "0:0" }),
+        "--mount",
+        `type=volume,src=${volume},dst=/workspace,volume-nocopy`,
         this.config.image,
         "sh",
         "-c",
-        "touch /workspace/.lite-harness-workspace && chown -R 1000:1000 /workspace && chmod 0700 /workspace",
+        "if [ \"$(stat -c '%u:%g' /workspace)\" != '1000:1000' ]; then rm -f -- /workspace/.lite-harness-workspace && touch /workspace/.lite-harness-workspace && find /workspace -mindepth 1 -exec chown -h 1000:1000 {} + && chmod 0700 /workspace && chown 1000:1000 /workspace; fi",
       ],
       { signal },
     );

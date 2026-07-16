@@ -15,6 +15,7 @@ const requiredTestFiles = [
   "test/workspace-lifecycle.test.ts",
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
+  "test/docker-workspace-restart.integration.test.ts",
   "test/docker-plugin.integration.test.ts",
   "test/docker-plugin-manager.integration.test.ts",
   "test/plugin-lifecycle-manager.test.ts",
@@ -87,7 +88,7 @@ try {
       suite: "required-real-runtime",
       command: "pnpm test:real-runtime",
       report: evidenceReport,
-      requirementIds: ["A18", "A20", "A21", "A22"],
+      requirementIds: ["A09", "A18", "A20", "A21", "A22"],
       regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION", "BD-055-REGRESSION"],
       images: [
         imageArtifact("tool-runtime", toolImage),
@@ -97,6 +98,7 @@ try {
       claims: {
         boundaries: {
           dockerToolExecution: true,
+          workspaceSurvivesContainerLiteAndDockerRestart: true,
           coldWorkspaceRestore: true,
           isolatedMcpTransport: true,
           mcpContainerFailureChaosReaped: true,

@@ -29,12 +29,12 @@ export const candidateEvidenceCatalog = Object.freeze([
 ]);
 
 export const requiredExternalGateAuthorities = Object.freeze({
-  linuxRootful: gate("linuxRootful", "evidence/external/linux-rootful.json", "external-linux-rootful", "linux", "x64"),
-  linuxRootless: gate("linuxRootless", "evidence/external/linux-rootless.json", "external-linux-rootless", "linux", "x64"),
-  linuxArm64: gate("linuxArm64", "evidence/external/linux-arm64.json", "external-linux-arm64", "linux", "arm64"),
-  macosIntelDockerDesktop: gate("macosIntelDockerDesktop", "evidence/external/macos-intel.json", "external-macos-intel", "darwin", "x64"),
-  macosAppleSiliconDockerDesktop: gate("macosAppleSiliconDockerDesktop", "evidence/external/macos-apple-silicon.json", "external-macos-apple-silicon", "darwin", "arm64"),
-  windows11DockerDesktopWsl2: gate("windows11DockerDesktopWsl2", "evidence/external/windows-wsl2.json", "external-windows-wsl2", "win32", "x64"),
+  linuxRootful: gate("linuxRootful", "evidence/external/linux-rootful.json", "rootless-product-evidence", "linux", "x64"),
+  linuxRootless: gate("linuxRootless", "evidence/external/linux-rootless.json", "rootless-product-evidence", "linux", "x64"),
+  linuxArm64: gate("linuxArm64", "evidence/external/linux-arm64.json", "rootless-product-evidence", "linux", "arm64"),
+  macosIntelDockerDesktop: gate("macosIntelDockerDesktop", "evidence/external/macos-intel.json", "rootless-product-evidence", "darwin", "x64"),
+  macosAppleSiliconDockerDesktop: gate("macosAppleSiliconDockerDesktop", "evidence/external/macos-apple-silicon.json", "rootless-product-evidence", "darwin", "arm64"),
+  windows11DockerDesktopWsl2: gate("windows11DockerDesktopWsl2", "evidence/external/windows-wsl2.json", "rootless-product-evidence", "win32", "x64"),
   openaiLive: gate("openaiLive", "evidence/external/openai-live.json", "external-openai-live", null, null),
   anthropicLive: gate("anthropicLive", "evidence/external/anthropic-live.json", "external-anthropic-live", null, null),
   codexLive: gate("codexLive", "evidence/external/codex-live.json", "external-codex-live", null, null),

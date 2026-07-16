@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { requiredExternalGateAuthorities } from "../scripts/assemble-ci-evidence.mjs";
 import { externalPlatformGates, externalPlatformGateNames, validateExternalPlatform } from "../scripts/evidence-external.mjs";
 
 describe("external platform evidence producer", () => {
@@ -12,6 +13,7 @@ describe("external platform evidence producer", () => {
     ]);
     for (const gate of externalPlatformGateNames) {
       expect(externalPlatformGates[gate].runnerLabels.length).toBeGreaterThanOrEqual(4);
+      expect(requiredExternalGateAuthorities[gate].ciJob).toBe("rootless-product-evidence");
     }
   });
 

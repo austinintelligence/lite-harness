@@ -4,7 +4,13 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from lite_harness import LiteHarnessClient, LiteHarnessError
+from lite_harness import (
+    API_OPERATIONS,
+    AUTHENTICATED_OPERATION_METHODS,
+    AUTHENTICATED_OPERATION_ROUTES,
+    LiteHarnessClient,
+    LiteHarnessError,
+)
 
 
 class Response(io.BytesIO):
@@ -16,6 +22,65 @@ class Response(io.BytesIO):
 
 
 class ClientTests(unittest.TestCase):
+    def test_authenticated_openapi_operation_inventory_has_method_path_and_verb_coverage(self):
+        expected = tuple(
+            (method, path, operation_id, AUTHENTICATED_OPERATION_METHODS[operation_id])
+            for method, path, operation_id in API_OPERATIONS
+            if path.startswith("/v1/")
+        )
+        self.assertEqual(AUTHENTICATED_OPERATION_ROUTES, expected)
+        self.assertEqual(len(expected), 20)
+        for _method, _path, _operation_id, method_name in expected:
+            self.assertTrue(callable(getattr(LiteHarnessClient, method_name, None)), method_name)
+
+    @patch("lite_harness.client.urlopen")
+    def test_resource_and_artifact_methods_use_the_generated_routes(self, open_url):
+        responses = [
+            {"id": "session-1"},
+            {"messages": []},
+            {"id": "artifact-1"},
+            {"record": {"id": "artifact-1"}, "dataBase64": ""},
+            {"id": "agent-1"},
+            {"id": "agent-1"},
+            {"agents": []},
+            {"id": "workspace-1"},
+            {"id": "workspace-1"},
+            {"workspaces": []},
+        ]
+        open_url.side_effect = [Response(json.dumps(value).encode()) for value in responses]
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        client.get_session("session-1")
+        client.get_session_messages("session-1")
+        client.publish_artifact("run-1", path="output.txt", media_type="text/plain")
+        client.download_artifact("artifact-1")
+        client.create_agent(name="coder", agent_id="agent-1")
+        client.get_agent("agent-1")
+        client.list_agents()
+        client.create_workspace(workspace_id="workspace-1", mode="managed")
+        client.get_workspace("workspace-1")
+        client.list_workspaces()
+
+        requests = [call.args[0] for call in open_url.call_args_list]
+        self.assertEqual(
+            [(request.method, request.full_url) for request in requests],
+            [
+                ("GET", "http://127.0.0.1:3210/v1/sessions/session-1"),
+                ("GET", "http://127.0.0.1:3210/v1/sessions/session-1/messages"),
+                ("POST", "http://127.0.0.1:3210/v1/runs/run-1/artifacts"),
+                ("GET", "http://127.0.0.1:3210/v1/artifacts/artifact-1"),
+                ("POST", "http://127.0.0.1:3210/v1/agents"),
+                ("GET", "http://127.0.0.1:3210/v1/agents/agent-1"),
+                ("GET", "http://127.0.0.1:3210/v1/agents"),
+                ("POST", "http://127.0.0.1:3210/v1/workspaces"),
+                ("GET", "http://127.0.0.1:3210/v1/workspaces/workspace-1"),
+                ("GET", "http://127.0.0.1:3210/v1/workspaces"),
+            ],
+        )
+        self.assertEqual(json.loads(requests[2].data), {"path": "output.txt", "mediaType": "text/plain"})
+        self.assertEqual(json.loads(requests[4].data), {"name": "coder", "id": "agent-1"})
+        self.assertEqual(json.loads(requests[7].data), {"id": "workspace-1", "mode": "managed"})
+
     @patch("lite_harness.client.urlopen")
     def test_create_run_sends_credential_and_idempotency_without_identity_headers(self, open_url):
         open_url.return_value = Response(json.dumps({"runId": "run_1", "status": "ACCEPTED"}).encode())

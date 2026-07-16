@@ -163,7 +163,13 @@ async function expectHttpError(action, status, code) {
     execFileSync(python, ["-m", "pip", "install", "--no-deps", "--no-index", wheel], { cwd: fixture, stdio: "pipe" });
     const pythonSmoke = resolve(fixture, "smoke.py");
     writeFileSync(pythonSmoke, `import json, sys, time
-from lite_harness import LiteHarnessClient
+from lite_harness import API_OPERATIONS, AUTHENTICATED_OPERATION_METHODS, AUTHENTICATED_OPERATION_ROUTES, LiteHarnessClient
+expected = tuple((method, path, operation_id, AUTHENTICATED_OPERATION_METHODS[operation_id]) for method, path, operation_id in API_OPERATIONS if path.startswith("/v1/"))
+if AUTHENTICATED_OPERATION_ROUTES != expected or len(expected) != 20:
+    raise RuntimeError("Packaged Python SDK OpenAPI operation coverage drifted")
+for _operation_id, method_name in AUTHENTICATED_OPERATION_METHODS.items():
+    if not callable(getattr(LiteHarnessClient, method_name, None)):
+        raise RuntimeError("Packaged Python SDK operation is missing: " + method_name)
 client = LiteHarnessClient(sys.argv[1], "artifact-app-token")
 created = client.create_run(agent="coder", workspace="python-packaged-workspace", input="create the Python fixture", idempotency_key="python-packaged-ipc-smoke")
 run = None

@@ -47,7 +47,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A17 Routing and usage | blocked | traceability-not-yet-established |
 | A18 Plugin lifecycle | blocked | current-evidence-stale |
 | A19 Skills | blocked | current-evidence-stale |
-| A20 Managed browser | blocked | traceability-not-yet-established |
+| A20 Managed browser | blocked | current-evidence-stale |
 | A21 MCP | blocked | current-evidence-stale |
 | A22 Disabled packs, offline, and scale-to-zero | blocked | current-evidence-stale |
 

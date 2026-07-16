@@ -1893,13 +1893,28 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/browser-capability.ts",
+        "apps/manager/src/main.ts",
+        "packages/browser/src/index.ts",
+        "packages/runtime/src/index.ts",
+        "packages/workspace/src/index.ts",
+        "docker/browser-runtime/server.mjs",
+        "docker/browser-runtime/proxy.mjs"
+      ],
+      "testIds": [
+        "A20-RECORDED-REAL-TASK"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

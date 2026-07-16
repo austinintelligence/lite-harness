@@ -17,6 +17,7 @@ const requiredTestFiles = [
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-plugin.integration.test.ts",
   "test/docker-plugin-manager.integration.test.ts",
+  "test/plugin-lifecycle-manager.test.ts",
   "test/docker-mcp.integration.test.ts",
   "test/mcp-isolation.test.ts",
   "test/mcp-http.test.ts",

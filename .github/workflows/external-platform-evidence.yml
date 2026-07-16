@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       gate:
-        description: "Declared external platform lane to qualify"
+        description: "Declared external platform lane to qualify, or all lanes for one candidate"
         required: true
         type: choice
         options:
+          - all
           - linuxRootful
           - linuxRootless
           - linuxArm64
@@ -27,7 +28,7 @@ permissions:
 jobs:
   rootless-product-evidence:
     name: ${{ matrix.gate }}
-    if: ${{ inputs.gate == matrix.gate }}
+    if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
     strategy:
       fail-fast: false
       matrix:

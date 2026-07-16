@@ -57,9 +57,11 @@ validates the declared OS, architecture, Docker mode, and Docker Desktop
 identity, then builds immutable runtime images before invoking the real suite.
 The restart opt-in is scoped to that CI child process; do not run this producer
 locally while preserving a Docker Desktop session. To attach a lane to the
-candidate release fan-in, manually dispatch `CI` with its
-`external_platform_gate` input; the reusable workflow artifact is reconstructed
-under `evidence/external/` before aggregation.
+candidate release fan-in, manually dispatch `CI` with
+`external_platform_gate=all`; this runs every declared platform matrix entry in
+one candidate and reconstructs each reusable-workflow artifact under
+`evidence/external/` before aggregation. A single lane may still be dispatched
+for isolated diagnosis, but it cannot qualify the cross-platform gate.
 
 Provider acceptance is a separate protected lane. The pinned
 `.github/workflows/external-provider-evidence.yml` workflow runs only on the
@@ -71,9 +73,10 @@ boolean results, model identifiers, bounded error codes, and redacted policy
 evidence; credentials, prompts, responses, and runner paths are never written.
 The provider workflow is CI-only and intentionally fails when its model,
 credential, pricing, or delegated-runtime prerequisites are absent. Manually
-dispatch `CI` with `external_provider_gate` to attach one protected provider
-lane to the candidate fan-in. This does not make a provider or the release
-alpha until all three required lanes have current pass evidence.
+dispatch `CI` with `external_provider_gate=all` to attach all three protected
+provider lanes to the same candidate fan-in. A single lane may still be
+dispatched for isolated diagnosis, but it cannot qualify provider conformance
+or the release alpha by itself.
 
 GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from

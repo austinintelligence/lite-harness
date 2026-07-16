@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       gate:
-        description: "Declared provider lane to qualify with owner-supplied credentials"
+        description: "Declared provider lane to qualify with owner-supplied credentials, or all lanes for one candidate"
         required: true
         type: choice
         options:
+          - all
           - openaiLive
           - anthropicLive
           - codexLive
@@ -24,7 +25,7 @@ permissions:
 jobs:
   provider-live-evidence:
     name: ${{ matrix.gate }}
-    if: ${{ inputs.gate == matrix.gate }}
+    if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
     strategy:
       fail-fast: false
       matrix:

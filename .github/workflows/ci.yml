@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       external_platform_gate:
-        description: "Optional external platform lane to run on a declared self-hosted runner"
+        description: "Optional external platform lane, or all lanes for one candidate"
         required: false
         default: ""
         type: string
       external_provider_gate:
-        description: "Optional protected provider lane to run with owner-supplied credentials"
+        description: "Optional protected provider lane, or all lanes for one candidate"
         required: false
         default: ""
         type: string

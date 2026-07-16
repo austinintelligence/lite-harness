@@ -43,6 +43,8 @@ describe("external platform evidence producer", () => {
     expect(workflow).toContain("evidencePath: evidence/external/linux-rootful.json");
     expect(workflow).toContain("--evidence ${{ matrix.evidencePath }}");
     expect(workflow).toContain("workflow_call:");
+    expect(workflow).toContain("- all");
+    expect(workflow).toContain("inputs.gate == 'all' || inputs.gate == matrix.gate");
     expect(ciWorkflow).toContain("external_platform_gate");
     expect(ciWorkflow).toContain("uses: ./.github/workflows/external-platform-evidence.yml");
     expect(ciWorkflow).toContain("--include-external");

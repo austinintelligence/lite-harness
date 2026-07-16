@@ -127,8 +127,14 @@ if (!ciWorkflow.includes("LITE_HARNESS_ALLOW_DOCKER_RESTART: \"1\"")) {
 for (const token of ["rootless-product-evidence:", "workflow_call:", "pnpm evidence:external --gate", "linuxRootless", "macosAppleSiliconDockerDesktop", "windows11DockerDesktopWsl2"]) {
   if (!externalWorkflow.includes(token)) failures.push(`external platform evidence workflow is missing: ${token}`);
 }
+if (!externalWorkflow.includes("- all") || !externalWorkflow.includes("inputs.gate == 'all' || inputs.gate == matrix.gate")) {
+  failures.push("external platform evidence workflow cannot run the complete matrix in one candidate");
+}
 for (const token of ["provider-live-evidence:", "workflow_call:", "pnpm evidence:provider --gate", "provider-live", "LITE_HARNESS_OPENAI_API_KEY", "LITE_HARNESS_ANTHROPIC_API_KEY"]) {
   if (!providerWorkflow.includes(token)) failures.push(`external provider evidence workflow is missing: ${token}`);
+}
+if (!providerWorkflow.includes("- all") || !providerWorkflow.includes("inputs.gate == 'all' || inputs.gate == matrix.gate")) {
+  failures.push("external provider evidence workflow cannot run the complete matrix in one candidate");
 }
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {

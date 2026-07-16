@@ -1,7 +1,7 @@
 import type { InternalPrincipal, RunEventType, ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
 import { ProviderError, type ModelCapability, type ModelEvent, type ModelGateway, type ModelMessage } from "@lite-harness/provider-core";
-import type { ToolRuntime } from "@lite-harness/runtime";
+import { authorizedWorkspaceArtifactPath, type ToolRuntime } from "@lite-harness/runtime";
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
 
@@ -196,6 +196,7 @@ export class AgentRunner {
           call,
           signal: commandSignal,
         });
+        const artifactPayload = artifactCreatedPayload(call, result);
         params.onEvent({
           type: "tool.call.completed",
           payload: {
@@ -205,6 +206,7 @@ export class AgentRunner {
             ...(result.metadata ? { metadata: result.metadata } : {}),
           },
         });
+        if (artifactPayload) params.onEvent({ type: "artifact.created", payload: artifactPayload });
         messages.push({ role: "tool", content: result.content, toolCallId: result.callId });
       }
 
@@ -218,6 +220,28 @@ export class AgentRunner {
 
     throw new Error(`Agent exceeded the ${turnLimit}-turn limit`);
   }
+}
+
+function artifactCreatedPayload(call: ToolCall, result: ToolResult): Record<string, unknown> | undefined {
+  if (call.name !== "artifact_publish" || !result.ok) return undefined;
+  const artifactId = result.metadata?.artifactId;
+  const path = result.metadata?.path;
+  const sha256 = result.metadata?.sha256;
+  const sizeBytes = result.metadata?.sizeBytes;
+  let validPath = false;
+  if (typeof path === "string") {
+    try {
+      validPath = authorizedWorkspaceArtifactPath(path) === path;
+    } catch {
+      validPath = false;
+    }
+  }
+  if (typeof artifactId !== "string" || !/^art_[a-f0-9]{32}$/.test(artifactId) || !validPath ||
+      typeof sha256 !== "string" || !/^[a-f0-9]{64}$/.test(sha256) ||
+      typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
+    throw new Error("artifact_publish returned invalid artifact metadata");
+  }
+  return { artifactId, path, sha256, sizeBytes };
 }
 
 export class ToolArgumentValidationError extends Error {
@@ -295,6 +319,9 @@ export class FakeModelGateway implements ModelGateway {
   }): AsyncIterable<ModelEvent> {
     params.signal?.throwIfAborted();
     const hasToolResult = params.messages.some((message) => message.role === "tool");
+    const completedToolNames = new Set(params.messages.flatMap((message) =>
+      message.role === "assistant" ? (message.toolCalls ?? []).map((call) => call.name) : []));
+    const canPublishArtifact = params.tools?.some((tool) => tool.name === "artifact_publish") ?? false;
 
     if (!hasToolResult) {
       yield { type: "text.delta", delta: "I will create the requested file. " };
@@ -310,6 +337,21 @@ export class FakeModelGateway implements ModelGateway {
         },
       };
       yield { type: "usage", inputTokens: 12, outputTokens: 8, costUsd: 0 };
+      yield { type: "completed", finishReason: "tool_calls" };
+      return;
+    }
+
+    if (canPublishArtifact && completedToolNames.has("write_file") && !completedToolNames.has("artifact_publish")) {
+      yield { type: "text.delta", delta: "I will publish the completed file. " };
+      yield {
+        type: "tool.call",
+        call: {
+          id: createId("tool"),
+          name: "artifact_publish",
+          arguments: { path: "hello.txt", mediaType: "text/plain" },
+        },
+      };
+      yield { type: "usage", inputTokens: 18, outputTokens: 8, costUsd: 0 };
       yield { type: "completed", finishReason: "tool_calls" };
       return;
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
-import { InMemoryToolRuntime } from "@lite-harness/runtime";
+import { ArtifactPublishingRuntime, InMemoryToolRuntime } from "@lite-harness/runtime";
+import type { ToolRuntime } from "@lite-harness/runtime";
 import type { ModelEvent, ModelGateway } from "@lite-harness/provider-core";
 
 describe("AgentRunner", () => {
@@ -46,6 +47,161 @@ describe("AgentRunner", () => {
     });
     expect(observed).toEqual([{ roles: ["system", "user"], tools: ["read_file"] }]);
     expect(compiledAllowedTools).toEqual(["read_file"]);
+  });
+
+  it("BD-035-REGRESSION exposes a fenced agent-created artifact ID through the durable event stream", async () => {
+    const workspace = new InMemoryToolRuntime();
+    let fenceChecks = 0;
+    const runtime = new ArtifactPublishingRuntime(workspace, {
+      publish: (params) => ({
+        id: "art_00000000000000000000000000000000",
+        runId: params.runId,
+        appId: params.principal.appId,
+        tenantId: params.principal.tenantId,
+        userId: params.principal.userId,
+        workspaceId: params.workspaceId,
+        path: params.path,
+        mediaType: params.mediaType,
+        sizeBytes: params.data.length,
+        sha256: "a".repeat(64),
+        createdAt: new Date().toISOString(),
+      }),
+    }, undefined, (params) => {
+      fenceChecks += 1;
+      return params.runId === "run-artifact" && params.attemptId === "attempt-artifact" && params.fencingToken === 1;
+    });
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
+    await new AgentRunner(new FakeModelGateway(), runtime).run({
+      input: "create and publish the fixture",
+      allowedTools: ["write_file", "artifact_publish"],
+      workspaceId: "artifact-workspace",
+      runId: "run-artifact",
+      attemptId: "attempt-artifact",
+      fencingToken: 1,
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(events.find((event) => event.type === "artifact.created")).toEqual({
+      type: "artifact.created",
+      payload: {
+        artifactId: "art_00000000000000000000000000000000",
+        path: "hello.txt",
+        sha256: "a".repeat(64),
+        sizeBytes: expect.any(Number),
+      },
+    });
+    expect(fenceChecks).toBe(2);
+    const eventTypes = events.map(({ type }) => type);
+    expect(eventTypes[eventTypes.indexOf("artifact.created") - 1]).toBe("tool.call.completed");
+  });
+
+  it("BD-035-REGRESSION ignores artifact metadata spoofed by a non-artifact tool", async () => {
+    const definitions = new InMemoryToolRuntime().listTools();
+    const runtime: ToolRuntime = {
+      listTools: () => definitions,
+      execute: async ({ call }) => ({
+        callId: call.id,
+        ok: true,
+        content: "spoofed metadata",
+        metadata: {
+          artifactId: "art_00000000000000000000000000000000",
+          path: "hello.txt",
+          sha256: "a".repeat(64),
+          sizeBytes: 1,
+        },
+      }),
+    };
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
+    await new AgentRunner(new FakeModelGateway(), runtime).run({
+      input: "attempt to spoof an artifact",
+      allowedTools: ["write_file"],
+      workspaceId: "spoof-workspace",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(events.some(({ type }) => type === "artifact.created")).toBe(false);
+  });
+
+  it("BD-035-REGRESSION rejects malformed artifact publication metadata without emitting an event", async () => {
+    const workspace = new InMemoryToolRuntime();
+    const runtime = new ArtifactPublishingRuntime(workspace, {
+      publish: (params) => ({
+        id: "art_invalid",
+        runId: params.runId,
+        appId: params.principal.appId,
+        tenantId: params.principal.tenantId,
+        userId: params.principal.userId,
+        workspaceId: params.workspaceId,
+        path: params.path,
+        mediaType: params.mediaType,
+        sizeBytes: params.data.length,
+        sha256: "a".repeat(64),
+        createdAt: new Date().toISOString(),
+      }),
+    }, undefined, () => true);
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
+    await expect(new AgentRunner(new FakeModelGateway(), runtime).run({
+      input: "publish malformed metadata",
+      allowedTools: ["write_file", "artifact_publish"],
+      workspaceId: "invalid-artifact-workspace",
+      runId: "run-invalid-artifact",
+      attemptId: "attempt-invalid-artifact",
+      fencingToken: 1,
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      onEvent: (event) => events.push(event),
+    })).rejects.toThrow(/invalid artifact metadata/);
+    expect(events.some(({ type }) => type === "artifact.created")).toBe(false);
+  });
+
+  it("BD-035-REGRESSION suppresses publication and artifact events after losing the workspace fence", async () => {
+    const workspace = new InMemoryToolRuntime();
+    let active = true;
+    let published = false;
+    const inner: ToolRuntime = {
+      listTools: () => workspace.listTools(),
+      execute: async (params) => await workspace.execute(params),
+      readWorkspaceArtifact: async (params) => {
+        const data = await workspace.readWorkspaceArtifact(params);
+        active = false;
+        return data;
+      },
+    };
+    const runtime = new ArtifactPublishingRuntime(inner, {
+      publish: (params) => {
+        published = true;
+        return {
+          id: "art_00000000000000000000000000000001",
+          runId: params.runId,
+          appId: params.principal.appId,
+          tenantId: params.principal.tenantId,
+          userId: params.principal.userId,
+          workspaceId: params.workspaceId,
+          path: params.path,
+          mediaType: params.mediaType,
+          sizeBytes: params.data.length,
+          sha256: "b".repeat(64),
+          createdAt: new Date().toISOString(),
+        };
+      },
+    }, undefined, (params) => active && params.fencingToken === 1);
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
+    await expect(new AgentRunner(new FakeModelGateway(), runtime).run({
+      input: "lose the fence while publishing",
+      allowedTools: ["write_file", "artifact_publish"],
+      workspaceId: "lost-fence-workspace",
+      runId: "run-lost-fence",
+      attemptId: "attempt-lost-fence",
+      fencingToken: 1,
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      onEvent: (event) => events.push(event),
+    })).rejects.toThrow(/fence changed/i);
+    expect(published).toBe(false);
+    expect(events.some(({ type }) => type === "artifact.created")).toBe(false);
   });
 
   it("BD-003-REGRESSION does not let non-cooperative iterator cleanup defeat the model deadline", async () => {

@@ -151,7 +151,8 @@
       },
       "fixCommits": [
         "a9ed59688fd87b796c7c5468ba94631569947ab7",
-        "295801c844726ed8e19074dc0e702af9382c96c1"
+        "295801c844726ed8e19074dc0e702af9382c96c1",
+        "f96c344428cb191b0448ac682897e4abb0d1bd53"
       ],
       "blockers": [
         "current-regression-evidence-missing"
@@ -799,7 +800,8 @@
       "fixCommits": [
         "928060c4caa12fd4edb0826b1e21fed79b33fb6f",
         "966fe8638bbd2c4be341db886fde7b5e7c1b0e8d",
-        "295801c844726ed8e19074dc0e702af9382c96c1"
+        "295801c844726ed8e19074dc0e702af9382c96c1",
+        "f96c344428cb191b0448ac682897e4abb0d1bd53"
       ],
       "blockers": [
         "current-regression-evidence-missing"

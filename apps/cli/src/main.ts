@@ -88,9 +88,7 @@ if (command === "doctor") {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   const requiredChecks = [
     report.node.ok,
-    docker.available,
-    docker.serverOs === "linux",
-    runtime === "fake" || Boolean(docker.activeContext),
+    !dockerRequired(mode, runtime) || (docker.available && docker.serverOs === "linux" && Boolean(docker.activeContext)),
     dataDirectoryWritable,
     report.disk.ok,
     database.ok,
@@ -322,8 +320,8 @@ function doctorRemediation(report: {
   const remediation: Array<{ check: string; remediation: string }> = [];
   if (!report.node.ok) remediation.push({ check: "node", remediation: "Install the pinned Node 24 runtime." });
   if (!report.configuration.ok) remediation.push({ check: "configuration", remediation: "Fix the reported LITE_HARNESS_* configuration and rerun doctor." });
-  if (!report.docker.available || report.docker.serverOs !== "linux" ||
-      (report.configuration.runtime === "docker" && !report.docker.activeContext)) {
+  if (dockerRequired(report.configuration.mode, report.configuration.runtime) &&
+      (!report.docker.available || report.docker.serverOs !== "linux" || !report.docker.activeContext)) {
     remediation.push({ check: "docker", remediation: "Start a Linux Docker engine and verify the active context and server version." });
   }
   if (!report.dataDirectory.ok) remediation.push({ check: "dataDirectory", remediation: "Grant the service account read/write access to the data directory." });
@@ -334,6 +332,10 @@ function doctorRemediation(report: {
   if (!report.runtimeImage.ok) remediation.push({ check: "runtimeImage", remediation: "Install the exact digest-pinned runtime image." });
   if (!report.gateway.ok) remediation.push({ check: "gateway", remediation: "Start Gateway and Manager locally, then verify loopback /readyz health." });
   return remediation;
+}
+
+function dockerRequired(mode: string | undefined, runtime: string | undefined): boolean {
+  return mode === "production" || runtime === "docker";
 }
 
 async function inspectGatewayReadiness(url: string | undefined, required: boolean): Promise<{ ok: boolean; configured: boolean; status?: number; error?: string }> {

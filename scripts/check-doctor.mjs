@@ -43,9 +43,13 @@ try {
     LITE_HARNESS_PROVIDER_API_KEY: "doctor-placeholder-key",
   }, false, ["snapshotKey"]));
   cases.push(await runCase("missing-docker", {
+    LITE_HARNESS_RUNTIME: "docker",
+    LITE_HARNESS_RUNTIME_IMAGE: `sha256:${"b".repeat(64)}`,
     LITE_HARNESS_DOCTOR_DOCKER_COMMAND: join(temporary, "docker-does-not-exist"),
   }, false, ["docker"]));
   cases.push(await runCase("wrong-docker-engine", {
+    LITE_HARNESS_RUNTIME: "docker",
+    LITE_HARNESS_RUNTIME_IMAGE: `sha256:${"c".repeat(64)}`,
     LITE_HARNESS_DOCTOR_DOCKER_COMMAND: badDockerCommand,
   }, false, ["docker"]));
   cases.push(await runCase("missing-active-docker-context", {
@@ -228,7 +232,8 @@ function healthyGatewayReadiness() {
 }
 
 function requiredReportHealth(report) {
-  return Boolean(report.node?.ok && report.docker?.available && report.dataDirectory?.ok && report.disk?.ok &&
+  const dockerRequired = report.configuration?.mode === "production" || report.configuration?.runtime === "docker";
+  return Boolean(report.node?.ok && (!dockerRequired || (report.docker?.available && report.docker?.serverOs === "linux" && report.docker?.activeContext)) && report.dataDirectory?.ok && report.disk?.ok &&
     report.database?.ok && report.runtimeImage?.ok && report.gateway?.ok && report.configuration?.ok && report.remediation?.length === 0);
 }
 

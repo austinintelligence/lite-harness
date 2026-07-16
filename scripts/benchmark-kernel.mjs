@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -24,6 +24,7 @@ const child = spawn(process.execPath, ["--import", "tsx", "apps/launcher/src/mai
     LITE_HARNESS_RUNTIME: "fake",
     LITE_HARNESS_MODE: "development",
   },
+  detached: process.platform !== "win32",
   stdio: ["ignore", "ignore", "pipe"],
   windowsHide: true,
 });
@@ -79,9 +80,58 @@ try {
 } catch (error) {
   throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr}`);
 } finally {
-  child.kill("SIGTERM");
-  await Promise.race([new Promise((resolveExit) => child.once("exit", resolveExit)), delay(12_000)]);
-  await rm(dataDir, { recursive: true, force: true });
+  await stopBenchmarkProcess(child);
+  await removeBenchmarkDirectory(dataDir);
+}
+
+async function stopBenchmarkProcess(processHandle) {
+  if (processHandle.exitCode === null && processHandle.signalCode === null) processHandle.kill("SIGTERM");
+  if (await waitForExit(processHandle, 15_000)) return;
+  await forceKillProcessTree(processHandle.pid);
+  await waitForExit(processHandle, 5_000);
+}
+
+async function waitForExit(processHandle, timeoutMs) {
+  if (processHandle.exitCode !== null || processHandle.signalCode !== null) return true;
+  return await new Promise((resolveExit) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolveExit(value);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    processHandle.once("exit", () => finish(true));
+  });
+}
+
+async function forceKillProcessTree(pid) {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    await new Promise((resolveKill) => {
+      execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => resolveKill());
+    });
+    return;
+  }
+  try { process.kill(-pid, "SIGKILL"); } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+}
+
+async function removeBenchmarkDirectory(path) {
+  let lastError;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!error || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(error.code)) throw error;
+      lastError = error;
+      await delay(250);
+    }
+  }
+  throw lastError ?? new Error(`Could not remove benchmark directory ${path}`);
 }
 
 async function fetchJson(url, init) {

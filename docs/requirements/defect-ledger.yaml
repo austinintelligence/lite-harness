@@ -224,7 +224,7 @@
         "path": "test/ipc.test.ts",
         "result": "pass",
         "evidenceArtifact": {
-          "path": "evidence/m1/packaged-artifacts.json"
+          "path": "evidence/m8/integration-authenticity.json"
         }
       },
       "fixCommits": [

@@ -13,7 +13,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   const vitest = spawnSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/gateway-manager.e2e.test.ts", "test/internal-boundary-schemas.test.ts",
+    "run", "test/gateway-manager.e2e.test.ts", "test/internal-boundary-schemas.test.ts", "test/ipc.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -28,7 +28,7 @@ try {
       command: "pnpm test:integrations",
       report: evidenceReport,
       requirementIds: ["R32-2505"],
-      regressionIds: ["BD-036-REGRESSION", "BD-037-REGRESSION"],
+      regressionIds: ["BD-006-REGRESSION", "BD-036-REGRESSION", "BD-037-REGRESSION"],
       claims: {
         boundaries: {
           webhookHmacCoversExactIngressBytes: true,
@@ -37,6 +37,7 @@ try {
           normalizedEnvelopeParsedOnlyAfterAuthentication: true,
           publicAndInternalRequestsUseAuthoritativeSchemas: true,
           unknownFieldsAndMalformedBase64Rejected: true,
+          liveManagerInstanceCannotBeDisplaced: true,
         },
       },
     });

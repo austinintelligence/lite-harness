@@ -387,7 +387,7 @@ function writeEvidence(output, suite) {
     regressionIds: authSuite
       ? ["BD-001-REGRESSION", "BD-035-REGRESSION"]
       : [
-          "BD-001-REGRESSION", "BD-006-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION",
+          "BD-001-REGRESSION", "BD-051-REGRESSION", "BD-052-REGRESSION",
           "BD-053-REGRESSION", "BD-054-REGRESSION", "BD-060-REGRESSION", "BD-035-REGRESSION",
         ],
     claims: {
@@ -418,7 +418,6 @@ function writeEvidence(output, suite) {
           "R24-2071": ["artifactCreatedEventExposesIdThroughBothSdks"],
           "M1-EXIT": allAssertions,
           "BD-001-REGRESSION": authAssertions,
-          "BD-006-REGRESSION": ["separateManagerAndGatewayProcesses", "realLocalIpc", "secondManagerRejected"],
           "BD-051-REGRESSION": ["cleanInstalledApplication"],
           "BD-052-REGRESSION": ["cleanInstalledTypeScriptSdk"],
           "BD-053-REGRESSION": ["cleanInstalledPythonWheel"],

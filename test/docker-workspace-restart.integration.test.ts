@@ -348,6 +348,9 @@ function exportNamedVolume(volume: string): Buffer {
 }
 
 async function restartDockerDaemonFailClosed(): Promise<void> {
+  if (process.env.LITE_HARNESS_ALLOW_DOCKER_RESTART?.trim() !== "1") {
+    throw new Error("A09 Docker daemon restart is disabled by default; set LITE_HARNESS_ALLOW_DOCKER_RESTART=1 only in an isolated evidence runner");
+  }
   const running = dockerText(["ps", "--quiet"]);
   if (running.trim()) {
     throw new Error("A09 refuses to restart a non-quiescent Docker daemon; running containers were detected");

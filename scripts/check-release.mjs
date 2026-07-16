@@ -110,6 +110,9 @@ if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("a
     !ciWorkflow.includes("steps.aggregate_secret_scan.outcome == 'success'")) {
   failures.push("CI lacks a fail-closed candidate evidence fan-in");
 }
+if (!ciWorkflow.includes("LITE_HARNESS_ALLOW_DOCKER_RESTART: \"1\"")) {
+  failures.push("required real-runtime CI must explicitly opt in to the destructive Docker restart evidence");
+}
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
   if (!imageWorkflow.includes(command)) failures.push(`release workflow is missing required gate: ${command}`);

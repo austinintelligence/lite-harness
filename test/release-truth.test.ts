@@ -16,6 +16,16 @@ afterEach(() => {
 });
 
 describe("release truth", () => {
+  it("A09-RESTART-GUARD fails the real-runtime wrapper closed without explicit Docker restart opt-in", () => {
+    const env = { ...process.env };
+    delete env.LITE_HARNESS_ALLOW_DOCKER_RESTART;
+    const result = spawnSync(process.execPath, ["scripts/check-real-runtime.mjs"], {
+      cwd: process.cwd(), env, encoding: "utf8",
+    });
+    expect(result.status).toBe(1);
+    expect(`${result.stdout}\n${result.stderr}`).toContain("LITE_HARNESS_ALLOW_DOCKER_RESTART=1");
+  });
+
   it("requires current zero-skip evidence to name the exact requirement", () => {
     const root = fixtureRoot();
     const evidencePath = "evidence/m1/packaged-artifacts.json";

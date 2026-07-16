@@ -6,6 +6,9 @@ import { relative, resolve } from "node:path";
 import { sanitizeDiagnosticText, writeVitestEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+if (process.env.LITE_HARNESS_ALLOW_DOCKER_RESTART?.trim() !== "1") {
+  throw new Error("pnpm test:real-runtime includes the destructive A09 Docker restart; set LITE_HARNESS_ALLOW_DOCKER_RESTART=1 only in an isolated evidence runner");
+}
 const toolImage = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 const mcpImage = process.env.LITE_HARNESS_TEST_MCP_IMAGE?.trim() || toolImage;
 const browserImage = requiredImage("LITE_HARNESS_TEST_BROWSER_IMAGE");

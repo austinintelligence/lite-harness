@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 describe("Gateway to Manager vertical slice", () => {
-  it("BD-036-REGRESSION creates an idempotent durable run through local IPC, verifies exact webhook bytes, and streams events", async () => {
+  it("D03 D05 D07 D08 BD-036-REGRESSION keeps the host loop behind separate authorized Gateway and Manager roles without raw Docker input", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-harness-test-"));
     const internalToken = "internal-test-token";
     const appToken = "app-test-token-primary";
@@ -458,6 +458,20 @@ describe("Gateway to Manager vertical slice", () => {
       payload: { id: "workspace-explicit" },
     });
     expect(createdWorkspace.statusCode).toBe(201);
+    for (const rawDockerPayload of [
+      { id: "workspace-docker-options", dockerOptions: ["--privileged"] },
+      { id: "workspace-mount", mounts: ["/host:/workspace"] },
+      { id: "workspace-command", command: ["sh", "-c", "id"] },
+      { id: "workspace-path", path: "/host/project" },
+    ]) {
+      const rejected = await gateway.inject({
+        method: "POST",
+        url: "/v1/workspaces",
+        headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },
+        payload: rawDockerPayload,
+      });
+      expect(rejected.statusCode).toBe(400);
+    }
     expect((await gateway.inject({
       method: "GET", url: "/v1/agents",
       headers: { authorization: `Bearer ${appToken}`, "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a" },

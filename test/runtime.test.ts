@@ -7,6 +7,17 @@ import { DockerToolRuntime, type DockerCommandRunner } from "@lite-harness/runti
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 describe("tool runtime policy", () => {
+  it("D04 keeps the Docker runtime limited to untrusted tools and free of model-provider dependencies", () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), "packages", "runtime-docker", "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([
+      "@lite-harness/contracts", "@lite-harness/runtime",
+    ]);
+    const source = readFileSync(join(process.cwd(), "packages", "runtime-docker", "src", "index.ts"), "utf8");
+    expect(source).not.toMatch(/provider|model gateway|credential broker/i);
+  });
+
   it.each(["/etc/passwd", "../escape", "folder/../escape", "C:\\Windows\\file", "a//b"])(
     "rejects unsafe workspace path %s",
     (path) => {
@@ -22,7 +33,7 @@ describe("tool runtime policy", () => {
     expect(() => new DockerToolRuntime({ image: "alpine:latest" })).toThrow(/pinned by sha256/);
   });
 
-  it("BD-040-REGRESSION brokers bounded coding tools through hardened ephemeral containers", async () => {
+  it("D15 BD-040-REGRESSION defaults workspaces to Docker named volumes for bounded coding tools", async () => {
     expect(CODING_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       "shell_exec", "process_exec", "search_text", "patch_apply", "git_exec",
       "test_run", "build_run", "package_run",
@@ -31,12 +42,13 @@ describe("tool runtime policy", () => {
     const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: [] };
     store.createOrGetRun("run-code", { agent: "coder", workspace: "workspace", input: "code", idempotencyKey: "code", principal });
     const creates: string[][] = [];
+    const volumes: string[][] = [];
     const inputs: string[] = [];
     let sequence = 0;
     let current = "";
     let exists = false;
     const runner: DockerCommandRunner = async (args, options) => {
-      if (args[0] === "volume") return dockerOk("volume");
+      if (args[0] === "volume") { volumes.push([...args]); return dockerOk("volume"); }
       if (args[0] === "run") return dockerOk();
       if (args[0] === "create") {
         creates.push([...args]); current = (++sequence).toString(16).padStart(64, "a"); exists = true; return dockerOk(current);
@@ -66,8 +78,10 @@ describe("tool runtime policy", () => {
       await expect(execute("git_exec", { args: ["remote", "get-url", "origin"] })).rejects.toThrow(/not allowed/);
       await expect(execute("shell_exec", { script: "true", cwd: "../escape" })).rejects.toThrow(/Unsafe workspace path/);
       expect(inputs).toContain("printf safe");
+      expect(volumes.some((args) => args[1] === "create")).toBe(true);
       expect(creates.every((args) => args.includes("none") && args.includes("--read-only") && args.includes("1000:1000"))).toBe(true);
       const rendered = creates.map((args) => args.join(" ")).join("\n");
+      expect(rendered).toContain("type=volume");
       for (const token of ["bash --noprofile", "node --version", "rg --line-number", "git -c core.hooksPath=/dev/null apply", "git -c core.hooksPath=/dev/null -c commit.gpgSign=false", "corepack pnpm run test", "npm run compile", "corepack yarn pack"]) {
         expect(rendered).toContain(token);
       }
@@ -87,7 +101,7 @@ describe("tool runtime policy", () => {
     expect(dockerfile).toContain("USER node");
   });
 
-  it("treats registered bind workspaces as operator-owned and never deletes or restores over them", async () => {
+  it("D16 treats explicitly registered bind workspaces as optional operator-owned developer mode", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-bind-"));
     try {
       const runtime = new DockerToolRuntime({

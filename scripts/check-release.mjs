@@ -24,6 +24,48 @@ const required = [
 ];
 const failures = required.filter((file) => !existsSync(resolve(root, file))).map((file) => `missing ${file}`);
 
+const rootManifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+const typescriptConfig = JSON.parse(readFileSync(resolve(root, "tsconfig.json"), "utf8"));
+const workspaceConfig = readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8");
+if (rootManifest.type !== "module" || !/^>=24(?:\.0\.0)? <25$/.test(rootManifest.engines?.node ?? "") ||
+    !rootManifest.devDependencies?.typescript || typescriptConfig.compilerOptions?.strict !== true ||
+    typescriptConfig.compilerOptions?.module !== "NodeNext" || typescriptConfig.compilerOptions?.moduleResolution !== "NodeNext") {
+  failures.push("the frozen TypeScript and Node implementation stack is not explicit and strict");
+}
+if (rootManifest.packageManager !== "pnpm@11.7.0" ||
+    !["apps/*", "packages/*", "plugins/*/*"].every((scope) => workspaceConfig.includes(`- \"${scope}\"`)) ||
+    !existsSync(resolve(root, "pnpm-lock.yaml"))) {
+  failures.push("the repository is not a lockfile-backed pnpm workspace monorepo");
+}
+
+const threatModel = readFileSync(resolve(root, "docs", "THREAT_MODEL.md"), "utf8");
+if (!threatModel.includes("Regular Docker is containment, not hostile public-cloud tenant isolation") ||
+    !threatModel.includes("A Docker/kernel escape can reach the host") ||
+    !threatModel.includes("gVisor/Kata/micro-VMs")) {
+  failures.push("Docker containment documentation overstates tenant isolation");
+}
+
+try {
+  execFileSync(process.execPath, ["scripts/check-boundaries.mjs"], { cwd: root, stdio: "pipe" });
+} catch {
+  failures.push("kernel dependency boundaries allow a concrete provider, integration, browser, or plugin");
+}
+
+const gatewayManifest = JSON.parse(readFileSync(resolve(root, "apps", "gateway", "package.json"), "utf8"));
+const providerCoreManifest = JSON.parse(readFileSync(resolve(root, "packages", "provider-core", "package.json"), "utf8"));
+const integrationManifest = JSON.parse(readFileSync(resolve(root, "packages", "integrations", "package.json"), "utf8"));
+const managerSource = readFileSync(resolve(root, "apps", "manager", "src", "main.ts"), "utf8");
+const gatewayDependencies = Object.keys(gatewayManifest.dependencies ?? {});
+const providerCoreDependencies = Object.keys(providerCoreManifest.dependencies ?? {});
+const integrationDependencies = Object.keys(integrationManifest.dependencies ?? {});
+if (!gatewayDependencies.includes("@lite-harness/auth") || !gatewayDependencies.includes("@lite-harness/auth-sqlite") ||
+    gatewayDependencies.some((dependency) => /provider|integration|credential/.test(dependency)) ||
+    JSON.stringify(providerCoreDependencies) !== JSON.stringify(["@lite-harness/contracts"]) ||
+    integrationDependencies.some((dependency) => /auth|provider|credential/.test(dependency)) ||
+    !managerSource.includes("LITE_HARNESS_CREDENTIAL_PROFILE") || !managerSource.includes("LITE_HARNESS_WEBHOOK_SECRET")) {
+  failures.push("app, provider, and integration authentication are not kept as separate security domains");
+}
+
 if (existsSync(resolve(root, "docs/openapi.json"))) JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "utf8"));
 if (existsSync(resolve(root, "docs/sbom.cdx.json"))) {
   const sbom = JSON.parse(readFileSync(resolve(root, "docs/sbom.cdx.json"), "utf8"));
@@ -223,6 +265,12 @@ if (failures.length) {
   process.exitCode = 1;
 } else {
   const assertions = {
+    typescriptNodeStackFrozen: true,
+    pnpmMonorepoFrozen: true,
+    dockerContainmentDescribedHonestly: true,
+    kernelConcreteDependencyBoundaryEnforced: true,
+    authenticationDomainsRemainSeparate: true,
+    openClawCompatibilityConfinedToAdapters: true,
     openApiGeneratedWithoutDrift: true,
     openApiReferencesResolve: true,
     nodePackagesInstallAndRunThroughGateway: true,
@@ -238,9 +286,16 @@ if (failures.length) {
     suite: "semantic-release-validation",
     command: "pnpm check:release",
     assertions,
+    requirementIds: ["D01", "D02", "D22", "D23", "D27", "D31"],
     regressionIds: ["BD-057-REGRESSION", "BD-061-REGRESSION"],
     sourcePath: "scripts/check-release.mjs",
     caseBindings: {
+      D01: ["typescriptNodeStackFrozen"],
+      D02: ["pnpmMonorepoFrozen"],
+      D22: ["dockerContainmentDescribedHonestly"],
+      D23: ["kernelConcreteDependencyBoundaryEnforced"],
+      D27: ["authenticationDomainsRemainSeparate"],
+      D31: ["openClawCompatibilityConfinedToAdapters"],
       "BD-057-REGRESSION": Object.keys(assertions),
       "BD-061-REGRESSION": [
         "openApiGeneratedWithoutDrift",

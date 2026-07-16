@@ -13,7 +13,7 @@ const stores: SqliteRunStore[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
 
 describe("capability-derived durable model routing", () => {
-  it("BD-039-REGRESSION routes from the stored agent capabilities and persists the frozen plan and actual usage", async () => {
+  it("D29 D30 BD-039-REGRESSION selects a capability-policy route before compiling canonical context and persists actual usage", async () => {
     const store = new SqliteRunStore(":memory:");
     stores.push(store);
     const owner = { appId: "app", tenantId: "tenant", userId: "user" };
@@ -31,23 +31,28 @@ describe("capability-derived durable model routing", () => {
     const credentials = new InMemoryCredentialBroker();
     for (const model of models) credentials.set(model.credentialProfileId, { authorizationHeader: "Bearer local-test" });
     const called: string[] = [];
+    const timeline: string[] = [];
     const adapters = models.map((model): ProviderAdapter => ({
       providerId: model.providerId,
       async *stream() {
         called.push(model.id);
+        timeline.push(`stream:${model.id}`);
         yield { type: "request.accepted" };
         yield { type: "usage", inputTokens: 12, outputTokens: 3, cachedInputTokens: 2, imageInputTokens: 4 };
         yield { type: "completed", finishReason: "stop" };
       },
     }));
     const hooks: RoutePersistenceHooks = {
-      onRoutePlan: (context, plan, requiredCapabilities) => { store.persistRunRoutePlan({
+      onRoutePlan: (context, plan, requiredCapabilities) => {
+        timeline.push(`route:${plan.selected.providerId}:${plan.selected.id}:${plan.selected.credentialProfileId}:${plan.selected.transport}`);
+        store.persistRunRoutePlan({
         runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
         registryGeneration: plan.registryGeneration, requiredCapabilities: [...requiredCapabilities],
         selectedModelId: plan.selected.id, selectedProviderId: plan.selected.providerId,
         selectedCredentialProfileId: plan.selected.credentialProfileId,
         fallbackModelIds: plan.fallbacks.map((model) => model.id), createdAt: plan.createdAt,
-      }); },
+        });
+      },
       onUsage: (context, plan, model, usage) => { store.persistRunModelUsage({
         runId: context.runId, attemptId: context.attemptId, routePlanId: plan.id,
         modelId: model.id, providerId: model.providerId, inputTokens: usage.inputTokens,
@@ -64,7 +69,7 @@ describe("capability-derived durable model routing", () => {
     const compiledFor: Array<string | undefined> = [];
     const service = new RunService(store, new AgentRunner(
       new RoutedModelGateway(registry, adapters, credentials, hooks), new InMemoryToolRuntime(), 8,
-      { compile: async (params) => { compiledFor.push(params.modelId); return []; } },
+      { compile: async (params) => { compiledFor.push(params.modelId); timeline.push(`compile:${params.modelId}`); return []; } },
     ));
     const created = service.createRun({
       agent: "vision-agent", workspace: "workspace", input: "inspect", idempotencyKey: "route-once",
@@ -74,8 +79,15 @@ describe("capability-derived durable model routing", () => {
     const attempt = store.listRunAttempts(created.runId)[0];
     expect(called).toEqual(["vision-model"]);
     expect(compiledFor).toEqual(["vision-model"]);
+    expect(timeline).toEqual([
+      "route:vision-provider:vision-model:vision-provider-credential:direct",
+      "compile:vision-model",
+      "stream:vision-model",
+    ]);
     expect(store.getRunRoutePlan(created.runId, attempt!.id)).toMatchObject({
-      requiredCapabilities: ["text", "vision"], selectedModelId: "vision-model", fallbackModelIds: [],
+      requiredCapabilities: ["text", "vision"], selectedModelId: "vision-model",
+      selectedProviderId: "vision-provider", selectedCredentialProfileId: "vision-provider-credential",
+      fallbackModelIds: [],
     });
     expect(store.listRunModelUsage(created.runId)).toMatchObject([{
       routePlanId: expect.stringMatching(/^route_/), modelId: "vision-model", providerId: "vision-provider",

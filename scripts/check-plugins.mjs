@@ -32,6 +32,7 @@ try {
       suite: "m6-plugin-security",
       command: "pnpm test:plugins",
       report: evidenceReport,
+      requirementIds: ["D25"],
       regressionIds: [
         "BD-007-REGRESSION", "BD-008-REGRESSION", "BD-025-REGRESSION",
         "BD-026-REGRESSION", "BD-027-REGRESSION",

@@ -8,7 +8,7 @@ import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 describe("run lifecycle safety", () => {
-  it("BD-002-REGRESSION renews leases and rejects stale fencing epochs at mutation boundaries", async () => {
+  it("D14 BD-002-REGRESSION renews leases and rejects stale fencing epochs at mutation boundaries", async () => {
     const store = new SqliteRunStore(":memory:");
     let renewals = 0;
     let rejectMutation = false;

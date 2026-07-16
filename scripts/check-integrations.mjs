@@ -27,7 +27,7 @@ try {
       suite: "m8-integration-authenticity",
       command: "pnpm test:integrations",
       report: evidenceReport,
-      requirementIds: ["R32-2505"],
+      requirementIds: ["D03", "D05", "D06", "D07", "D08", "R32-2505"],
       regressionIds: ["BD-006-REGRESSION", "BD-036-REGRESSION", "BD-037-REGRESSION"],
       claims: {
         boundaries: {

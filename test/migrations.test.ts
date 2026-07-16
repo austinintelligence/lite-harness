@@ -12,6 +12,41 @@ afterEach(() => {
 });
 
 describe("ordered SQLite migrations", () => {
+  it("D11 configures the first durable database as SQLite in WAL mode", () => {
+    const path = temporaryDatabase();
+    const store = new SqliteRunStore(path);
+    store.close();
+
+    const database = new DatabaseSync(path, { readOnly: true });
+    const row = database.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+    expect(row.journal_mode.toLowerCase()).toBe("wal");
+    database.close();
+  });
+
+  it("D12 persists runs and events across store process-lifetime boundaries", () => {
+    const path = temporaryDatabase();
+    const first = new SqliteRunStore(path);
+    first.createOrGetRun("run-durable", {
+      agent: "coder",
+      workspace: "workspace-durable",
+      input: "persist this run",
+      idempotencyKey: "durable-run",
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+    });
+    first.appendEvent({ runId: "run-durable", type: "run.queued", status: "QUEUED" });
+    first.close();
+
+    const reopened = new SqliteRunStore(path);
+    expect(reopened.getRun("run-durable")).toMatchObject({
+      id: "run-durable", input: "persist this run", status: "QUEUED", lastSequence: 2,
+    });
+    expect(reopened.listEvents("run-durable")).toMatchObject([
+      { sequence: 1, type: "run.accepted" },
+      { sequence: 2, type: "run.queued" },
+    ]);
+    reopened.close();
+  });
+
   it("BD-024-REGRESSION upgrades an actual v1 fixture in order without losing its run", () => {
     const path = temporaryDatabase();
     const database = new DatabaseSync(path);

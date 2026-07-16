@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { RunService } from "@lite-harness/control-plane";
 import { LocalArtifactStore } from "@lite-harness/workspace";
 import { buildManagerServer } from "../apps/manager/src/server.js";
@@ -12,6 +12,37 @@ afterEach(async () => {
 });
 
 describe("authoritative boundary schemas", () => {
+  it("D06 confines production Gateway-to-Manager traffic to versioned schema-bound local IPC", () => {
+    const gatewayManifest = JSON.parse(readFileSync(resolve("apps/gateway/package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(Object.keys(gatewayManifest.dependencies ?? {})).not.toEqual(expect.arrayContaining([
+      "@lite-harness/agent-runtime",
+      "@lite-harness/control-plane",
+      "@lite-harness/storage-sqlite",
+    ]));
+
+    const gatewayMain = readFileSync(resolve("apps/gateway/src/main.ts"), "utf8");
+    expect(gatewayMain.match(/new ManagerClient\(socketPath, internalToken\)/g)).toHaveLength(1);
+    expect(gatewayMain).not.toMatch(/apps[\\/]manager|@lite-harness\/(?:agent-runtime|control-plane|storage-sqlite)/);
+
+    const client = readFileSync(resolve("apps/gateway/src/manager-client.ts"), "utf8");
+    expect(client).toContain("socketPath: this.socketPath");
+    expect(client).toContain("[LITE_IPC_VERSION_HEADER]: LITE_IPC_PROTOCOL_VERSION");
+    expect(client).not.toMatch(/\b(?:hostname|host|port)\s*:/);
+
+    const manager = readFileSync(resolve("apps/manager/src/server.ts"), "utf8");
+    for (const schema of [
+      "InternalStartRunRequestSchema",
+      "InternalPublishArtifactRequestSchema",
+      "InternalCreateAgentProfileRequestSchema",
+      "InternalCreateWorkspaceRequestSchema",
+    ]) {
+      expect(manager).toContain(`Value.Check(${schema}`);
+    }
+    expect(manager).toContain("LITE_IPC_PROTOCOL_VERSION");
+  });
+
   it("BD-037-REGRESSION rejects malformed and extra fields at internal and public contracts", async () => {
     const createRun = vi.fn(() => ({ runId: "run-schema", status: "ACCEPTED", eventCursor: 0, idempotentReplay: false }));
     const runService = { createRun } as unknown as RunService;

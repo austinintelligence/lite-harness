@@ -9,7 +9,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("disabled optional packs", () => {
-  it("BD-049-REGRESSION creates zero resources, schemas, storage, or eager pack imports", async () => {
+  it("D24 BD-049-REGRESSION keeps removable capability packs lazy and creates zero resources while disabled", async () => {
     const disabledPackResourceProbe = () => resourceCounts(process.getActiveResourcesInfo());
     const before = disabledPackResourceProbe();
     const parent = mkdtempSync(join(tmpdir(), "lite-disabled-packs-")); roots.push(parent);

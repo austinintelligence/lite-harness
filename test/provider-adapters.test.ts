@@ -75,7 +75,7 @@ describe("direct provider adapters", () => {
     },
   );
 
-  it("BD-032-REGRESSION uses native OpenAI Responses input, tool, output, and usage contracts", async () => {
+  it("D26-DIRECT BD-032-REGRESSION uses the native Lite loop with OpenAI Responses contracts", async () => {
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toBe("https://api.openai.com/v1/responses");
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;

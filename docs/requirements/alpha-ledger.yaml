@@ -20,13 +20,23 @@
         "lineStart": 181,
         "lineEnd": 181
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "package.json",
+        "tsconfig.json"
+      ],
+      "testIds": [
+        "D01"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -42,13 +52,24 @@
         "lineStart": 182,
         "lineEnd": 182
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml"
+      ],
+      "testIds": [
+        "D02"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -64,13 +85,23 @@
         "lineStart": 183,
         "lineEnd": 183
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "D03"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -86,13 +117,24 @@
         "lineStart": 184,
         "lineEnd": 184
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/runtime-docker/package.json",
+        "packages/runtime-docker/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "D04"
+      ],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -108,13 +150,25 @@
         "lineStart": 185,
         "lineEnd": 185
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/gateway/src/main.ts",
+        "apps/gateway/src/server.ts",
+        "apps/manager/src/main.ts",
+        "apps/manager/src/server.ts"
+      ],
+      "testIds": [
+        "D05"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -130,13 +184,24 @@
         "lineStart": 186,
         "lineEnd": 186
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/gateway/src/manager-client.ts",
+        "apps/manager/src/server.ts",
+        "packages/contracts/src/index.ts"
+      ],
+      "testIds": [
+        "D06"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -152,13 +217,23 @@
         "lineStart": 187,
         "lineEnd": 187
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/contracts/src/index.ts",
+        "apps/gateway/src/server.ts"
+      ],
+      "testIds": [
+        "D07"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -174,13 +249,24 @@
         "lineStart": 188,
         "lineEnd": 188
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/auth/src/index.ts",
+        "packages/contracts/src/index.ts",
+        "apps/gateway/src/server.ts"
+      ],
+      "testIds": [
+        "D08"
+      ],
+      "ciJob": "integration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m8/integration-authenticity.json",
+          "producer": "pnpm test:integrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -263,13 +349,22 @@
         "lineStart": 192,
         "lineEnd": 192
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "D11"
+      ],
+      "ciJob": "migration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/migrations.json",
+          "producer": "pnpm test:migrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -285,13 +380,22 @@
         "lineStart": 193,
         "lineEnd": 193
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "D12"
+      ],
+      "ciJob": "migration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/migrations.json",
+          "producer": "pnpm test:migrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -307,13 +411,23 @@
         "lineStart": 194,
         "lineEnd": 194
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "D13"
+      ],
+      "ciJob": "migration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/migrations.json",
+          "producer": "pnpm test:migrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -329,13 +443,23 @@
         "lineStart": 195,
         "lineEnd": 195
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "D14"
+      ],
+      "ciJob": "migration-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m2/migrations.json",
+          "producer": "pnpm test:migrations"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -351,13 +475,22 @@
         "lineStart": 196,
         "lineEnd": 196
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "D15"
+      ],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -373,13 +506,23 @@
         "lineStart": 197,
         "lineEnd": 198
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/runtime-docker/src/index.ts",
+        "packages/config/src/index.ts"
+      ],
+      "testIds": [
+        "D16"
+      ],
+      "ciJob": "docker-policy-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/docker-policy.json",
+          "producer": "pnpm test:docker"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -411,8 +554,7 @@
       ],
       "status": "blocked",
       "blockers": [
-        "current-evidence-stale",
-        "evidence-requirement-coverage-missing"
+        "current-evidence-stale"
       ]
     },
     {
@@ -443,8 +585,7 @@
       ],
       "status": "blocked",
       "blockers": [
-        "current-evidence-stale",
-        "evidence-requirement-coverage-missing"
+        "current-evidence-stale"
       ]
     },
     {
@@ -460,13 +601,23 @@
         "lineStart": 202,
         "lineEnd": 202
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/images.yml"
+      ],
+      "testIds": [
+        "D19"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/image-promotion.json",
+          "producer": "pnpm check:images"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -499,8 +650,7 @@
       ],
       "status": "blocked",
       "blockers": [
-        "current-evidence-stale",
-        "evidence-requirement-coverage-missing"
+        "current-evidence-stale"
       ]
     },
     {
@@ -516,13 +666,23 @@
         "lineStart": 204,
         "lineEnd": 205
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/context/src/index.ts",
+        "packages/agent-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "D21"
+      ],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -538,13 +698,23 @@
         "lineStart": 206,
         "lineEnd": 207
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "docs/THREAT_MODEL.md",
+        "README.md"
+      ],
+      "testIds": [
+        "D22"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -560,13 +730,23 @@
         "lineStart": 208,
         "lineEnd": 209
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/agent-runtime/package.json",
+        "scripts/check-boundaries.mjs"
+      ],
+      "testIds": [
+        "D23"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -582,13 +762,23 @@
         "lineStart": 210,
         "lineEnd": 210
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/optional-systems.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "D24"
+      ],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -604,13 +794,23 @@
         "lineStart": 211,
         "lineEnd": 212
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/plugin-core/src/index.ts",
+        "packages/process-rpc/src/index.ts"
+      ],
+      "testIds": [
+        "D25"
+      ],
+      "ciJob": "plugin-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m6/plugin-security.json",
+          "producer": "pnpm test:plugins"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -626,13 +826,26 @@
         "lineStart": 213,
         "lineEnd": 214
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/provider-openai-compatible/src/index.ts",
+        "packages/delegated-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "D26-DIRECT",
+        "D26-CODEX",
+        "D26-CLAUDE"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -648,13 +861,25 @@
         "lineStart": 215,
         "lineEnd": 216
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/auth/src/index.ts",
+        "packages/provider-core/src/index.ts",
+        "packages/integrations/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "D27"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -670,13 +895,24 @@
         "lineStart": 217,
         "lineEnd": 219
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/credential-store/src/index.ts",
+        "packages/runtime-docker/package.json"
+      ],
+      "testIds": [
+        "D28"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -692,13 +928,23 @@
         "lineStart": 220,
         "lineEnd": 221
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "apps/manager/src/main.ts"
+      ],
+      "testIds": [
+        "D29"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -714,13 +960,24 @@
         "lineStart": 222,
         "lineEnd": 223
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/agent-runtime/src/index.ts",
+        "packages/provider-core/src/index.ts",
+        "packages/context/src/index.ts"
+      ],
+      "testIds": [
+        "D30"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m5/provider-conformance.json",
+          "producer": "pnpm test:providers"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -736,13 +993,24 @@
         "lineStart": 224,
         "lineEnd": 225
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/migration-openclaw/src/index.ts",
+        "apps/cli/src/main.ts",
+        "scripts/check-boundaries.mjs"
+      ],
+      "testIds": [
+        "D31"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/release-validation.json",
+          "producer": "pnpm check:release"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {
@@ -758,13 +1026,23 @@
         "lineStart": 226,
         "lineEnd": 227
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/migration-openclaw/src/index.ts",
+        "apps/cli/src/main.ts"
+      ],
+      "testIds": [
+        "D32"
+      ],
+      "ciJob": "context-optimization-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m10/context-optimization.json",
+          "producer": "pnpm test:context"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

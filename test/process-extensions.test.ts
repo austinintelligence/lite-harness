@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 describe("process-backed extensions", () => {
-  it("normalizes the official Codex app-server JSONL lifecycle", async () => {
+  it("D26-CODEX normalizes the supervised delegated Codex app-server JSONL lifecycle", async () => {
     const gateway = new CodexAppServerGateway({
       workspacePathForRun: () => process.cwd(),
       processFactory: (handler) => new JsonLineRpcClient(
@@ -53,7 +53,7 @@ describe("process-backed extensions", () => {
     ]);
   });
 
-  it("normalizes Claude Code print-mode stream-json", async () => {
+  it("D26-CLAUDE normalizes the supervised delegated Claude Code print-mode stream-json lifecycle", async () => {
     const gateway = new ClaudeCodeGateway({
       command: process.execPath,
       commandArgsPrefix: [fixture, "claude"],
@@ -161,7 +161,7 @@ describe("process-backed extensions", () => {
     await supervisor.stopAll();
   });
 
-  it("locks permissions and invokes a plugin only in its worker process", async () => {
+  it("D25 locks permissions and invokes a third-party plugin only in its worker process", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-plugin-"));
     cleanup.push(root);
     const entry = join(root, "dist", "worker.js");

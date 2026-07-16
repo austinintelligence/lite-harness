@@ -38,7 +38,7 @@ try {
       suite: "m2-migrations",
       command: "pnpm test:migrations",
       report: evidenceReport,
-      requirementIds: ["R29-2320"],
+      requirementIds: ["D11", "D12", "D13", "D14", "R29-2320"],
       regressionIds: [
         "BD-002-REGRESSION", "BD-003-REGRESSION", "BD-004-REGRESSION", "BD-005-REGRESSION",
         "BD-010-REGRESSION", "BD-011-REGRESSION", "BD-012-REGRESSION", "BD-013-REGRESSION",

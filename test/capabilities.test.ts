@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -118,17 +118,22 @@ describe("optional capability kernel", () => {
     expect(skills[0]?.requestedTools).toEqual(["shell"]);
   });
 
-  it("inspects OpenClaw state without reading secret values and imports only bounded skill files", () => {
+  it("D32 preserves selected OpenClaw behavior while discarding source layout and unrelated files", () => {
     const source = mkdtempSync(join(tmpdir(), "lite-openclaw-source-"));
     const target = mkdtempSync(join(tmpdir(), "lite-openclaw-target-")); directories.push(source, target);
-    mkdirSync(join(source, "skills")); mkdirSync(join(source, "skills", "review"));
+    mkdirSync(join(source, "custom", "deep", "review"), { recursive: true });
     writeFileSync(join(source, "openclaw.json"), JSON.stringify({ apiKey: "must-not-appear", providers: {} }));
-    writeFileSync(join(source, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: migrated\n---\nBody\n");
+    writeFileSync(join(source, "custom", "deep", "review", "SKILL.md"), "---\nname: review\ndescription: migrated\n---\nBody\n");
+    writeFileSync(join(source, "custom", "deep", "unrelated.txt"), "must not be imported");
     const report = inspectOpenClawRoot(source);
     expect(report.configuration).toMatchObject([{ keys: ["apiKey", "providers"] }]);
     expect(JSON.stringify(report)).not.toContain("must-not-appear");
     expect(importOpenClawSkills(report, target)).toHaveLength(1);
-    expect(existsSync(join(target, "imports", "openclaw", "skills", "review", "SKILL.md"))).toBe(true);
+    const selected = join(target, "imports", "openclaw", "skills", "review", "SKILL.md");
+    expect(readFileSync(selected, "utf8")).toContain("description: migrated");
+    expect(existsSync(join(target, "openclaw.json"))).toBe(false);
+    expect(existsSync(join(target, "custom"))).toBe(false);
+    expect(existsSync(join(target, "imports", "openclaw", "skills", "review", "unrelated.txt"))).toBe(false);
   });
 
   it("starts MCP servers lazily and isolates a failed server", async () => {

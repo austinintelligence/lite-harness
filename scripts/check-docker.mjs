@@ -28,7 +28,7 @@ try {
       command: "pnpm test:docker",
       report: evidenceReport,
       requirementIds: [
-        "R07-0553", "R19-1822", "R19-1824", "R19-1825", "R19-1826", "R19-1828", "R19-1829",
+        "D04", "D15", "D16", "R07-0553", "R19-1822", "R19-1824", "R19-1825", "R19-1826", "R19-1828", "R19-1829",
       ],
       regressionIds: ["BD-018-REGRESSION", "BD-019-REGRESSION", "BD-020-REGRESSION", "BD-040-REGRESSION", "BD-041-REGRESSION"],
       claims: {

@@ -4,6 +4,7 @@ import { relative, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const sourceRoots = [resolve(root, "packages"), resolve(root, "apps")];
 const files = sourceRoots.flatMap(walk).filter((path) => path.endsWith(".ts"));
+const manifests = sourceRoots.flatMap(walk).filter((path) => path.endsWith("package.json"));
 const violations = [];
 
 const rules = [
@@ -56,11 +57,15 @@ for (const file of files) {
     (match) => match[1],
   );
 
-  if (localPath.startsWith("packages/")) {
-    for (const specifier of imports) {
-      if (specifier.startsWith("../../apps/") || specifier.includes("/legacy/openclaw")) {
+  for (const specifier of imports) {
+    if (/legacy[\\/]openclaw/i.test(specifier)) {
+      violations.push(`${localPath}: production code imports the legacy OpenClaw tree: ${specifier}`);
+    }
+    if (specifier === "@lite-harness/migration-openclaw" && localPath !== "apps/cli/src/main.ts") {
+      violations.push(`${localPath}: OpenClaw migration code is confined to the CLI adapter`);
+    }
+    if (localPath.startsWith("packages/") && specifier.startsWith("../../apps/")) {
         violations.push(`${localPath}: package imports a composition root or legacy path: ${specifier}`);
-      }
     }
   }
 
@@ -69,6 +74,24 @@ for (const file of files) {
   for (const specifier of imports.filter((value) => value.startsWith("@lite-harness/"))) {
     if (!rule.allowed.has(specifier)) {
       violations.push(`${localPath}: ${rule.reason}; found ${specifier}`);
+    }
+  }
+}
+
+for (const file of manifests) {
+  const localPath = relative(root, file).replaceAll("\\", "/");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  const dependencies = {
+    ...(manifest.dependencies ?? {}),
+    ...(manifest.optionalDependencies ?? {}),
+    ...(manifest.peerDependencies ?? {}),
+  };
+  for (const dependency of Object.keys(dependencies)) {
+    if (/legacy[\\/]openclaw/i.test(dependency)) {
+      violations.push(`${localPath}: production manifest depends on the legacy OpenClaw tree: ${dependency}`);
+    }
+    if (dependency === "@lite-harness/migration-openclaw" && localPath !== "apps/cli/package.json") {
+      violations.push(`${localPath}: only the CLI adapter may depend on OpenClaw migration code`);
     }
   }
 }

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   InMemoryCredentialBroker,
@@ -29,6 +31,50 @@ const baseModel = (
 });
 
 describe("provider plane", () => {
+  it("D28 resolves opaque credential profiles only at the adapter boundary and keeps credentials out of prompts and tool containers", async () => {
+    const secretFixture = "credential-material-visible-only-to-adapter";
+    const model = { ...baseModel("opaque-model", "opaque-provider"), credentialProfileId: "profile_opaque_123" };
+    const resolvedProfiles: string[] = [];
+    let adapterCredential: string | undefined;
+    let adapterMessages = "";
+    const adapter: ProviderAdapter = {
+      providerId: model.providerId,
+      async *stream(params) {
+        adapterCredential = params.credential.authorizationHeader;
+        adapterMessages = JSON.stringify(params.messages);
+        yield { type: "completed", finishReason: "stop" };
+      },
+    };
+    const gateway = new RoutedModelGateway(
+      new ModelRegistry([model]),
+      [adapter],
+      {
+        async resolve(profileId) {
+          resolvedProfiles.push(profileId);
+          return { authorizationHeader: secretFixture };
+        },
+      },
+    );
+    const events = [];
+    for await (const event of gateway.streamTurn({ messages: [{ role: "user", content: "ordinary prompt" }] })) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: "completed", finishReason: "stop" }]);
+    expect(resolvedProfiles).toEqual(["profile_opaque_123"]);
+    expect(adapterCredential).toBe(secretFixture);
+    expect(adapterMessages).toContain("ordinary prompt");
+    expect(adapterMessages).not.toContain(secretFixture);
+
+    const runtimeManifest = JSON.parse(readFileSync(
+      join(process.cwd(), "packages", "runtime-docker", "package.json"), "utf8",
+    )) as { dependencies?: Record<string, string> };
+    expect(JSON.stringify(runtimeManifest.dependencies ?? {})).not.toMatch(/credential|provider/i);
+    const runtimeSource = readFileSync(
+      join(process.cwd(), "packages", "runtime-docker", "src", "index.ts"), "utf8",
+    );
+    expect(runtimeSource).not.toMatch(/process\.env|credential|authorization/i);
+  });
+
   it("rejects models missing a required capability before execution", () => {
     const registry = new ModelRegistry([baseModel("text-only", "preferred")]);
     expect(() => registry.plan({ requiredCapabilities: ["text", "tools"] })).toThrow(

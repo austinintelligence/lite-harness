@@ -5,6 +5,7 @@ import { writePolicyEvidence } from "./evidence-lib.mjs";
 const root = resolve(import.meta.dirname, "..");
 const workflowPath = resolve(root, ".github", "workflows", "images.yml");
 const workflow = readFileSync(workflowPath, "utf8");
+const ciWorkflow = readFileSync(resolve(root, ".github", "workflows", "ci.yml"), "utf8");
 const failures = [];
 const required = [
   "id: build",
@@ -17,6 +18,10 @@ const required = [
   'test "${#digests[@]}" -eq 2',
 ];
 for (const token of required) if (!workflow.includes(token)) failures.push(`image workflow is missing: ${token}`);
+if (!/docker\/setup-buildx-action@[a-f0-9]{40}/.test(ciWorkflow) ||
+    !/docker\/build-push-action@[a-f0-9]{40}[\s\S]{0,1000}?cache-from: type=gha[\s\S]{0,500}?cache-to: type=gha,mode=max/.test(ciWorkflow)) {
+  failures.push("CI image builds do not delegate image and build-layer caching to pinned Docker/BuildKit actions");
+}
 for (const [name, expected] of [["tool-runtime", 2], ["browser-runtime", 2]]) {
   const count = workflow.split(`- name: ${name}`).length - 1;
   if (count !== expected) failures.push(`${name} must have exactly amd64 and arm64 candidate builds`);
@@ -43,6 +48,7 @@ if (failures.length) {
       bothRuntimeImagesCoverAmd64AndArm64: true,
       actionsAreCommitPinned: true,
       prereleaseNeverPublishesLatest: true,
+      dockerBuildKitOwnsImageAndLayerCaching: true,
     };
     writePolicyEvidence({
       root,
@@ -50,9 +56,13 @@ if (failures.length) {
       suite: "candidate-image-promotion",
       command: "pnpm check:images",
       assertions,
+      requirementIds: ["D19"],
       regressionIds: ["BD-056-REGRESSION"],
       sourcePath: "scripts/check-image-workflow.mjs",
-      caseBindings: { "BD-056-REGRESSION": Object.keys(assertions) },
+      caseBindings: {
+        "BD-056-REGRESSION": Object.keys(assertions),
+        D19: ["dockerBuildKitOwnsImageAndLayerCaching"],
+      },
       claims: {
         advertisedPlatforms: ["linux/amd64", "linux/arm64"],
         imageNames: ["tool-runtime", "browser-runtime"],

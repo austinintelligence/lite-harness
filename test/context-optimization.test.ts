@@ -9,7 +9,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("durable conservative optical context", () => {
-  it("BD-050-REGRESSION persists immutable exact text and sends images only through a vision route", async () => {
+  it("D21 BD-050-REGRESSION persists immutable exact canonical text when a vision route receives images", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-context-")); roots.push(root);
     const path = join(root, "context.sqlite");
     const exactText = `Reference header\n${"bounded semantic history line\n".repeat(80)}Recovery token: EXACT-RECOVERY-42`;

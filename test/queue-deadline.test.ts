@@ -6,7 +6,7 @@ import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 describe("accepted-to-terminal deadlines", () => {
-  it("BD-012-REGRESSION times out a queued run before its predecessor releases the workspace", async () => {
+  it("D13 BD-012-REGRESSION allows only one writable run to own a workspace at a time", async () => {
     let providerCalls = 0;
     const delayed: ModelGateway = {
       async *streamTurn(params: { messages: readonly ModelMessage[]; signal?: AbortSignal }): AsyncIterable<ModelEvent> {

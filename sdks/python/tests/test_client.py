@@ -39,7 +39,7 @@ class ClientTests(unittest.TestCase):
             {"id": "session-1"},
             {"messages": []},
             {"id": "artifact-1"},
-            {"record": {"id": "artifact-1"}, "dataBase64": ""},
+            {"record": {"id": "artifact-1"}, "dataBase64": "aGVsbG8="},
             {"id": "agent-1"},
             {"id": "agent-1"},
             {"agents": []},
@@ -53,7 +53,7 @@ class ClientTests(unittest.TestCase):
         client.get_session("session-1")
         client.get_session_messages("session-1")
         client.publish_artifact("run-1", path="output.txt", media_type="text/plain")
-        client.download_artifact("artifact-1")
+        downloaded = client.download_artifact("artifact-1")
         client.create_agent(name="coder", agent_id="agent-1")
         client.get_agent("agent-1")
         client.list_agents()
@@ -80,6 +80,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(json.loads(requests[2].data), {"path": "output.txt", "mediaType": "text/plain"})
         self.assertEqual(json.loads(requests[4].data), {"name": "coder", "id": "agent-1"})
         self.assertEqual(json.loads(requests[7].data), {"id": "workspace-1", "mode": "managed"})
+        self.assertEqual(downloaded, {"record": {"id": "artifact-1"}, "data": b"hello"})
 
     @patch("lite_harness.client.urlopen")
     def test_create_run_sends_credential_and_idempotency_without_identity_headers(self, open_url):

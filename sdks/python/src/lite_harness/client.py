@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import uuid
@@ -168,7 +169,12 @@ class LiteHarnessClient:
         )
 
     def download_artifact(self, artifact_id: str) -> dict[str, Any]:
-        return self._json_operation("getV1ArtifactsByArtifactId", path_params={"artifactId": artifact_id})
+        payload = self._json_operation("getV1ArtifactsByArtifactId", path_params={"artifactId": artifact_id})
+        try:
+            data = base64.b64decode(payload["dataBase64"], validate=True)
+        except (KeyError, TypeError, ValueError) as error:
+            raise LiteHarnessError("Artifact response contained invalid base64 data", code="invalid_artifact_response") from error
+        return {"record": payload["record"], "data": data}
 
     def create_agent(
         self,

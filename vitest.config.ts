@@ -8,6 +8,7 @@ const deterministicWorkspaceFiles = [
 ];
 const realRuntimeOnlyFiles = [
   "test/required-real-runtime.test.ts",
+  "test/packaged-docker-vertical.integration.test.ts",
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-workspace-restart.integration.test.ts",

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
@@ -9,8 +10,22 @@ const toolImage = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 const mcpImage = process.env.LITE_HARNESS_TEST_MCP_IMAGE?.trim() || toolImage;
 const browserImage = requiredImage("LITE_HARNESS_TEST_BROWSER_IMAGE");
 const packagedManager = resolve(root, "dist", "apps", "manager", "main.js");
+const packagedGateway = resolve(root, "dist", "apps", "gateway", "main.js");
+const version = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).version;
+const buildPackageArtifacts = [
+  `dist/packages/lite-harness-application-${version}.tgz`,
+  `dist/packages/lite-harness-contracts-${version}.tgz`,
+  `dist/packages/lite-harness-sdk-${version}.tgz`,
+];
+const executedCandidateArtifacts = [
+  "dist/apps/manager/main.js",
+  "dist/apps/gateway/main.js",
+  buildPackageArtifacts[2],
+];
+const packagedSdk = resolve(root, buildPackageArtifacts[2]);
 const requiredTestFiles = [
   "test/required-real-runtime.test.ts",
+  "test/packaged-docker-vertical.integration.test.ts",
   "test/workspace.test.ts",
   "test/workspace-lifecycle.test.ts",
   "test/docker-runtime.integration.test.ts",
@@ -39,7 +54,7 @@ const build = spawnSync(process.execPath, [resolve(root, "scripts", "build.mjs")
   stdio: "inherit",
   env: process.env,
 });
-if (build.status !== 0 || !existsSync(packagedManager)) {
+if (build.status !== 0 || !existsSync(packagedManager) || !existsSync(packagedGateway) || buildPackageArtifacts.some((path) => !existsSync(resolve(root, path)))) {
   throw new Error("Real runtime suite requires a successful packaged application build");
 }
 
@@ -65,6 +80,8 @@ try {
       LITE_HARNESS_TEST_MCP_IMAGE: mcpImage,
       LITE_HARNESS_TEST_BROWSER_IMAGE: browserImage,
       LITE_HARNESS_PACKAGED_MANAGER: packagedManager,
+      LITE_HARNESS_PACKAGED_GATEWAY: packagedGateway,
+      LITE_HARNESS_PACKAGED_SDK: packagedSdk,
     },
   });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -88,8 +105,9 @@ try {
       suite: "required-real-runtime",
       command: "pnpm test:real-runtime",
       report: evidenceReport,
-      requirementIds: ["A09", "A18", "A20", "A21", "A22"],
-      regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION", "BD-055-REGRESSION"],
+      requirementIds: ["A04", "A09", "A18", "A20", "A21", "A22"],
+      regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION", "BD-054-REGRESSION", "BD-055-REGRESSION"],
+      packages: executedCandidateArtifacts.map(packageArtifact),
       images: [
         imageArtifact("tool-runtime", toolImage),
         imageArtifact("mcp-runtime", mcpImage),
@@ -98,6 +116,7 @@ try {
       claims: {
         boundaries: {
           dockerToolExecution: true,
+          cleanPackedSdkThroughHttpGatewayManagerIpcDockerAndArtifact: true,
           workspaceSurvivesContainerLiteAndDockerRestart: true,
           coldWorkspaceRestore: true,
           isolatedMcpTransport: true,
@@ -164,4 +183,11 @@ function imageArtifact(name, image) {
   const digest = /sha256:([a-f0-9]{64})$/i.exec(image)?.[1];
   if (!digest) throw new Error(`${name} must resolve to an immutable sha256 digest`);
   return { name, sha256: digest };
+}
+
+function packageArtifact(path) {
+  return {
+    name: path.replaceAll("\\", "/"),
+    sha256: createHash("sha256").update(readFileSync(resolve(root, path))).digest("hex"),
+  };
 }

@@ -1566,7 +1566,8 @@
         "packages/runtime-docker/src/index.ts"
       ],
       "testIds": [
-        "A07-REAL-TOOL-HARDENING-INSPECT"
+        "A07-REAL-TOOL-HARDENING-INSPECT",
+        "A07-MAINTENANCE-HARDENING-ARGS"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ArtifactPublishingRuntime, CODING_TOOL_DEFINITIONS, InMemoryToolRuntime, validateWorkspacePath, type ToolRuntime } from "@lite-harness/runtime";
-import { DockerToolRuntime, type DockerCommandRunner } from "@lite-harness/runtime-docker";
+import { DockerToolRuntime, dockerMaintenanceHardeningArgs, type DockerCommandRunner } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 describe("tool runtime policy", () => {
@@ -31,6 +31,18 @@ describe("tool runtime policy", () => {
 
   it("requires Docker images to be pinned by digest", () => {
     expect(() => new DockerToolRuntime({ image: "alpine:latest" })).toThrow(/pinned by sha256/);
+  });
+
+  it("A07-MAINTENANCE-HARDENING-ARGS applies one bounded policy to init, export, import, copy, and restore containers", () => {
+    const args = dockerMaintenanceHardeningArgs({ memory: "48m", cpus: "0.25", pidsLimit: 32 }, { user: "1000:1000" });
+    expect(args).toEqual(expect.arrayContaining([
+      "--network", "none", "--read-only", "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges=true", "--pids-limit", "32",
+      "--memory", "48m", "--cpus", "0.25", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+      "--user", "1000:1000",
+    ]));
+    expect(args).not.toContain("--privileged");
+    expect(args).not.toContain("--network=host");
   });
 
   it("D15 BD-040-REGRESSION defaults workspaces to Docker named volumes for bounded coding tools", async () => {

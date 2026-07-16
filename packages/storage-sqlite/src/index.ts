@@ -1159,7 +1159,8 @@ export class SqliteRunStore implements RunStore {
         this.#database.exec("COMMIT");
         return undefined;
       }
-      const token = row?.owner_run_id === runId ? row.fencing_token : (row?.fencing_token ?? 0) + 1;
+      const sameLiveOwner = row?.owner_run_id === runId && row.expires_at && row.expires_at > now.toISOString();
+      const token = sameLiveOwner ? (row?.fencing_token ?? 0) : (row?.fencing_token ?? 0) + 1;
       this.#database
         .prepare(
           `INSERT INTO workspace_leases(workspace_internal_id, owner_run_id, fencing_token, expires_at, updated_at)

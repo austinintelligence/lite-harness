@@ -1519,13 +1519,25 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/control-plane/src/index.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "A06-SAME-RUN-EXPIRY-FENCING"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale",
+        "paused-writer-mutation-matrix-gap"
       ]
     },
     {

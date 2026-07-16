@@ -106,6 +106,19 @@ describe("SqliteRunStore", () => {
     expect(second && store.validateWorkspaceLease(second)).toBe(true);
   });
 
+  it("A06-SAME-RUN-EXPIRY-FENCING increments the fencing epoch when the same run reclaims an expired lease", async () => {
+    const store = new SqliteRunStore(":memory:");
+    stores.push(store);
+    store.createOrGetRun("run-expiring", request());
+    const first = store.acquireWorkspaceLease("workspace-1", "run-expiring", 20);
+    expect(first).toMatchObject({ ownerRunId: "run-expiring", fencingToken: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    const second = store.acquireWorkspaceLease("workspace-1", "run-expiring", 10_000);
+    expect(second).toMatchObject({ ownerRunId: "run-expiring", fencingToken: 2 });
+    expect(first && store.validateWorkspaceLease(first)).toBe(false);
+    expect(second && store.validateWorkspaceLease(second)).toBe(true);
+  });
+
   it("persists explicit catalogs, run attempts, budgets, and usage", () => {
     const store = new SqliteRunStore(":memory:");
     stores.push(store);

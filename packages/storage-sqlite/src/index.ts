@@ -983,8 +983,19 @@ export class SqliteRunStore implements RunStore {
     if (!row) {
       throw new Error(`Run not found: ${params.runId}`);
     }
+    const payload = params.payload ?? {};
+    const childRunId = typeof payload.childRunId === "string" ? payload.childRunId : undefined;
+    const child = childRunId
+      ? this.#database.prepare("SELECT id, parent_run_id, status FROM runs WHERE id = ?").get(childRunId) as
+        { id: string; parent_run_id: string | null; status: RunStatus } | undefined
+      : undefined;
     const detachedSubagentSummary = params.type === "subagent.completed" &&
-      params.status === undefined && params.usage === undefined;
+      params.status === undefined && params.errorCode === undefined && params.errorMessage === undefined &&
+      params.usage === undefined && child?.parent_run_id === params.runId &&
+      isTerminalRunStatus(child.status) && payload.status === child.status;
+    if (params.type === "subagent.completed" && !detachedSubagentSummary) {
+      throw new Error(`Invalid detached subagent summary for run ${params.runId}`);
+    }
     if (isTerminalRunStatus(row.status) && !detachedSubagentSummary) {
       throw new Error(`Run ${params.runId} is terminal; cannot append event ${params.type}`);
     }
@@ -993,7 +1004,6 @@ export class SqliteRunStore implements RunStore {
     // change parent status, usage, errors, or attempt state.
     const sequence = row.last_sequence + 1;
     const createdAt = new Date().toISOString();
-    const payload = params.payload ?? {};
     this.#database
       .prepare(
         `INSERT INTO run_events(run_id, sequence, type, payload_json, created_at)

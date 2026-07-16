@@ -72,6 +72,55 @@ describe("transactional run projections", () => {
     store.close();
   });
 
+  it("accepts only verified detached child summaries without mutating terminal projections", () => {
+    const store = new SqliteRunStore(":memory:");
+    const parent = store.createOrGetRun("run-parent-summary", request());
+    const child = store.createOrGetRun("run-child-summary", {
+      ...request(),
+      workspace: "child-workspace",
+      session: "child-session",
+      idempotencyKey: "child-summary-key",
+      parentRunId: parent.run.id,
+      depth: 1,
+    });
+    store.appendEvent({
+      runId: parent.run.id,
+      type: "run.failed",
+      status: "FAILED",
+      errorCode: "initial_failure",
+      errorMessage: "initial failure",
+    });
+    store.appendEvent({ runId: child.run.id, type: "run.succeeded", status: "SUCCEEDED" });
+
+    expect(() => store.appendEvent({
+      runId: parent.run.id,
+      type: "subagent.completed",
+      payload: { childRunId: "run-not-a-child", status: "SUCCEEDED" },
+    })).toThrow(/invalid detached subagent summary/i);
+    expect(() => store.appendEvent({
+      runId: parent.run.id,
+      type: "subagent.completed",
+      payload: { childRunId: child.run.id, status: "SUCCEEDED" },
+      errorCode: "late_error",
+      errorMessage: "late mutation",
+    })).toThrow(/invalid detached subagent summary/i);
+
+    const event = store.appendEvent({
+      runId: parent.run.id,
+      type: "subagent.completed",
+      payload: { childRunId: child.run.id, status: "SUCCEEDED", errorCode: "child_error" },
+    });
+    expect(event.sequence).toBe(3);
+    expect(store.getRun(parent.run.id)).toMatchObject({
+      status: "FAILED",
+      lastSequence: 3,
+      errorCode: "initial_failure",
+      errorMessage: "initial failure",
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0, toolCalls: 0 },
+    });
+    store.close();
+  });
+
   it("does not resolve an approval after its run becomes terminal", () => {
     const store = new SqliteRunStore(":memory:");
     const created = store.createOrGetRun("run-approval-final", request());

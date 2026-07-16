@@ -227,6 +227,8 @@ if (failures.length) {
     openApiReferencesResolve: true,
     nodePackagesInstallAndRunThroughGateway: true,
     pythonWheelInstallsAndRunsThroughGateway: true,
+    typescriptAuthenticatedOperationCoverage: true,
+    pythonAuthenticatedOperationCoverage: true,
     prereleaseBehaviorEnforced: true,
     testedImageDigestPromotionEnforced: true,
   };
@@ -236,10 +238,20 @@ if (failures.length) {
     suite: "semantic-release-validation",
     command: "pnpm check:release",
     assertions,
-    regressionIds: ["BD-057-REGRESSION"],
+    regressionIds: ["BD-057-REGRESSION", "BD-061-REGRESSION"],
     sourcePath: "scripts/check-release.mjs",
-    caseBindings: { "BD-057-REGRESSION": Object.keys(assertions) },
-    claims: { knownOpenGap: "BD-061 requires complete authoritative OpenAPI and generated SDK models" },
+    caseBindings: {
+      "BD-057-REGRESSION": Object.keys(assertions),
+      "BD-061-REGRESSION": [
+        "openApiGeneratedWithoutDrift",
+        "openApiReferencesResolve",
+        "typescriptAuthenticatedOperationCoverage",
+        "pythonAuthenticatedOperationCoverage",
+        "nodePackagesInstallAndRunThroughGateway",
+        "pythonWheelInstallsAndRunsThroughGateway",
+      ],
+    },
+    claims: { authenticatedOperationCount: 20, generatedSdkParity: true },
   });
   process.stdout.write("Release structure checks passed.\n");
 }

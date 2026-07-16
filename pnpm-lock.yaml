@@ -40,6 +40,12 @@ importers:
 
   apps/cli:
     dependencies:
+      '@lite-harness/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lite-harness/credential-store':
         specifier: workspace:*
         version: link:../../packages/credential-store

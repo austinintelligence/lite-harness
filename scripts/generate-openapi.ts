@@ -17,9 +17,11 @@ import {
   ErrorDetailSchema,
   ErrorEnvelopeSchema,
   GatewayHealthSchema,
+  GatewayReadinessDependenciesSchema,
   GatewayReadinessSchema,
   InboundEnvelopeSchema,
   LITE_API_VERSION,
+  ManagerReadinessSchema,
   MintRunTokenRequestSchema,
   MintRunTokenResponseSchema,
   PublishArtifactRequestSchema,
@@ -68,8 +70,10 @@ const publicSchemas: Record<string, unknown> = {
   ErrorDetail: ErrorDetailSchema,
   ErrorEnvelope: ErrorEnvelopeSchema,
   GatewayHealth: GatewayHealthSchema,
+  GatewayReadinessDependencies: GatewayReadinessDependenciesSchema,
   GatewayReadiness: GatewayReadinessSchema,
   InboundEnvelope: InboundEnvelopeSchema,
+  ManagerReadiness: ManagerReadinessSchema,
   MintRunToken: MintRunTokenRequestSchema,
   MintRunTokenResponse: MintRunTokenResponseSchema,
   PublishArtifact: PublishArtifactRequestSchema,
@@ -380,7 +384,8 @@ function typescriptType(schema: Record<string, any>, indent = ""): string {
     const required = new Set<string>(schema.required ?? []);
     const fields = Object.entries(properties).map(([field, value]) => {
       const name = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(field) ? field : JSON.stringify(field);
-      return `${indent}  ${name}${required.has(field) ? "" : "?"}: ${typescriptType(value, `${indent}  `)};`;
+      const type = typescriptType(value, `${indent}  `);
+      return `${indent}  ${name}${required.has(field) ? "" : "?"}:${type.startsWith("\n") ? "" : " "}${type};`;
     });
     return fields.length ? `\n${indent}{\n${fields.join("\n")}\n${indent}}` : "Record<string, never>";
   }

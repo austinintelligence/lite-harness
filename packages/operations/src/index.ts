@@ -5,6 +5,7 @@ import { request as httpRequest } from "node:http";
 import { chmod, lstat, mkdir, open, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 export interface ServiceInstallOptions {
   root: string;
@@ -227,13 +228,90 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
+export class RedactedStreamBuffer {
+  readonly #decoder = new StringDecoder("utf8");
+  #pending = "";
+  #discardingOversizedLine = false;
+  #ended = false;
+
+  constructor(
+    private readonly emit: (redactedText: string) => void,
+    private readonly maxLineBytes = 256 * 1024,
+  ) {
+    if (!Number.isSafeInteger(maxLineBytes) || maxLineBytes < 1 || maxLineBytes > 16 * 1024 * 1024) {
+      throw new Error("Service log line bound must be a positive safe integer no larger than 16 MiB");
+    }
+  }
+
+  write(chunk: string | Buffer): void {
+    if (this.#ended) throw new Error("Cannot write to an ended service log stream");
+    this.#accept(this.#decoder.write(Buffer.from(chunk)));
+  }
+
+  end(chunk?: string | Buffer): void {
+    if (this.#ended) return;
+    this.#ended = true;
+    this.#accept(chunk === undefined ? this.#decoder.end() : this.#decoder.end(Buffer.from(chunk)));
+    if (!this.#discardingOversizedLine && this.#pending) this.emit(redactServiceLog(this.#pending));
+    this.#pending = "";
+    this.#discardingOversizedLine = false;
+  }
+
+  #accept(decoded: string): void {
+    this.#pending += decoded;
+    let newline = this.#pending.indexOf("\n");
+    while (newline >= 0) {
+      const line = this.#pending.slice(0, newline + 1);
+      this.#pending = this.#pending.slice(newline + 1);
+      if (this.#discardingOversizedLine) {
+        this.#discardingOversizedLine = false;
+      } else if (Buffer.byteLength(line) > this.maxLineBytes) {
+        this.emit("[REDACTED OVERSIZED LOG LINE]\n");
+      } else {
+        this.emit(redactServiceLog(line));
+      }
+      newline = this.#pending.indexOf("\n");
+    }
+    if (Buffer.byteLength(this.#pending) > this.maxLineBytes) {
+      if (!this.#discardingOversizedLine) this.emit("[REDACTED OVERSIZED LOG LINE]\n");
+      this.#pending = "";
+      this.#discardingOversizedLine = true;
+    }
+  }
+}
+
 export class RotatingLogSink {
+  readonly #buffers = new Map<string, RedactedStreamBuffer>();
+
   constructor(private readonly path: string, private readonly maxBytes = 10 * 1024 * 1024, private readonly generations = 5) {
     mkdirSync(dirname(path), { recursive: true });
   }
 
   write(source: string, stream: "stdout" | "stderr", chunk: string | Buffer): void {
-    const line = JSON.stringify({ at: new Date().toISOString(), source, stream, message: redactLog(Buffer.from(chunk).toString("utf8")).slice(0, 256 * 1024) });
+    const key = `${source}\0${stream}`;
+    let buffer = this.#buffers.get(key);
+    if (!buffer) {
+      buffer = new RedactedStreamBuffer((message) => this.#append(source, stream, message));
+      this.#buffers.set(key, buffer);
+    }
+    buffer.write(chunk);
+  }
+
+  flush(source: string, stream: "stdout" | "stderr"): void {
+    const key = `${source}\0${stream}`;
+    const buffer = this.#buffers.get(key);
+    if (!buffer) return;
+    this.#buffers.delete(key);
+    buffer.end();
+  }
+
+  flushAll(): void {
+    for (const buffer of this.#buffers.values()) buffer.end();
+    this.#buffers.clear();
+  }
+
+  #append(source: string, stream: "stdout" | "stderr", message: string): void {
+    const line = JSON.stringify({ at: new Date().toISOString(), source, stream, message });
     this.#rotate(Buffer.byteLength(line) + 1);
     appendFileSync(this.path, `${line}\n`, { encoding: "utf8", mode: 0o600 });
   }
@@ -340,9 +418,11 @@ function systemdValue(value: string): string { return `"${value.replaceAll("\\",
 function systemdCommand(command: string, args: readonly string[]): string { return [command, ...args].map(systemdValue).join(" "); }
 function windowsArguments(args: readonly string[]): string { return args.map((value) => `"${value.replaceAll('"', '\\"')}"`).join(" "); }
 function xml(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-function redactLog(value: string): string {
+export function redactServiceLog(value: string): string {
   return value
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{8,}\b/gi, "Bearer [REDACTED]")
     .replace(/\b(?:sk-|xox[baprs]-)[A-Za-z0-9_-]{8,}\b/g, "[REDACTED]")
-    .replace(/(["']?(?:api[_-]?key|token|secret|authorization)["']?\s*[:=]\s*["']?)[^\s,"']{8,}/gi, "$1[REDACTED]");
+    .replace(/(["']?authorization["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,}\r\n]*)/gi, "$1[REDACTED]")
+    .replace(/(["']?(?:set[_-]?)?cookie["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,}\r\n]*)/gi, "$1[REDACTED]")
+    .replace(/(["']?(?:api[_-]?key|token|secret|credential|password)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,\s}\r\n]+)/gi, "$1[REDACTED]");
 }

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join, resolve } from "node:path";
 import { OsSecretStore } from "@lite-harness/credential-store";
-import { RotatingLogSink } from "@lite-harness/operations";
+import { RedactedStreamBuffer, RotatingLogSink } from "@lite-harness/operations";
 import { loadLauncherConfiguration } from "@lite-harness/config";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -44,16 +44,22 @@ process.once("SIGINT", stopAll);
 process.once("SIGTERM", stopAll);
 
 function start(name: string, entry: string): { name: string; process: ChildProcess } {
+  const stderrRelay = new RedactedStreamBuffer((text) => process.stderr.write(text));
   const child = spawn(process.execPath, extname(entry) === ".ts" ? ["--import", "tsx", entry] : [entry], {
     cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
   child.stdout?.on("data", (chunk: Buffer) => logs.write(name, "stdout", chunk));
   child.stderr?.on("data", (chunk: Buffer) => {
     logs.write(name, "stderr", chunk);
-    process.stderr.write(chunk);
+    stderrRelay.write(chunk);
+  });
+  child.once("close", () => {
+    logs.flush(name, "stdout");
+    logs.flush(name, "stderr");
+    stderrRelay.end();
   });
   child.once("error", (error) => {
-    process.stderr.write(`lite-harness launcher: failed to start ${name}: ${error.message}\n`);
+    stderrRelay.write(`lite-harness launcher: failed to start ${name}: ${error.message}\n`);
     process.exitCode = 1; stopAll();
   });
   return { name, process: child };

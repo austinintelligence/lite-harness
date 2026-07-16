@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 /** Public REST contract generation. Increment only for a breaking wire change. */
 export const LITE_API_VERSION = "v1" as const;
@@ -472,11 +473,41 @@ export const ReadinessDependencySchema = Type.Object({
   reason: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
 }, { additionalProperties: false });
 
+export const PRODUCTION_READINESS_DEPENDENCY_KEYS = [
+  "database",
+  "disk",
+  "provider",
+  "snapshotKey",
+  "runtime",
+  "image",
+] as const;
+
+export const ManagerReadinessSchema = Type.Object({
+  ok: Type.Boolean(),
+  role: Type.Literal("manager"),
+  protocolVersion: Type.Literal(LITE_IPC_PROTOCOL_VERSION),
+  dependencies: Type.Record(Type.String({ minLength: 1, maxLength: 128 }), ReadinessDependencySchema),
+}, { additionalProperties: false });
+
+export const GatewayReadinessDependenciesSchema = Type.Object({
+  manager: ManagerReadinessSchema,
+}, { additionalProperties: false });
+
 export const GatewayReadinessSchema = Type.Object({
   ok: Type.Boolean(),
   role: Type.Literal("gateway"),
-  dependencies: Type.Record(Type.String({ minLength: 1, maxLength: 128 }), ReadinessDependencySchema),
+  dependencies: GatewayReadinessDependenciesSchema,
 }, { additionalProperties: false });
+
+export type GatewayReadiness = Static<typeof GatewayReadinessSchema>;
+
+export function isManagerReadiness(value: unknown): value is ManagerReadiness {
+  return Value.Check(ManagerReadinessSchema, value);
+}
+
+export function isGatewayReadiness(value: unknown): value is GatewayReadiness {
+  return Value.Check(GatewayReadinessSchema, value);
+}
 
 export const WebhookIngestResponseSchema = Type.Object({
   duplicate: Type.Boolean(),

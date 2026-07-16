@@ -20,7 +20,7 @@ import type {
   ManagerHealth,
   ManagerReadiness,
 } from "@lite-harness/contracts";
-import { LITE_IPC_PROTOCOL_VERSION, LITE_IPC_VERSION_HEADER } from "@lite-harness/contracts";
+import { isManagerReadiness, LITE_IPC_PROTOCOL_VERSION, LITE_IPC_VERSION_HEADER } from "@lite-harness/contracts";
 
 export class ManagerIpcError extends Error {
   constructor(
@@ -56,9 +56,17 @@ export class ManagerClient {
   }
 
   async readiness(): Promise<ManagerReadiness> {
-    const readiness = await this.#request<ManagerReadiness>("GET", "/readyz", undefined, {}, undefined, [503]);
-    if (readiness.protocolVersion !== LITE_IPC_PROTOCOL_VERSION) {
+    const readiness = await this.#request<unknown>("GET", "/readyz", undefined, {}, undefined, [503]);
+    if (readiness && typeof readiness === "object" && "protocolVersion" in readiness &&
+        readiness.protocolVersion !== LITE_IPC_PROTOCOL_VERSION) {
       throw new ManagerIpcError(426, "ipc_version_mismatch", "Manager readiness protocol version is incompatible");
+    }
+    if (!isManagerReadiness(readiness)) {
+      throw new ManagerIpcError(502, "invalid_ipc_response", "Manager readiness response does not match the IPC contract");
+    }
+    const dependenciesHealthy = Object.values(readiness.dependencies).every((dependency) => dependency.ok);
+    if (readiness.ok !== dependenciesHealthy) {
+      throw new ManagerIpcError(502, "invalid_ipc_response", "Manager readiness aggregate contradicts its dependencies");
     }
     return readiness;
   }

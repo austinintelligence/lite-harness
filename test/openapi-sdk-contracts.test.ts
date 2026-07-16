@@ -2,7 +2,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GENERATED_API_OPERATIONS, GENERATED_API_SCHEMAS } from "@lite-harness/sdk";
+import {
+  AUTHENTICATED_OPERATION_METHODS,
+  AUTHENTICATED_OPERATION_ROUTES,
+  GENERATED_API_OPERATIONS,
+  GENERATED_API_SCHEMAS,
+  LiteHarnessClient,
+} from "@lite-harness/sdk";
 import { InboundEnvelopeSchema } from "@lite-harness/contracts";
 import { normalizeInbound } from "@lite-harness/integrations";
 
@@ -63,7 +69,50 @@ describe("authoritative OpenAPI and generated SDK contract", () => {
     const pythonOperations = [...pythonGenerated.matchAll(/^\s+\("([A-Z]+)", "([^"]+)", "([^"]+)"\),$/gm)]
       .map((match) => ({ method: match[1], path: match[2], operationId: match[3] }));
     expect(pythonOperations).toEqual(openApiOperations);
+    expect(pythonGenerated).toContain("class GatewayReadinessDependencies(TypedDict):\n    manager: ManagerReadiness");
+    expect(pythonGenerated).toContain("class GatewayReadiness(TypedDict):\n    ok: bool\n    role: Literal[\"gateway\"]\n    dependencies: GatewayReadinessDependencies");
+    expect(pythonGenerated).toContain("class ManagerReadiness(TypedDict):");
+    expect(pythonGenerated).toContain("dependencies: dict[str, ReadinessDependency]");
     for (const name of schemaNames) expect(pythonGenerated).toMatch(new RegExp(`(?:class|^${name}:)`, "m"));
+  });
+
+  it("maps every authenticated OpenAPI operation to a callable TypeScript SDK method", () => {
+    const expectedMethods = {
+      getV1Agents: "listAgents",
+      postV1Agents: "createAgent",
+      getV1AgentsByAgentId: "getAgent",
+      postV1ApprovalsByApprovalId: "resolveApproval",
+      getV1ArtifactsByArtifactId: "downloadArtifact",
+      postV1Runs: "createRun",
+      getV1RunsByRunId: "getRun",
+      postV1RunsByRunIdArtifacts: "publishArtifact",
+      getV1RunsByRunIdAttempts: "getRunAttempts",
+      postV1RunsByRunIdCancel: "cancelRun",
+      getV1RunsByRunIdChildren: "getChildRuns",
+      getV1RunsByRunIdEvents: "events",
+      postV1RunsByRunIdSteer: "steerRun",
+      getV1SessionsBySessionId: "getSession",
+      getV1SessionsBySessionIdMessages: "getSessionMessages",
+      postV1Tokens: "mintRunToken",
+      deleteV1TokensByTokenId: "revokeToken",
+      getV1Workspaces: "listWorkspaces",
+      postV1Workspaces: "createWorkspace",
+      getV1WorkspacesByWorkspaceId: "getWorkspace",
+    } as const;
+    expect(AUTHENTICATED_OPERATION_METHODS).toEqual(expectedMethods);
+    const expected = GENERATED_API_OPERATIONS
+      .filter((operation) => operation.path.startsWith("/v1/"))
+      .map((operation) => [
+        operation.method,
+        operation.path,
+        operation.operationId,
+        expectedMethods[operation.operationId as keyof typeof expectedMethods],
+      ]);
+    expect(AUTHENTICATED_OPERATION_ROUTES).toEqual(expected);
+    expect(expected).toHaveLength(20);
+    for (const methodName of Object.values(expectedMethods)) {
+      expect(typeof LiteHarnessClient.prototype[methodName]).toBe("function");
+    }
   });
 
   it("keeps Python generated annotations introspectable", () => {

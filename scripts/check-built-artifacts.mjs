@@ -90,7 +90,16 @@ try {
   await waitForReady(`${baseUrl}/readyz`);
 
   const smoke = resolve(fixture, "smoke.mjs");
-  writeFileSync(smoke, `import { LiteHarnessClient, LiteHarnessError } from "@lite-harness/sdk";
+  writeFileSync(smoke, `import { AUTHENTICATED_OPERATION_METHODS, AUTHENTICATED_OPERATION_ROUTES, GENERATED_API_OPERATIONS, LiteHarnessClient, LiteHarnessError } from "@lite-harness/sdk";
+const expectedAuthenticatedOperations = GENERATED_API_OPERATIONS
+  .filter((operation) => operation.path.startsWith("/v1/"))
+  .map((operation) => [operation.method, operation.path, operation.operationId, AUTHENTICATED_OPERATION_METHODS[operation.operationId]]);
+if (JSON.stringify(AUTHENTICATED_OPERATION_ROUTES) !== JSON.stringify(expectedAuthenticatedOperations) || expectedAuthenticatedOperations.length !== 20) {
+  throw new Error("Packaged TypeScript SDK OpenAPI operation coverage drifted");
+}
+for (const methodName of Object.values(AUTHENTICATED_OPERATION_METHODS)) {
+  if (typeof LiteHarnessClient.prototype[methodName] !== "function") throw new Error("Packaged TypeScript SDK operation is missing: " + methodName);
+}
 const client = new LiteHarnessClient({ baseUrl: process.argv[2], token: "artifact-app-token" });
 const isolationClients = ${JSON.stringify(isolationCredentials.map(({ dimension, token }) => ({ dimension, token })))}
   .map(({ dimension, token }) => ({ dimension, client: new LiteHarnessClient({ baseUrl: process.argv[2], token }) }));

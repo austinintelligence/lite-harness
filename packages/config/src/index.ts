@@ -19,6 +19,13 @@ export interface ValidatedManagerConfiguration {
   runtimeMemory: string;
   runtimeCpus: string;
   runtimePids: number;
+  memoryEnabled: boolean;
+  approvalsRequired: boolean;
+  workspaceColdAfterCheckpoint: boolean;
+  browserPrivateNetworksAllowed: boolean;
+  contextOptimizationEnabled: boolean;
+  pluginsEnabled: boolean;
+  cacheCatalogEnabled: boolean;
 }
 
 export interface ValidatedGatewayConfiguration {
@@ -73,6 +80,13 @@ export function loadManagerConfiguration(
     runtimeMemory: boundedMemory(environment.LITE_HARNESS_RUNTIME_MEMORY, "LITE_HARNESS_RUNTIME_MEMORY", "512m"),
     runtimeCpus: boundedDecimal(environment.LITE_HARNESS_RUNTIME_CPUS, "LITE_HARNESS_RUNTIME_CPUS", 0.1, 64, "1"),
     runtimePids: boundedInteger(environment.LITE_HARNESS_RUNTIME_PIDS, "LITE_HARNESS_RUNTIME_PIDS", 1, 4_096, 128),
+    memoryEnabled: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_MEMORY, "LITE_HARNESS_ENABLE_MEMORY"),
+    approvalsRequired: parseBooleanEnvironment(environment.LITE_HARNESS_REQUIRE_APPROVALS, "LITE_HARNESS_REQUIRE_APPROVALS"),
+    workspaceColdAfterCheckpoint: parseBooleanEnvironment(environment.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT, "LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT"),
+    browserPrivateNetworksAllowed: parseBooleanEnvironment(environment.LITE_HARNESS_BROWSER_ALLOW_PRIVATE, "LITE_HARNESS_BROWSER_ALLOW_PRIVATE"),
+    contextOptimizationEnabled: parseBooleanEnvironment(environment.LITE_HARNESS_CONTEXT_OPTIMIZATION, "LITE_HARNESS_CONTEXT_OPTIMIZATION"),
+    pluginsEnabled: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_PLUGINS, "LITE_HARNESS_ENABLE_PLUGINS"),
+    cacheCatalogEnabled: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_CACHE_CATALOG, "LITE_HARNESS_ENABLE_CACHE_CATALOG"),
   });
 }
 
@@ -181,6 +195,14 @@ function boundedInteger(value: string | undefined, name: string, minimum: number
     throw new Error(`${name} must be between ${minimum} and ${maximum}`);
   }
   return parsed;
+}
+
+export function parseBooleanEnvironment(value: string | undefined, name: string, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  const configured = value.trim();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  throw new Error(`${name} must be exactly true or false`);
 }
 
 function boundedNumber(value: string, name: string, minimum: number, maximum: number): number {

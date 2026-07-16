@@ -100,6 +100,11 @@ const optionalSystems = await configureProductionOptionalSystems({
   ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
   workspaceStore: store,
   snapshotKey: snapshotRootKey,
+  featureFlags: {
+    contextOptimization: configuration.contextOptimizationEnabled,
+    plugins: configuration.pluginsEnabled,
+    cacheCatalog: configuration.cacheCatalogEnabled,
+  },
 });
 const automaticWorkspaceCheckpoint = optionalSystems.workspaceLifecycle;
 const runtimeImageDigest = baseRuntime instanceof DockerToolRuntime ? requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") : undefined;
@@ -124,17 +129,17 @@ const runSnapshotConfiguration = {
 };
 const integrationModule = process.env.LITE_HARNESS_WEBHOOK_SECRET ? await import("@lite-harness/integrations") : undefined;
 const integrationStore = integrationModule ? new integrationModule.SqliteIntegrationStore(join(dataDir, "integrations.db")) : undefined;
-const memoryStore = process.env.LITE_HARNESS_ENABLE_MEMORY === "true"
+const memoryStore = configuration.memoryEnabled
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
 const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, optionalSystems.context), {
-  requiresApproval: process.env.LITE_HARNESS_REQUIRE_APPROVALS === "true"
+  requiresApproval: configuration.approvalsRequired
     ? () => true
     : () => false,
   approvalTimeoutMs: configuration.approvalTimeoutMs,
   approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
   ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
-  makeWorkspaceColdAfterCheckpoint: process.env.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT === "true",
+  makeWorkspaceColdAfterCheckpoint: configuration.workspaceColdAfterCheckpoint,
   runSnapshot: runSnapshotConfiguration,
   observability,
 });
@@ -303,7 +308,7 @@ async function configureBrokeredTools(
     const owner: BrowserOwner = { ...principal, runId: params.runId as string };
     const sessionId = browser.create(owner, {
       ...(allowedOrigins.length ? { allowedOrigins } : {}),
-      allowPrivateNetworks: process.env.LITE_HARNESS_BROWSER_ALLOW_PRIVATE === "true",
+      allowPrivateNetworks: configuration.browserPrivateNetworksAllowed,
     }, profileId);
     return { callId: params.call.id, ok: true, content: JSON.stringify({ sessionId }), metadata: { sessionId } };
   });

@@ -102,11 +102,15 @@ export type GatewayHealth =
   uptimeSeconds: number;
   rssBytes: number;
 };
+export type GatewayReadinessDependencies =
+{
+  manager: ManagerReadiness;
+};
 export type GatewayReadiness =
 {
   ok: boolean;
   role: "gateway";
-  dependencies: Record<string, ReadinessDependency>;
+  dependencies: GatewayReadinessDependencies;
 };
 export type InboundEnvelope =
 {
@@ -117,6 +121,13 @@ export type InboundEnvelope =
   text: string;
   attachmentUrls?: Array<string>;
   receivedAt?: string;
+};
+export type ManagerReadiness =
+{
+  ok: boolean;
+  role: "manager";
+  protocolVersion: "1";
+  dependencies: Record<string, ReadinessDependency>;
 };
 export type MintRunToken =
 {
@@ -309,8 +320,10 @@ export const GENERATED_API_SCHEMAS = [
   "ErrorDetail",
   "ErrorEnvelope",
   "GatewayHealth",
+  "GatewayReadinessDependencies",
   "GatewayReadiness",
   "InboundEnvelope",
+  "ManagerReadiness",
   "MintRunToken",
   "MintRunTokenResponse",
   "PublishArtifact",

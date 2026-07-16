@@ -520,6 +520,18 @@
           "rssBytes"
         ]
       },
+      "GatewayReadinessDependencies": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "manager": {
+            "$ref": "#/components/schemas/ManagerReadiness"
+          }
+        },
+        "required": [
+          "manager"
+        ]
+      },
       "GatewayReadiness": {
         "additionalProperties": false,
         "type": "object",
@@ -532,12 +544,7 @@
             "type": "string"
           },
           "dependencies": {
-            "type": "object",
-            "patternProperties": {
-              "^(.*)$": {
-                "$ref": "#/components/schemas/ReadinessDependency"
-              }
-            }
+            "$ref": "#/components/schemas/GatewayReadinessDependencies"
           }
         },
         "required": [
@@ -601,6 +608,37 @@
           "deliveryId",
           "senderExternalId",
           "text"
+        ]
+      },
+      "ManagerReadiness": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "role": {
+            "const": "manager",
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": "1",
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {
+                "$ref": "#/components/schemas/ReadinessDependency"
+              }
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "role",
+          "protocolVersion",
+          "dependencies"
         ]
       },
       "MintRunToken": {
@@ -3498,8 +3536,10 @@
     "ErrorDetail",
     "ErrorEnvelope",
     "GatewayHealth",
+    "GatewayReadinessDependencies",
     "GatewayReadiness",
     "InboundEnvelope",
+    "ManagerReadiness",
     "MintRunToken",
     "MintRunTokenResponse",
     "PublishArtifact",

@@ -97,10 +97,13 @@ class GatewayHealth(TypedDict):
     uptimeSeconds: int
     rssBytes: int
 
+class GatewayReadinessDependencies(TypedDict):
+    manager: ManagerReadiness
+
 class GatewayReadiness(TypedDict):
     ok: bool
     role: Literal["gateway"]
-    dependencies: dict[str, ReadinessDependency]
+    dependencies: GatewayReadinessDependencies
 
 class InboundEnvelope(TypedDict):
     deliveryId: str
@@ -110,6 +113,12 @@ class InboundEnvelope(TypedDict):
     text: str
     attachmentUrls: NotRequired[list[str]]
     receivedAt: NotRequired[str]
+
+class ManagerReadiness(TypedDict):
+    ok: bool
+    role: Literal["manager"]
+    protocolVersion: Literal["1"]
+    dependencies: dict[str, ReadinessDependency]
 
 class MintRunToken(TypedDict):
     scopes: list[str]
@@ -293,4 +302,4 @@ API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/workspaces/{workspaceId}", "getV1WorkspacesByWorkspaceId"),
 )
 
-__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadiness","InboundEnvelope","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunStreamError","RunStreamFrame","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]
+__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadinessDependencies","GatewayReadiness","InboundEnvelope","ManagerReadiness","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunStreamError","RunStreamFrame","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]

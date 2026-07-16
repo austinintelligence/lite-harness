@@ -51,6 +51,20 @@ describe("structured observability", () => {
     expect(() => observability.observe("bad", Number.POSITIVE_INFINITY)).toThrow(/finite/);
   });
 
+  it("rejects aggregate metric overflow before corrupting JSON snapshots", () => {
+    const counters = new StructuredObservability();
+    counters.counter("overflow.counter", Number.MAX_SAFE_INTEGER);
+    expect(() => counters.counter("overflow.counter", 1)).toThrow(/aggregate.*safe integer/);
+    expect(counters.snapshot().counters["overflow.counter"]).toBe(Number.MAX_SAFE_INTEGER);
+
+    const histograms = new StructuredObservability();
+    histograms.observe("overflow.histogram", Number.MAX_VALUE);
+    expect(() => histograms.observe("overflow.histogram", Number.MAX_VALUE)).toThrow(/histogram aggregate.*finite/);
+    const snapshot = histograms.snapshot();
+    expect(snapshot.histograms["overflow.histogram"]).toEqual({ count: 1, sum: Number.MAX_VALUE, max: Number.MAX_VALUE });
+    expect(JSON.stringify({ counters: counters.snapshot(), histograms: snapshot })).not.toContain(":null");
+  });
+
   it("writes redacted JSONL events through a bounded durable sink", () => {
     const root = mkdtempSync(join(tmpdir(), "lite-observability-"));
     roots.push(root);

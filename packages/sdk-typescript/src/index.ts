@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isTerminalRunStatus } from "@lite-harness/contracts";
+import { GENERATED_API_OPERATIONS } from "./generated-api.js";
 import type {
   CreateRunRequest,
   ArtifactPayloadResponse,
@@ -56,111 +57,101 @@ export class LiteHarnessClient {
   }
 
   async createRun(request: CreateRunRequest, idempotencyKey = randomUUID()): Promise<CreateRunResponse> {
-    return this.#json<CreateRunResponse>("/v1/runs", {
-      method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
-      body: JSON.stringify(request),
+    return this.#jsonMethod<CreateRunResponse>("createRun", {
+      init: {
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+        body: JSON.stringify(request),
+      },
     });
   }
 
   mintRunToken(request: MintRunTokenRequest): Promise<MintRunTokenResponse> {
-    return this.#json<MintRunTokenResponse>("/v1/tokens", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
+    return this.#jsonMethod<MintRunTokenResponse>("mintRunToken", {
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
     });
   }
 
   revokeToken(tokenId: string): Promise<RevokeTokenResponse> {
-    return this.#json<RevokeTokenResponse>(`/v1/tokens/${encodeURIComponent(tokenId)}`, { method: "DELETE" });
+    return this.#jsonMethod<RevokeTokenResponse>("revokeToken", { pathParams: { tokenId } });
   }
 
   getRun(runId: string): Promise<RunRecord> {
-    return this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}`);
+    return this.#jsonMethod<RunRecord>("getRun", { pathParams: { runId } });
   }
 
   cancelRun(runId: string): Promise<RunRecord> {
-    return this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+    return this.#jsonMethod<RunRecord>("cancelRun", { pathParams: { runId } });
   }
 
   async getRunAttempts(runId: string): Promise<RunAttemptRecord[]> {
-    return (await this.#json<{ attempts: RunAttemptRecord[] }>(
-      `/v1/runs/${encodeURIComponent(runId)}/attempts`,
-    )).attempts;
+    return (await this.#jsonMethod<{ attempts: RunAttemptRecord[] }>("getRunAttempts", { pathParams: { runId } })).attempts;
   }
 
   async getChildRuns(runId: string): Promise<RunRecord[]> {
-    return (await this.#json<{ runs: RunRecord[] }>(
-      `/v1/runs/${encodeURIComponent(runId)}/children`,
-    )).runs;
+    return (await this.#jsonMethod<{ runs: RunRecord[] }>("getChildRuns", { pathParams: { runId } })).runs;
   }
 
   steerRun(runId: string, instruction: string): Promise<RunRecord> {
-    return this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ instruction }),
+    return this.#jsonMethod<RunRecord>("steerRun", {
+      pathParams: { runId },
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify({ instruction }) },
     });
   }
 
   resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord> {
-    return this.#json<ApprovalRecord>(`/v1/approvals/${encodeURIComponent(approvalId)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ approved }),
+    return this.#jsonMethod<ApprovalRecord>("resolveApproval", {
+      pathParams: { approvalId },
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify({ approved }) },
     });
   }
 
   getSession(sessionId: string): Promise<SessionRecord> {
-    return this.#json<SessionRecord>(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+    return this.#jsonMethod<SessionRecord>("getSession", { pathParams: { sessionId } });
   }
 
   async getSessionMessages(sessionId: string): Promise<SessionMessageRecord[]> {
-    const response = await this.#json<{ messages: SessionMessageRecord[] }>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
-    );
+    const response = await this.#jsonMethod<{ messages: SessionMessageRecord[] }>("getSessionMessages", { pathParams: { sessionId } });
     return response.messages;
   }
 
   publishArtifact(runId: string, request: PublishArtifactRequest): Promise<ArtifactRecord> {
-    return this.#json<ArtifactRecord>(`/v1/runs/${encodeURIComponent(runId)}/artifacts`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
+    return this.#jsonMethod<ArtifactRecord>("publishArtifact", {
+      pathParams: { runId },
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
     });
   }
 
   async downloadArtifact(artifactId: string): Promise<{ record: ArtifactRecord; data: Uint8Array }> {
-    const payload = await this.#json<ArtifactPayloadResponse>(`/v1/artifacts/${encodeURIComponent(artifactId)}`);
+    const payload = await this.#jsonMethod<ArtifactPayloadResponse>("downloadArtifact", { pathParams: { artifactId } });
     return { record: payload.record, data: Uint8Array.from(Buffer.from(payload.dataBase64, "base64")) };
   }
 
   createAgent(request: CreateAgentProfileRequest): Promise<AgentProfileRecord> {
-    return this.#json<AgentProfileRecord>("/v1/agents", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+    return this.#jsonMethod<AgentProfileRecord>("createAgent", {
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
     });
   }
 
   getAgent(agentId: string): Promise<AgentProfileRecord> {
-    return this.#json<AgentProfileRecord>(`/v1/agents/${encodeURIComponent(agentId)}`);
+    return this.#jsonMethod<AgentProfileRecord>("getAgent", { pathParams: { agentId } });
   }
 
   async listAgents(): Promise<AgentProfileRecord[]> {
-    return (await this.#json<{ agents: AgentProfileRecord[] }>("/v1/agents")).agents;
+    return (await this.#jsonMethod<{ agents: AgentProfileRecord[] }>("listAgents")).agents;
   }
 
   createWorkspace(request: CreateWorkspaceRequest = {}): Promise<WorkspaceRecord> {
-    return this.#json<WorkspaceRecord>("/v1/workspaces", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+    return this.#jsonMethod<WorkspaceRecord>("createWorkspace", {
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
     });
   }
 
   getWorkspace(workspaceId: string): Promise<WorkspaceRecord> {
-    return this.#json<WorkspaceRecord>(`/v1/workspaces/${encodeURIComponent(workspaceId)}`);
+    return this.#jsonMethod<WorkspaceRecord>("getWorkspace", { pathParams: { workspaceId } });
   }
 
   async listWorkspaces(): Promise<WorkspaceRecord[]> {
-    return (await this.#json<{ workspaces: WorkspaceRecord[] }>("/v1/workspaces")).workspaces;
+    return (await this.#jsonMethod<{ workspaces: WorkspaceRecord[] }>("listWorkspaces")).workspaces;
   }
 
   async *events(runId: string, after = 0, options: RunEventStreamOptions = {}): AsyncIterable<RunEvent> {
@@ -176,9 +167,10 @@ export class LiteHarnessClient {
     while (true) {
       throwIfAborted(options.signal);
       try {
+        const operation = operationRouteForMethod("events", { runId });
         const response = await this.#fetch(
-          this.#url(`/v1/runs/${encodeURIComponent(runId)}/events?after=${cursor}`),
-          { headers: this.#headers(), signal: options.signal },
+          this.#url(`${operation.path}?after=${cursor}`),
+          { method: operation.method, headers: this.#headers(), signal: options.signal },
         );
         if (!response.ok || !response.body) {
           throw new LiteHarnessError(
@@ -205,7 +197,7 @@ export class LiteHarnessClient {
           yield event;
         }
 
-        const run = await this.#json<RunRecord>(`/v1/runs/${encodeURIComponent(runId)}`, { signal: options.signal });
+        const run = await this.#jsonMethod<RunRecord>("getRun", { pathParams: { runId }, init: { signal: options.signal } });
         if (isTerminalRunStatus(run.status) && cursor >= run.lastSequence) return;
       } catch (error) {
         throwIfAborted(options.signal);
@@ -237,6 +229,14 @@ export class LiteHarnessClient {
     return body as T;
   }
 
+  #jsonMethod<T>(
+    methodName: AuthenticatedClientMethod,
+    options: { pathParams?: Readonly<Record<string, string>>; init?: RequestInit } = {},
+  ): Promise<T> {
+    const operation = operationRouteForMethod(methodName, options.pathParams);
+    return this.#json<T>(operation.path, { ...options.init, method: operation.method });
+  }
+
   #headers(): Record<string, string> {
     return { authorization: `Bearer ${this.options.token}` };
   }
@@ -244,6 +244,81 @@ export class LiteHarnessClient {
   #url(path: string): string {
     return new URL(path, this.options.baseUrl).toString();
   }
+}
+
+type AuthenticatedApiOperation = Extract<
+  (typeof GENERATED_API_OPERATIONS)[number],
+  { path: `/v1/${string}` }
+>;
+export type AuthenticatedOperationId = AuthenticatedApiOperation["operationId"];
+
+/**
+ * The generated OpenAPI inventory is authoritative. Every authenticated /v1
+ * operation must map to exactly one public client method.
+ */
+export const AUTHENTICATED_OPERATION_METHODS = {
+  getV1Agents: "listAgents",
+  postV1Agents: "createAgent",
+  getV1AgentsByAgentId: "getAgent",
+  postV1ApprovalsByApprovalId: "resolveApproval",
+  getV1ArtifactsByArtifactId: "downloadArtifact",
+  postV1Runs: "createRun",
+  getV1RunsByRunId: "getRun",
+  postV1RunsByRunIdArtifacts: "publishArtifact",
+  getV1RunsByRunIdAttempts: "getRunAttempts",
+  postV1RunsByRunIdCancel: "cancelRun",
+  getV1RunsByRunIdChildren: "getChildRuns",
+  getV1RunsByRunIdEvents: "events",
+  postV1RunsByRunIdSteer: "steerRun",
+  getV1SessionsBySessionId: "getSession",
+  getV1SessionsBySessionIdMessages: "getSessionMessages",
+  postV1Tokens: "mintRunToken",
+  deleteV1TokensByTokenId: "revokeToken",
+  getV1Workspaces: "listWorkspaces",
+  postV1Workspaces: "createWorkspace",
+  getV1WorkspacesByWorkspaceId: "getWorkspace",
+} as const satisfies Record<AuthenticatedOperationId, keyof LiteHarnessClient>;
+
+export const AUTHENTICATED_OPERATION_ROUTES = GENERATED_API_OPERATIONS
+  .filter((operation): operation is AuthenticatedApiOperation => operation.path.startsWith("/v1/"))
+  .map((operation) => [
+    operation.method,
+    operation.path,
+    operation.operationId,
+    AUTHENTICATED_OPERATION_METHODS[operation.operationId],
+  ] as const);
+
+export type AuthenticatedClientMethod = (typeof AUTHENTICATED_OPERATION_METHODS)[AuthenticatedOperationId];
+
+const OPERATION_ROUTES_BY_METHOD = new Map<AuthenticatedClientMethod, { method: string; path: string }>(
+  AUTHENTICATED_OPERATION_ROUTES.map(([method, path, _operationId, clientMethod]) => [clientMethod, { method, path }]),
+);
+
+if (OPERATION_ROUTES_BY_METHOD.size !== AUTHENTICATED_OPERATION_ROUTES.length) {
+  throw new Error("TypeScript SDK maps more than one authenticated operation to the same client method");
+}
+
+for (const methodName of Object.values(AUTHENTICATED_OPERATION_METHODS)) {
+  if (typeof LiteHarnessClient.prototype[methodName] !== "function") {
+    throw new Error(`TypeScript SDK OpenAPI operation maps to missing client method: ${methodName}`);
+  }
+}
+
+function operationRouteForMethod(
+  methodName: AuthenticatedClientMethod,
+  pathParams: Readonly<Record<string, string>> = {},
+): { method: string; path: string } {
+  const operation = OPERATION_ROUTES_BY_METHOD.get(methodName);
+  if (!operation) throw new Error(`TypeScript SDK has no OpenAPI operation for client method: ${methodName}`);
+  const required = [...operation.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1] as string);
+  const missing = required.filter((name) => pathParams[name] === undefined);
+  const unexpected = Object.keys(pathParams).filter((name) => !required.includes(name));
+  if (missing.length) throw new Error(`Missing path parameters for ${methodName}: ${missing.join(", ")}`);
+  if (unexpected.length) throw new Error(`Unexpected path parameters for ${methodName}: ${unexpected.join(", ")}`);
+  return {
+    method: operation.method,
+    path: operation.path.replace(/\{([^}]+)\}/g, (_placeholder, name: string) => encodeURIComponent(pathParams[name] as string)),
+  };
 }
 
 async function* readEventStream(body: ReadableStream<Uint8Array>): AsyncIterable<RunEvent> {

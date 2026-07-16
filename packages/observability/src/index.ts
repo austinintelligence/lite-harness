@@ -133,7 +133,9 @@ export class StructuredObservability {
   counter(name: string, value = 1, attributes: ObservabilityAttributes = {}): void {
     assertName(name);
     if (!Number.isFinite(value) || !Number.isSafeInteger(value)) throw new Error("Metric counter values must be finite safe integers");
-    this.#counters.set(name, (this.#counters.get(name) ?? 0) + value);
+    const next = (this.#counters.get(name) ?? 0) + value;
+    if (!Number.isSafeInteger(next)) throw new Error("Metric counter aggregate must remain a finite safe integer");
+    this.#counters.set(name, next);
     this.#record({ kind: "metric", name, traceId: attributeTraceId(attributes), attributes: { ...attributes, value } });
   }
 
@@ -141,10 +143,15 @@ export class StructuredObservability {
     assertName(name);
     if (!Number.isFinite(value) || value < 0) throw new Error("Metric observations must be finite non-negative numbers");
     const current = this.#histograms.get(name) ?? { count: 0, sum: 0, max: 0 };
-    current.count += 1;
-    current.sum += value;
-    current.max = Math.max(current.max, value);
-    this.#histograms.set(name, current);
+    const next = {
+      count: current.count + 1,
+      sum: current.sum + value,
+      max: Math.max(current.max, value),
+    };
+    if (!Number.isSafeInteger(next.count) || !Number.isFinite(next.sum) || !Number.isFinite(next.max)) {
+      throw new Error("Metric histogram aggregate must remain finite with a safe count");
+    }
+    this.#histograms.set(name, next);
     this.#record({ kind: "metric", name, traceId: attributeTraceId(attributes), attributes: { ...attributes, value } });
   }
 

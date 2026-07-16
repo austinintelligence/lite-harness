@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { AgentContextCompiler } from "@lite-harness/agent-runtime";
+import { parseBooleanEnvironment } from "@lite-harness/config";
 import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
 import type { McpSupervisor } from "@lite-harness/mcp";
 import type { LazyPluginSupervisor } from "@lite-harness/plugin-core";
@@ -24,6 +25,11 @@ interface OptionalSystemsOptions {
   workspaceStore?: WorkspaceLifecycleStore;
   snapshotKey?: Buffer;
   environment?: NodeJS.ProcessEnv;
+  featureFlags?: {
+    contextOptimization: boolean;
+    plugins: boolean;
+    cacheCatalog: boolean;
+  };
 }
 
 export interface ProductionOptionalSystems {
@@ -36,18 +42,23 @@ export interface ProductionOptionalSystems {
 /** Composes optional packs without starting a worker, timer, socket, or Docker job. */
 export async function configureProductionOptionalSystems(options: OptionalSystemsOptions): Promise<ProductionOptionalSystems> {
   const environment = options.environment ?? process.env;
+  const featureFlags = options.featureFlags ?? {
+    contextOptimization: parseBooleanEnvironment(environment.LITE_HARNESS_CONTEXT_OPTIMIZATION, "LITE_HARNESS_CONTEXT_OPTIMIZATION"),
+    plugins: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_PLUGINS, "LITE_HARNESS_ENABLE_PLUGINS"),
+    cacheCatalog: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_CACHE_CATALOG, "LITE_HARNESS_ENABLE_CACHE_CATALOG"),
+  };
   const stops: Array<() => Promise<void>> = [];
   const contextCompilers: AgentContextCompiler[] = [];
-  const operatorContext = await configureContext(options.runtime, options.dataDir, options.modelId, environment);
+  const operatorContext = await configureContext(options.runtime, options.dataDir, options.modelId, environment, featureFlags.contextOptimization);
   if (operatorContext) { contextCompilers.push(operatorContext.context); stops.push(operatorContext.stop); }
   const skills = await configureSkills(options.runtime, options.dataDir, environment);
   if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
   const mcp = await configureMcp(options.runtime, environment);
   if (mcp) stops.push(() => mcp.stopAll());
-  const plugins = await configurePlugins(options.runtime, options.dataDir, environment);
+  const plugins = await configurePlugins(options.runtime, options.dataDir, environment, featureFlags.plugins);
   if (plugins.supervisors.length) stops.push(() => Promise.all(plugins.supervisors.map((plugin) => plugin.stop())).then(() => undefined));
   const workspaceLifecycle = configureSnapshots(options);
-  configureCacheCatalog(options.runtime, options.dataDir, environment);
+  configureCacheCatalog(options.runtime, options.dataDir, featureFlags.cacheCatalog);
   const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
   return {
     ...(context ? { context } : {}),
@@ -57,7 +68,7 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
   };
 }
 
-async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, modelId: string, environment: NodeJS.ProcessEnv): Promise<{
+async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, modelId: string, environment: NodeJS.ProcessEnv, enabled: boolean): Promise<{
   context: AgentContextCompiler;
   stop(): Promise<void>;
 } | undefined> {
@@ -92,7 +103,6 @@ async function configureContext(runtime: BrokeredToolRuntime, dataDir: string, m
       properties: { blockId: { type: "string", minLength: 1, maxLength: 256 } },
     },
   });
-  const enabled = environment.LITE_HARNESS_CONTEXT_OPTIMIZATION === "true";
   const allowedApps = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_APPS);
   const allowedModels = csvSet(environment.LITE_HARNESS_CONTEXT_ALLOWED_MODELS);
   const killedApps = csvSet(environment.LITE_HARNESS_CONTEXT_KILLED_APPS);
@@ -248,11 +258,11 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
   return supervisor;
 }
 
-async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): Promise<{
+async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv, enabled: boolean): Promise<{
   supervisors: LazyPluginSupervisor[];
   snapshots: Array<{ id: string; version: string; digest: string }>;
 }> {
-  if (environment.LITE_HARNESS_ENABLE_PLUGINS !== "true") return { supervisors: [], snapshots: [] };
+  if (!enabled) return { supervisors: [], snapshots: [] };
   const { createOpenClawCompatibilityWorker, DockerPluginExecutionSandbox, inspectPluginManifest, LazyPluginSupervisor, PluginInstallLock, pluginPackageDigest } = await import("@lite-harness/plugin-core");
   const image = requiredString(environment.LITE_HARNESS_PLUGIN_IMAGE, "LITE_HARNESS_PLUGIN_IMAGE");
   const pluginRoot = join(dataDir, "plugins");
@@ -289,8 +299,8 @@ function configureSnapshots(options: OptionalSystemsOptions): ManagedWorkspaceLi
   return new ManagedWorkspaceLifecycle(options.workspaceStore, options.dockerRuntime, store);
 }
 
-function configureCacheCatalog(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv): void {
-  if (environment.LITE_HARNESS_ENABLE_CACHE_CATALOG !== "true") return;
+function configureCacheCatalog(runtime: BrokeredToolRuntime, dataDir: string, enabled: boolean): void {
+  if (!enabled) return;
   const catalog = new LocalCacheCatalog(join(dataDir, "caches"));
   runtime.register("cache_resolve", async (params) => {
     const principal = requirePrincipal(params.principal);

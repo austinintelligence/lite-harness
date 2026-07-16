@@ -13,7 +13,7 @@ const reportPath = resolve(temporary, "vitest.json");
 try {
   const vitest = spawnSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
-    "run", "test/config.test.ts", "test/observability.test.ts",
+    "run", "test/config.test.ts", "test/observability.test.ts", "test/operations.test.ts",
     "--reporter=json", `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -32,6 +32,7 @@ try {
         configuration: {
           managerNumericEnvironmentValuesAreFiniteAndBounded: true,
           runtimeAndShutdownBudgetsAreValidatedAtTheBoundary: true,
+          managerBooleanEnvironmentValuesAreStrictAndCentralized: true,
         },
         observability: {
           requestTraceHeaders: true,
@@ -41,6 +42,8 @@ try {
           runOutcomeCounters: true,
           durableJsonlAuditSink: true,
           promptFilePathStackAndSecretRedaction: true,
+          aggregateMetricOverflowRejected: true,
+          serviceLogAndLauncherRelayCredentialRedaction: true,
         },
       },
     });

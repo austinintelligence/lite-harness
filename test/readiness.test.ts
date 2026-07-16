@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
-import type { InternalPrincipal } from "@lite-harness/contracts";
+import { isGatewayReadiness, isManagerReadiness, type InternalPrincipal } from "@lite-harness/contracts";
 import { RunService } from "@lite-harness/control-plane";
 import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
@@ -37,6 +37,7 @@ describe("production readiness", () => {
 
       const readiness = await manager.inject({ method: "GET", url: "/readyz", headers });
       expect(readiness.statusCode).toBe(503);
+      expect(isManagerReadiness(readiness.json())).toBe(true);
       expect(readiness.json()).toMatchObject({
         ok: false,
         role: "manager",
@@ -74,6 +75,7 @@ describe("production readiness", () => {
     try {
       const readiness = await gateway.inject({ method: "GET", url: "/readyz" });
       expect(readiness.statusCode).toBe(503);
+      expect(isGatewayReadiness(readiness.json())).toBe(true);
       expect(readiness.json()).toMatchObject({
         ok: false,
         dependencies: { manager: { ok: false, dependencies: { image: { ok: false } } } },

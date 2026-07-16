@@ -293,6 +293,16 @@ describe("Gateway to Manager vertical slice", () => {
     expect(stream.body).toContain("event: tool.call.completed");
     expect(stream.body).toContain("event: run.succeeded");
 
+    const invalidCursor = await gateway.inject({
+      method: "GET",
+      url: `/v1/runs/${firstBody.runId}/events?after=1junk`,
+      headers: { authorization: `Bearer ${appToken}` },
+    });
+    expect(invalidCursor.statusCode).toBe(400);
+    expect(invalidCursor.json()).toMatchObject({
+      error: { version: 1, code: "invalid_event_cursor", retryable: false },
+    });
+
     const spoofedTenantHeader = await gateway.inject({
       method: "GET",
       url: `/v1/runs/${firstBody.runId}`,

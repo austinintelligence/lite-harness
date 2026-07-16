@@ -4,6 +4,11 @@ import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:f
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { loadManagerConfiguration } from "@lite-harness/config";
+import {
+  isGatewayReadiness,
+  LITE_IPC_PROTOCOL_VERSION,
+  PRODUCTION_READINESS_DEPENDENCY_KEYS,
+} from "@lite-harness/contracts";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { installUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
@@ -302,7 +307,7 @@ function validBase64Key(value: string): boolean {
 
 function doctorRemediation(report: {
   node: { ok: boolean };
-  docker: { available: boolean; serverOs?: string };
+  docker: { available: boolean; serverOs?: string; activeContext?: string };
   dataDirectory: { ok: boolean };
   disk: { ok: boolean };
   database: { ok: boolean };
@@ -310,12 +315,15 @@ function doctorRemediation(report: {
   credentials: { osStoreAvailable: boolean; providerConfigured: boolean };
   runtimeImage: { ok: boolean };
   gateway: { ok: boolean };
-  configuration: { ok: boolean; mode?: string };
+  configuration: { ok: boolean; mode?: string; runtime?: string };
 }): Array<{ check: string; remediation: string }> {
   const remediation: Array<{ check: string; remediation: string }> = [];
   if (!report.node.ok) remediation.push({ check: "node", remediation: "Install the pinned Node 24 runtime." });
   if (!report.configuration.ok) remediation.push({ check: "configuration", remediation: "Fix the reported LITE_HARNESS_* configuration and rerun doctor." });
-  if (!report.docker.available || report.docker.serverOs !== "linux") remediation.push({ check: "docker", remediation: "Start a Linux Docker engine and verify the active context and server version." });
+  if (!report.docker.available || report.docker.serverOs !== "linux" ||
+      (report.configuration.runtime === "docker" && !report.docker.activeContext)) {
+    remediation.push({ check: "docker", remediation: "Start a Linux Docker engine and verify the active context and server version." });
+  }
   if (!report.dataDirectory.ok) remediation.push({ check: "dataDirectory", remediation: "Grant the service account read/write access to the data directory." });
   if (!report.disk.ok) remediation.push({ check: "disk", remediation: "Free disk space or move LITE_HARNESS_DATA_DIR to a volume with the required reserve." });
   if (!report.database.ok) remediation.push({ check: "database", remediation: "Restore from the previous-good database or run the ordered migration repair workflow." });
@@ -332,7 +340,19 @@ async function inspectGatewayReadiness(url: string | undefined, required: boolea
     const base = new URL(url);
     if (!(["127.0.0.1", "::1", "localhost"].includes(base.hostname))) throw new Error("doctor Gateway URL must be loopback-only");
     const response = await fetch(new URL("/readyz", base), { signal: AbortSignal.timeout(5_000) });
-    return { ok: response.ok, configured: true, status: response.status, ...(response.ok ? {} : { error: "Gateway or Manager is not ready" }) };
+    const body = await response.json() as unknown;
+    if (!isGatewayReadiness(body)) {
+      return { ok: false, configured: true, status: response.status, error: "Gateway readiness response does not match the public contract" };
+    }
+    const manager = body.dependencies.manager;
+    const dependenciesHealthy = Object.values(manager.dependencies).every((dependency) => dependency.ok);
+    const dependenciesComplete = PRODUCTION_READINESS_DEPENDENCY_KEYS.every(
+      (name) => manager.dependencies[name]?.ok === true,
+    );
+    const aggregatesConsistent = body.ok === manager.ok && manager.ok === dependenciesHealthy;
+    const ok = response.ok && body.ok && manager.ok && aggregatesConsistent && dependenciesComplete &&
+      manager.protocolVersion === LITE_IPC_PROTOCOL_VERSION;
+    return { ok, configured: true, status: response.status, ...(ok ? {} : { error: "Gateway or Manager is not ready or IPC-compatible" }) };
   } catch (error) {
     return { ok: false, configured: true, error: error instanceof Error ? error.message : String(error) };
   }

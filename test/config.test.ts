@@ -20,6 +20,9 @@ describe("versioned application configuration", () => {
       approvalTimeoutMs: 60_000, shutdownTimeoutMs: 30_000,
       workspaceQuotaBytes: 1024 * 1024 * 1024, browserIdleMs: 60_000,
       runtimeMemory: "512m", runtimeCpus: "1", runtimePids: 128,
+      memoryEnabled: false, approvalsRequired: false, workspaceColdAfterCheckpoint: false,
+      browserPrivateNetworksAllowed: false, contextOptimizationEnabled: false,
+      pluginsEnabled: false, cacheCatalogEnabled: false,
     });
 
     const gateway = loadGatewayConfiguration({
@@ -55,6 +58,24 @@ describe("versioned application configuration", () => {
     expect(() => loadManagerConfiguration(environment, "C:/fixture", "win32")).toThrow(expected);
   });
 
+  it.each([
+    "LITE_HARNESS_ENABLE_MEMORY",
+    "LITE_HARNESS_REQUIRE_APPROVALS",
+    "LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT",
+    "LITE_HARNESS_BROWSER_ALLOW_PRIVATE",
+    "LITE_HARNESS_CONTEXT_OPTIMIZATION",
+    "LITE_HARNESS_ENABLE_PLUGINS",
+    "LITE_HARNESS_ENABLE_CACHE_CATALOG",
+  ])("rejects misspelled Manager boolean %s instead of silently disabling it", (name) => {
+    expect(() => loadManagerConfiguration({
+      ...tokens,
+      LITE_HARNESS_PROVIDER: "fake",
+      LITE_HARNESS_RUNTIME: "fake",
+      LITE_HARNESS_MODE: "development",
+      [name]: "tru",
+    }, "C:/fixture", "win32")).toThrow(new RegExp(`${name}.*exactly true or false`));
+  });
+
   it("parses bounded Manager operational numbers only once at the configuration boundary", () => {
     const manager = loadManagerConfiguration({
       ...tokens,
@@ -70,11 +91,21 @@ describe("versioned application configuration", () => {
       LITE_HARNESS_RUNTIME_MEMORY: "1g",
       LITE_HARNESS_RUNTIME_CPUS: "2.5",
       LITE_HARNESS_RUNTIME_PIDS: "256",
+      LITE_HARNESS_ENABLE_MEMORY: "true",
+      LITE_HARNESS_REQUIRE_APPROVALS: "true",
+      LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT: "true",
+      LITE_HARNESS_BROWSER_ALLOW_PRIVATE: "true",
+      LITE_HARNESS_CONTEXT_OPTIMIZATION: "true",
+      LITE_HARNESS_ENABLE_PLUGINS: "true",
+      LITE_HARNESS_ENABLE_CACHE_CATALOG: "true",
     }, "C:/fixture", "win32");
     expect(manager).toMatchObject({
       approvalTimeoutMs: 120_000, shutdownTimeoutMs: 45_000, workspaceQuotaBytes: 16 * 1024 * 1024,
       browserIdleMs: 90_000, modelContext: 131_072, delegatedMaxBudgetUsd: 1.25,
       runtimeMemory: "1g", runtimeCpus: "2.5", runtimePids: 256,
+      memoryEnabled: true, approvalsRequired: true, workspaceColdAfterCheckpoint: true,
+      browserPrivateNetworksAllowed: true, contextOptimizationEnabled: true,
+      pluginsEnabled: true, cacheCatalogEnabled: true,
     });
   });
 

@@ -28,6 +28,7 @@ import {
   type ManagerHealth,
   type ManagerReadiness,
   errorEnvelope,
+  LITE_IPC_PROTOCOL_VERSION,
   MintRunTokenRequestSchema,
   type MintRunTokenRequest,
   DEFAULT_RUN_BUDGET,
@@ -201,7 +202,14 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       return reply.code(503).send({
         ok: false,
         role: "gateway",
-        dependencies: { manager: { ok: false } },
+        dependencies: {
+          manager: {
+            ok: false,
+            role: "manager",
+            protocolVersion: LITE_IPC_PROTOCOL_VERSION,
+            dependencies: { ipc: { ok: false, reason: "manager-readiness-unavailable" } },
+          },
+        },
       });
     }
   });
@@ -337,6 +345,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     "/v1/runs/:runId/events",
     async (request, reply) => {
       const startAfter = parseCursor(request.query.after);
+      if (startAfter === undefined) {
+        return reply.code(400).send(errorEnvelope("invalid_event_cursor", "after must be a non-negative safe integer"));
+      }
       try {
         const run = await options.manager.getRun(request.params.runId);
         if (!ownsRun(run, principalFromRequest(request))) {
@@ -558,12 +569,13 @@ export function awaitSseDrain(response: ServerResponse, signal: AbortSignal): Pr
   });
 }
 
-function parseCursor(value: string | undefined): number {
-  if (!value) {
+function parseCursor(value: string | undefined): number | undefined {
+  if (value === undefined) {
     return 0;
   }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+  if (!/^[0-9]+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 function bearerToken(header: string | undefined): string | undefined {

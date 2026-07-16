@@ -13,9 +13,18 @@ export interface ToolExecutionContext {
   signal?: AbortSignal;
 }
 
+export interface ToolListContext {
+  workspaceId?: string;
+  runId?: string;
+  attemptId?: string;
+  allowedTools?: readonly string[];
+  principal?: InternalPrincipal;
+}
+
 export interface ToolRuntime {
   execute(params: ToolExecutionContext): Promise<ToolResult>;
-  listTools?(): readonly ToolDefinition[];
+  listTools?(context?: ToolListContext): readonly ToolDefinition[];
+  prepareRun?(context: ToolListContext & { runId: string }): Promise<void> | void;
   readWorkspaceArtifact?(params: ToolExecutionContext & { path: string; maxBytes: number }): Promise<Buffer>;
 }
 
@@ -28,24 +37,62 @@ export type BrokeredToolHandler = (params: ToolExecutionContext) => Promise<Tool
  */
 export class BrokeredToolRuntime implements ToolRuntime {
   readonly #handlers = new Map<string, BrokeredToolHandler>();
-  readonly #definitions = new Map<string, ToolDefinition>();
+  readonly #definitions = new Map<string, (context?: ToolListContext) => ToolDefinition | undefined>();
+  readonly #runPreparers = new Set<(context: ToolListContext & { runId: string }) => Promise<void> | void>();
 
   constructor(private readonly inner: ToolRuntime) {}
 
   register(name: string, handler: BrokeredToolHandler, definition?: Omit<ToolDefinition, "name">): void {
-    if (!/^[a-z][a-z0-9_]{0,127}$/.test(name)) throw new Error(`Invalid brokered tool name: ${name}`);
-    if (this.#handlers.has(name)) throw new Error(`Brokered tool is already registered: ${name}`);
-    this.#handlers.set(name, handler);
-    this.#definitions.set(name, definition ? { name, ...definition } : {
+    this.registerDynamic(name, handler, () => definition ? { name, ...definition } : {
       name,
       description: `Invoke the Manager-brokered ${name} capability.`,
       inputSchema: { type: "object", additionalProperties: true },
     });
   }
 
-  listTools(): readonly ToolDefinition[] {
-    const combined = new Map((this.inner.listTools?.() ?? []).map((definition) => [definition.name, definition]));
-    for (const [name, definition] of this.#definitions) combined.set(name, definition);
+  registerDynamic(
+    name: string,
+    handler: BrokeredToolHandler,
+    definition: (context?: ToolListContext) => ToolDefinition | undefined,
+  ): () => void {
+    if (!/^[a-z][a-z0-9_]{0,127}$/.test(name)) throw new Error(`Invalid brokered tool name: ${name}`);
+    if (this.#handlers.has(name)) throw new Error(`Brokered tool is already registered: ${name}`);
+    if ((this.inner.listTools?.() ?? []).some((tool) => tool.name === name)) {
+      throw new Error(`Brokered tool collides with the inner runtime: ${name}`);
+    }
+    this.#handlers.set(name, handler);
+    this.#definitions.set(name, definition);
+    return () => this.unregister(name, handler);
+  }
+
+  canRegister(name: string): boolean {
+    return !this.#handlers.has(name) && !(this.inner.listTools?.() ?? []).some((tool) => tool.name === name);
+  }
+
+  unregister(name: string, expectedHandler?: BrokeredToolHandler): boolean {
+    const current = this.#handlers.get(name);
+    if (!current || (expectedHandler && current !== expectedHandler)) return false;
+    this.#handlers.delete(name);
+    this.#definitions.delete(name);
+    return true;
+  }
+
+  addRunPreparer(preparer: (context: ToolListContext & { runId: string }) => Promise<void> | void): () => void {
+    this.#runPreparers.add(preparer);
+    return () => { this.#runPreparers.delete(preparer); };
+  }
+
+  async prepareRun(context: ToolListContext & { runId: string }): Promise<void> {
+    await this.inner.prepareRun?.(context);
+    for (const prepare of this.#runPreparers) await prepare(context);
+  }
+
+  listTools(context?: ToolListContext): readonly ToolDefinition[] {
+    const combined = new Map((this.inner.listTools?.(context) ?? []).map((definition) => [definition.name, definition]));
+    for (const [name, resolveDefinition] of this.#definitions) {
+      const definition = resolveDefinition(context);
+      if (definition) combined.set(name, definition);
+    }
     return [...combined.values()];
   }
 
@@ -140,8 +187,12 @@ export class ArtifactPublishingRuntime implements ToolRuntime {
     private readonly validateFence?: (params: ToolExecutionContext) => boolean,
   ) {}
 
-  listTools(): readonly ToolDefinition[] {
-    return [...(this.inner.listTools?.() ?? []), ARTIFACT_TOOL_DEFINITION];
+  listTools(context?: ToolListContext): readonly ToolDefinition[] {
+    return [...(this.inner.listTools?.(context) ?? []), ARTIFACT_TOOL_DEFINITION];
+  }
+
+  prepareRun(context: ToolListContext & { runId: string }): Promise<void> | void {
+    return this.inner.prepareRun?.(context);
   }
 
   async execute(params: ToolExecutionContext): Promise<ToolResult> {

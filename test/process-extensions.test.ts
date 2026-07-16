@@ -179,6 +179,10 @@ describe("process-backed extensions", () => {
     const inspected = inspectPluginManifest(join(root, "lite.plugin.json"));
     const lock = new PluginInstallLock(join(root, "installed.lock.json"));
     expect(lock.install(inspected, { tools: ["echo"] }).grantedPermissions.tools).toEqual(["echo"]);
+    lock.recordVerification("example.fixture", "1.0.0", {
+      verifiedAt: new Date().toISOString(),
+      rollbackPossible: true,
+    });
     expect(lock.setEnabled("example.fixture", "1.0.0", true).enabled).toBe(true);
 
     const processResourcesBefore = process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length;

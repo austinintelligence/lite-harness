@@ -11,6 +11,7 @@ const realRuntimeOnlyFiles = [
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-plugin.integration.test.ts",
+  "test/docker-plugin-manager.integration.test.ts",
   "test/docker-mcp.integration.test.ts",
   "test/browser-integrations.test.ts",
 ];

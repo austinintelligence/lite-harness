@@ -48,6 +48,26 @@ export interface ValidatedLauncherConfiguration {
   dataDir: string;
 }
 
+export interface ValidatedManagerIpcConfiguration {
+  schemaVersion: typeof LITE_CONFIG_SCHEMA_VERSION;
+  dataDir: string;
+  socketPath: string;
+}
+
+export function loadManagerIpcConfiguration(
+  environment: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+  platform: NodeJS.Platform = process.platform,
+): ValidatedManagerIpcConfiguration {
+  validateVersion(environment);
+  const dataDir = resolveDataDir(environment, cwd);
+  return Object.freeze({
+    schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
+    dataDir,
+    socketPath: resolveSocketPath(environment, dataDir, platform),
+  });
+}
+
 export function loadManagerConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),

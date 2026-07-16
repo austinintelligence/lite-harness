@@ -38,16 +38,45 @@ HTTP MCP remains a Manager-owned client restricted to an exact HTTPS (or
 loopback HTTP) origin; credentials are resolved only at request time.
 
 Process-backed plugins use bounded JSON-RPC 2.0 with `initialize`, `health`,
-`invoke`, `migrate`, and `shutdown`. The atomic install lock records source,
-version, digest, trust class, exact operator grants, enablement, and install
-time. Installs copy into a staging generation, verify the digest and worker
-health, then atomically enable; failure leaves the previous generation active.
-`pnpm lite plugin inspect|install|enable|disable|uninstall|migrate|doctor`
-exposes the lifecycle. The lock digest covers the complete bounded package
-tree, and activating an upgrade disables the previous generation only after
-the new worker passes health verification.
-The compatibility host loads only the documented narrow worker ABI, never an
-OpenClaw Gateway route or internal SDK import.
+`invoke`, `migrate`, and `shutdown`. Manager is the single lifecycle writer;
+the CLI sends authenticated local IPC operations and never edits
+`plugins.lock.json` or installed bytes directly. Install copies a bounded tree
+through staging into a content-addressed object, verifies digest and worker
+health in the Docker sandbox, and leaves the generation disabled. Enable is an
+atomic lockfile generation switch and does not leave a worker running.
+
+`pnpm lite plugin inspect|install|enable|disable|uninstall|migrate|rollback|doctor`
+exposes that Manager-owned lifecycle. Upgrades install beside the active
+generation, migrate into a bounded content-addressed state snapshot, verify the
+new state in a fresh worker, and then switch future runs in one lock write.
+The lock records `staging` and `activation-pending` phases; Manager startup
+removes either incomplete phase, while the activation write promotes the new
+generation to `verified` atomically. A normal `enable` can only perform first
+activation, idempotently keep the current generation, or re-enable the exact
+generation that was disabled. Version changes must use upgrade or rollback.
+Runs already prepared retain their exact version and digest until terminal;
+rollback swaps back to the retained previous generation and state. Disable
+removes schemas from future run preparation but preserves existing run pins;
+the last pinned run drains its retired worker before its terminal transition.
+Cleanup uses a bounded retry budget. Exhaustion writes durable cleanup debt,
+marks the run orphaned, keeps uninstall fail-closed, and continues bounded
+background reconciliation; startup performs authoritative container
+reconciliation before clearing debt. Uninstall refuses active or run-pinned
+generations. Package digest is checked again at every lazy worker start, so
+bytes changed after enable cannot execute under an old run snapshot. Orphan
+staging objects, activation-pending packages, and state snapshots are
+reconciled at Manager startup. Disable stores its resume generation separately
+from the prior rollback generation, so disable/re-enable does not erase history.
+
+Official and isolated executable plugins use the same enforceable Docker
+boundary. The OpenClaw compatibility adapter supports only
+`registerTool({name, execute})`, `registerService({start, health, stop})`,
+`migrate`, and shutdown. `register(api, {state})` and
+`migrate(from, to, {state})` receive a deep-frozen JSON clone of the bounded
+prior state snapshot. Every registered tool must be both manifest-declared and
+operator-granted. It does not expose Gateway routes, internal SDK imports,
+global mutation, host commands, arbitrary hooks, filesystem callbacks, or
+network callbacks.
 
 MCP stdio workers implement the `2025-11-25` lifecycle with negotiated fallback
 to supported earlier revisions, `tools/list`, `tools/call`, include/exclude
@@ -85,6 +114,14 @@ loaded only after the explicit context-renderer gate is enabled.
 - `LITE_HARNESS_ENABLE_PLUGINS=true` activates enabled entries from
   `plugins.lock.json`. `LITE_HARNESS_PLUGIN_IMAGE` must be a digest-pinned
   sandbox image; workers remain lazy and receive only intersected grants.
+  Bounded operational controls are `LITE_HARNESS_PLUGIN_IDLE_MS`,
+  `LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS`,
+  `LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS`,
+  `LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS`,
+  `LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS`,
+  `LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS`,
+  `LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS`, and
+  `LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS`.
 - Managed Docker workspaces checkpoint and restore through Manager's fenced
   lifecycle automatically. Snapshot paths and publication are not model tools.
 - `LITE_HARNESS_ENABLE_CACHE_CATALOG=true` registers owner-derived cache

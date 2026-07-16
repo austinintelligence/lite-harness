@@ -5,7 +5,6 @@ import type { AgentContextCompiler } from "@lite-harness/agent-runtime";
 import { parseBooleanEnvironment } from "@lite-harness/config";
 import { isLoopbackHttpUrl, LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
 import type { McpSupervisor } from "@lite-harness/mcp";
-import type { LazyPluginSupervisor } from "@lite-harness/plugin-core";
 import type { BrokeredToolRuntime } from "@lite-harness/runtime";
 import type { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import type { ImmutableSkillSnapshot, SkillSource } from "@lite-harness/skills";
@@ -16,6 +15,7 @@ import {
   StaticSnapshotKeyProvider,
   type WorkspaceLifecycleStore,
 } from "@lite-harness/workspace";
+import type { ManagerPluginLifecycle, PluginRunReleaseResult } from "./plugin-lifecycle.js";
 
 interface OptionalSystemsOptions {
   dataDir: string;
@@ -37,6 +37,9 @@ export interface ProductionOptionalSystems {
   context?: AgentContextCompiler;
   workspaceLifecycle?: ManagedWorkspaceLifecycle;
   plugins: Array<{ id: string; version: string; digest: string }>;
+  pluginLifecycle?: ManagerPluginLifecycle;
+  pluginSnapshotsForRun(runId: string): Array<{ id: string; version: string; digest: string }>;
+  releasePluginRun(runId: string): Promise<PluginRunReleaseResult>;
   stop(): Promise<void>;
 }
 
@@ -58,18 +61,19 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
   const mcp = await configureMcp(options.runtime, environment, offline);
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = await configurePlugins(options.runtime, options.dataDir, environment, featureFlags.plugins);
-  if (plugins.supervisors.length) stops.push(async () => {
-    const results = await Promise.allSettled(plugins.supervisors.map((plugin) => plugin.stop()));
-    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason);
-    if (failures.length > 0) throw new AggregateError(failures, "One or more plugin supervisors failed to stop");
-  });
+  if (plugins.lifecycle) stops.push(() => plugins.lifecycle!.stop());
   const workspaceLifecycle = configureSnapshots(options);
   configureCacheCatalog(options.runtime, options.dataDir, featureFlags.cacheCatalog);
   const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
   return {
     ...(context ? { context } : {}),
     ...(workspaceLifecycle ? { workspaceLifecycle } : {}),
-    plugins: plugins.snapshots,
+    ...(plugins.lifecycle ? { pluginLifecycle: plugins.lifecycle } : {}),
+    plugins: plugins.lifecycle?.status().active ?? [],
+    pluginSnapshotsForRun: (runId) => plugins.lifecycle?.snapshotsForRun(runId) ?? [],
+    releasePluginRun: async (runId) => plugins.lifecycle
+      ? await plugins.lifecycle.releaseRun(runId)
+      : { outcome: "released", cleanupDebts: [] },
     stop: async () => {
       const failures: unknown[] = [];
       for (const stop of [...stops].reverse()) {
@@ -281,43 +285,24 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
 }
 
 async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, environment: NodeJS.ProcessEnv, enabled: boolean): Promise<{
-  supervisors: LazyPluginSupervisor[];
-  snapshots: Array<{ id: string; version: string; digest: string }>;
+  lifecycle?: ManagerPluginLifecycle;
 }> {
-  if (!enabled) return { supervisors: [], snapshots: [] };
-  const { createOpenClawCompatibilityWorker, DockerPluginExecutionSandbox, inspectPluginManifest, LazyPluginSupervisor, PluginInstallLock, pluginPackageDigest } = await import("@lite-harness/plugin-core");
+  if (!enabled) return {};
   const image = requiredString(environment.LITE_HARNESS_PLUGIN_IMAGE, "LITE_HARNESS_PLUGIN_IMAGE");
-  const pluginRoot = join(dataDir, "plugins");
-  const lock = new PluginInstallLock(join(dataDir, "plugins.lock.json"));
-  const sandbox = new DockerPluginExecutionSandbox({ image, installationId: dataDir });
-  const reapedPluginContainers = await sandbox.reconcileContainers();
-  if (reapedPluginContainers > 0) {
-    process.stderr.write(`lite-harness manager: reaped ${reapedPluginContainers} interrupted plugin container(s)\n`);
-  }
-  const supervisors: LazyPluginSupervisor[] = [];
-  const snapshots: Array<{ id: string; version: string; digest: string }> = [];
-  for (const entry of Object.values(lock.read().plugins).filter((item) => item.enabled)) {
-    snapshots.push({ id: entry.id, version: entry.version, digest: entry.digest });
-    if (entry.trust === "data-only") continue;
-    const inspected = inspectPluginManifest(join(pluginRoot, entry.id, entry.version, "lite-plugin.json"));
-    if (pluginPackageDigest(inspected) !== entry.digest) throw new Error(`Enabled plugin digest mismatch: ${entry.id}@${entry.version}`);
-    const supervisor = new LazyPluginSupervisor(() => createOpenClawCompatibilityWorker(
-      inspected, entry.grantedPermissions, {}, { sandbox },
-    ), {
-      onCleanupError: () => process.stderr.write(
-        `lite-harness manager: plugin cleanup pending retry for ${entry.id}@${entry.version}\n`,
-      ),
-    });
-    supervisors.push(supervisor);
-    for (const tool of entry.grantedPermissions.tools) {
-      runtime.register(tool, async (params) => ({
-        callId: params.call.id, ok: true,
-        content: JSON.stringify(await supervisor.invoke(tool, params.call.arguments)),
-        metadata: { pluginId: entry.id, pluginVersion: entry.version },
-      }));
-    }
-  }
-  return { supervisors, snapshots: snapshots.sort((left, right) => `${left.id}@${left.version}`.localeCompare(`${right.id}@${right.version}`)) };
+  const { ManagerPluginLifecycle } = await import("./plugin-lifecycle.js");
+  return { lifecycle: await ManagerPluginLifecycle.create({
+    dataDir,
+    runtime,
+    image,
+    idleTtlMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_IDLE_MS, "LITE_HARNESS_PLUGIN_IDLE_MS", 0, 3_600_000, 60_000),
+    rpcTimeoutMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS, "LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS", 100, 300_000, 30_000),
+    invocationTimeoutMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS, "LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS", 100, 3_600_000, 30_000),
+    cleanupRetryMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS, "LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS", 1, 300_000, 1_000),
+    cleanupMaxAttempts: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS, "LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS", 1, 100, 3),
+    cleanupTimeoutMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS, "LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS", 1_000, 120_000, 5_000),
+    crashBackoffBaseMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS, "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS", 1, 300_000, 250),
+    crashBackoffMaxMs: boundedEnvironmentInteger(environment.LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS, "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS", 1, 3_600_000, 30_000),
+  }) };
 }
 
 function configureSnapshots(options: OptionalSystemsOptions): ManagedWorkspaceLifecycle | undefined {
@@ -420,6 +405,15 @@ function parseJson(value: string, label: string): unknown { try { return JSON.pa
 function objectRecord(value: unknown, label: string): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value as Record<string, unknown>; }
 function requiredString(value: unknown, label: string): string { if (typeof value !== "string" || !value.trim() || value.length > 4096 || /[\0\r\n]/.test(value)) throw new Error(`${label} must be a bounded single-line string`); return value.trim(); }
 function requiredInteger(value: unknown, label: string): number { if (!Number.isSafeInteger(value)) throw new Error(`${label} must be an integer`); return value as number; }
+function boundedEnvironmentInteger(value: string | undefined, label: string, minimum: number, maximum: number, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) throw new Error(`${label} must be an integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${label} must be between ${minimum} and ${maximum}`);
+  }
+  return parsed;
+}
 function stringRecord(value: unknown, label: string): Record<string, string> {
   const record = objectRecord(value, label);
   if (Object.keys(record).length > 64) throw new Error(`${label} has too many entries`);

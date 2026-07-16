@@ -17,7 +17,7 @@ try {
   const vitest = spawnSync(process.execPath, [
     resolve(root, "node_modules", "vitest", "vitest.mjs"),
     "run",
-    "test/process-extensions.test.ts", "test/process-rpc-safety.test.ts",
+    "test/process-extensions.test.ts", "test/process-rpc-safety.test.ts", "test/plugin-lifecycle-manager.test.ts",
     "--reporter=json",
     `--outputFile=${reportPath}`,
   ], { cwd: root, stdio: "inherit" });
@@ -55,6 +55,9 @@ try {
           partialJsonlBoundedBeforeNewline: true,
           abortListenersRemoved: true,
           childHomeIsolatedAndRemoved: true,
+          managerOwnsLifecycleWrites: true,
+          lazyStartRechecksPackageDigest: true,
+          pluginToolCollisionsFailClosed: true,
         },
       },
     });

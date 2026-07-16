@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { Value } from "@sinclair/typebox/value";
 import type {
   ArtifactPayloadResponse,
@@ -27,6 +27,8 @@ import { StructuredObservability, type TraceSpan } from "@lite-harness/observabi
 import type { LocalArtifactStore } from "@lite-harness/workspace";
 import type { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
 import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
+import type { PluginPermissions } from "@lite-harness/plugin-core";
+import type { PluginLifecyclePort } from "./plugin-lifecycle.js";
 
 declare module "fastify" {
   interface FastifyRequest { rawBody?: Buffer }
@@ -51,6 +53,7 @@ export interface ManagerServerOptions {
   webhookSecret?: (accountId: string) => Promise<Buffer | undefined>;
   logger?: boolean;
   observability?: StructuredObservability;
+  pluginLifecycle?: PluginLifecyclePort;
   productionReadinessChecks: () => Promise<Record<string, ReadinessDependency>>;
 }
 
@@ -151,6 +154,55 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       dependencies,
     });
   });
+
+  if (options.pluginLifecycle) {
+    const plugins = options.pluginLifecycle;
+    app.get("/internal/plugins", async () => plugins.status());
+    app.post<{ Body: unknown }>("/internal/plugins/inspect", async (request, reply) => {
+      try { return plugins.inspect(pluginStringField(request.body, "path")); }
+      catch (error) { return pluginFailure(reply, error); }
+    });
+    app.post<{ Body: unknown }>("/internal/plugins/install", async (request, reply) => {
+      try {
+        return await plugins.install(
+          pluginStringField(request.body, "sourceRoot"),
+          pluginGrantField(request.body),
+        );
+      } catch (error) { return pluginFailure(reply, error); }
+    });
+    app.post<{ Params: { id: string; version: string } }>(
+      "/internal/plugins/:id/:version/enable",
+      async (request, reply) => {
+        try { return await plugins.enable(request.params.id, request.params.version); }
+        catch (error) { return pluginFailure(reply, error); }
+      },
+    );
+    app.post<{ Params: { id: string }; Body: unknown }>("/internal/plugins/:id/upgrade", async (request, reply) => {
+      try {
+        return await plugins.upgrade(
+          request.params.id,
+          pluginStringField(request.body, "sourceRoot"),
+          pluginGrantField(request.body),
+        );
+      } catch (error) { return pluginFailure(reply, error); }
+    });
+    app.post<{ Params: { id: string } }>("/internal/plugins/:id/rollback", async (request, reply) => {
+      try { return await plugins.rollback(request.params.id); }
+      catch (error) { return pluginFailure(reply, error); }
+    });
+    app.post<{ Params: { id: string } }>("/internal/plugins/:id/disable", async (request, reply) => {
+      try { return await plugins.disable(request.params.id); }
+      catch (error) { return pluginFailure(reply, error); }
+    });
+    app.post<{ Params: { id: string; version: string } }>("/internal/plugins/:id/:version/disable", async (request, reply) => {
+      try { return await plugins.disable(request.params.id, request.params.version); }
+      catch (error) { return pluginFailure(reply, error); }
+    });
+    app.delete<{ Params: { id: string; version: string } }>("/internal/plugins/:id/:version", async (request, reply) => {
+      try { return { removed: await plugins.uninstall(request.params.id, request.params.version) }; }
+      catch (error) { return pluginFailure(reply, error); }
+    });
+  }
 
   app.post<{ Params: { accountId: string }; Body: unknown }>(
     "/internal/integrations/webhook/:accountId/inbound",
@@ -426,6 +478,37 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   );
 
   return app;
+}
+
+function pluginStringField(body: unknown, field: string): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Plugin request body must be an object");
+  const value = (body as Record<string, unknown>)[field];
+  if (typeof value !== "string" || !value.trim() || value.length > 32_768 || /[\0\r\n]/.test(value)) {
+    throw new Error(`Plugin request ${field} must be a bounded single-line string`);
+  }
+  return value;
+}
+
+function pluginGrantField(body: unknown): Partial<PluginPermissions> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Plugin request body must be an object");
+  const grant = (body as Record<string, unknown>).grant;
+  if (grant === undefined) return {};
+  if (!grant || typeof grant !== "object" || Array.isArray(grant)) throw new Error("Plugin grant must be an object");
+  const allowed = new Set(["tools", "secrets", "events", "files", "networkOrigins"]);
+  const result: Record<string, readonly string[]> = {};
+  for (const [key, value] of Object.entries(grant)) {
+    if (!allowed.has(key) || !Array.isArray(value) || value.length > 256 ||
+        !value.every((item) => typeof item === "string" && item.length > 0 && item.length <= 4_096 && !/[\0\r\n]/.test(item))) {
+      throw new Error(`Plugin grant ${key} must be a bounded string array`);
+    }
+    result[key] = [...new Set(value as string[])];
+  }
+  return result;
+}
+
+function pluginFailure(reply: FastifyReply, error: unknown): FastifyReply {
+  const message = error instanceof Error ? error.message : String(error);
+  return reply.code(409).send(errorEnvelope("plugin_lifecycle_conflict", message));
 }
 
 function installExactJsonBodyParser(app: FastifyInstance): void {

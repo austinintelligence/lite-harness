@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadGatewayConfiguration, loadManagerConfiguration } from "@lite-harness/config";
+import { loadGatewayConfiguration, loadManagerConfiguration, loadManagerIpcConfiguration } from "@lite-harness/config";
 
 const tokens = {
   LITE_HARNESS_INTERNAL_TOKEN: "internal-token-for-tests",
@@ -7,6 +7,14 @@ const tokens = {
 };
 
 describe("versioned application configuration", () => {
+  it("loads local Manager IPC coordinates without requiring provider, runtime, or application credentials", () => {
+    expect(loadManagerIpcConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/state" }, "C:/fixture", "win32")).toMatchObject({
+      schemaVersion: 1,
+      dataDir: "C:\\fixture\\state",
+      socketPath: expect.stringMatching(/^\\\\\.\\pipe\\/),
+    });
+  });
+
   it("parses bounded core Manager and Gateway configuration", () => {
     const manager = loadManagerConfiguration({
       ...tokens,

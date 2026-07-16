@@ -44,6 +44,11 @@ describe("immutable durable RunSnapshot", () => {
       compile: async () => [],
       snapshotForRun: async () => ({ skills: [{ name: "review", digest: "a".repeat(64) }] }),
     };
+    let releaseStarted!: () => void;
+    let allowRelease!: () => void;
+    let releaseMode: "gated" | "debt" | "throw" = "gated";
+    const releaseStartedPromise = new Promise<void>((resolveRelease) => { releaseStarted = resolveRelease; });
+    const releaseGate = new Promise<void>((resolveRelease) => { allowRelease = resolveRelease; });
     const service = new RunService(store, new AgentRunner(
       new RoutedModelGateway(new ModelRegistry([model]), [adapter], credentials, hooks), new InMemoryToolRuntime(), 8, context,
     ), {
@@ -52,10 +57,21 @@ describe("immutable durable RunSnapshot", () => {
         networkPolicy: { id: "network-none-v1", digest: "d".repeat(64) },
         plugins: [{ id: "openclaw-compat", version: "1.0.0", digest: "e".repeat(64) }],
         credentialProfileIds: ["snapshot.root"],
+        releaseRun: async () => {
+          if (releaseMode === "debt") return { outcome: "cleanup-debt-recorded" } as const;
+          if (releaseMode === "throw") throw new Error("injected finalization failure");
+          releaseStarted();
+          await releaseGate;
+          return { outcome: "released" } as const;
+        },
       },
     });
     try {
       const created = service.createRun({ agent: "coder", workspace: "workspace", input: "run", idempotencyKey: "snapshot", principal: { ...owner, scopes: ["runs:create"] } });
+      await releaseStartedPromise;
+      expect(service.getRun(created.runId)?.status).not.toMatch(/^(SUCCEEDED|FAILED|CANCELLED|TIMED_OUT|ORPHANED)$/);
+      expect(service.listEvents(created.runId).some((event) => event.type === "run.succeeded")).toBe(false);
+      allowRelease();
       expect((await service.waitForTerminal(created.runId)).status).toBe("SUCCEEDED");
       const attempt = store.listRunAttempts(created.runId)[0]!; const snapshot = store.getRunSnapshot(created.runId, attempt.id)!;
       expect(snapshot).toMatchObject({
@@ -67,6 +83,24 @@ describe("immutable durable RunSnapshot", () => {
       });
       expect(() => store.persistRunSnapshot({ ...snapshot, networkPolicy: { id: "changed", digest: "f".repeat(64) } })).toThrow(/already frozen/);
       expect(service.listEvents(created.runId).map((event) => event.type)).toContain("run.snapshot.frozen");
+      releaseMode = "debt";
+      const cleanupFailure = service.createRun({
+        agent: "coder", workspace: "workspace", input: "cleanup-failure", idempotencyKey: "snapshot-cleanup-failure",
+        principal: { ...owner, scopes: ["runs:create"] },
+      });
+      expect((await service.waitForTerminal(cleanupFailure.runId)).status).toBe("ORPHANED");
+      expect(service.listEvents(cleanupFailure.runId).findLast((event) => event.type === "run.orphaned")?.payload).toMatchObject({
+        code: "run_cleanup_failed", retryable: true,
+      });
+      releaseMode = "throw";
+      const finalizationFailure = service.createRun({
+        agent: "coder", workspace: "workspace", input: "finalization-failure", idempotencyKey: "snapshot-finalization-failure",
+        principal: { ...owner, scopes: ["runs:create"] },
+      });
+      expect((await service.waitForTerminal(finalizationFailure.runId)).status).toBe("ORPHANED");
+      expect(service.listEvents(finalizationFailure.runId).findLast((event) => event.type === "run.orphaned")?.payload).toMatchObject({
+        code: "run_finalization_failed", retryable: true,
+      });
     } finally { await service.shutdown(); store.close(); }
   });
 });

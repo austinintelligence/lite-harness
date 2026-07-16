@@ -132,7 +132,8 @@ const runSnapshotConfiguration = {
       provider: configuration.offline ? "fake-or-loopback-only:redirect-manual:v1" : "configured-provider-policy:v1",
     })).digest("hex"),
   },
-  plugins: optionalSystems.plugins,
+  plugins: (runId: string) => optionalSystems.pluginSnapshotsForRun(runId),
+  releaseRun: (runId: string) => optionalSystems.releasePluginRun(runId),
   credentialProfileIds: ["snapshot.root", "browser.profile-root"],
 };
 const integrationModule = process.env.LITE_HARNESS_WEBHOOK_SECRET ? await import("@lite-harness/integrations") : undefined;
@@ -182,6 +183,7 @@ const app = buildManagerServer({
     });
   },
   productionReadinessChecks: createProductionReadinessChecks(store, baseRuntime, configuration),
+  ...(optionalSystems.pluginLifecycle ? { pluginLifecycle: optionalSystems.pluginLifecycle } : {}),
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
     const secret = process.env.LITE_HARNESS_WEBHOOK_SECRET;

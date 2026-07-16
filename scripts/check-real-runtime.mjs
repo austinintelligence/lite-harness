@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, "..");
 const toolImage = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 const mcpImage = process.env.LITE_HARNESS_TEST_MCP_IMAGE?.trim() || toolImage;
 const browserImage = requiredImage("LITE_HARNESS_TEST_BROWSER_IMAGE");
+const packagedManager = resolve(root, "dist", "apps", "manager", "main.js");
 const requiredTestFiles = [
   "test/required-real-runtime.test.ts",
   "test/workspace.test.ts",
@@ -15,6 +16,7 @@ const requiredTestFiles = [
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-plugin.integration.test.ts",
+  "test/docker-plugin-manager.integration.test.ts",
   "test/docker-mcp.integration.test.ts",
   "test/mcp-isolation.test.ts",
   "test/mcp-http.test.ts",
@@ -30,6 +32,14 @@ const requiredTestFiles = [
 assertLocallyAvailable(toolImage);
 assertLocallyAvailable(mcpImage);
 assertLocallyAvailable(browserImage);
+const build = spawnSync(process.execPath, [resolve(root, "scripts", "build.mjs")], {
+  cwd: root,
+  stdio: "inherit",
+  env: process.env,
+});
+if (build.status !== 0 || !existsSync(packagedManager)) {
+  throw new Error("Real runtime suite requires a successful packaged application build");
+}
 
 const evidenceIndex = process.argv.indexOf("--evidence");
 const evidenceOutput = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
@@ -52,6 +62,7 @@ try {
       LITE_HARNESS_TEST_DOCKER_IMAGE: toolImage,
       LITE_HARNESS_TEST_MCP_IMAGE: mcpImage,
       LITE_HARNESS_TEST_BROWSER_IMAGE: browserImage,
+      LITE_HARNESS_PACKAGED_MANAGER: packagedManager,
     },
   });
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : undefined;
@@ -75,7 +86,7 @@ try {
       suite: "required-real-runtime",
       command: "pnpm test:real-runtime",
       report: evidenceReport,
-      requirementIds: ["A21", "A22"],
+      requirementIds: ["A18", "A21", "A22"],
       regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION", "BD-055-REGRESSION"],
       images: [
         imageArtifact("tool-runtime", toolImage),
@@ -93,6 +104,9 @@ try {
           browserUploadAndQuarantinedDownload: true,
           disabledPacksCreateNoResources: true,
           enabledPluginMcpAndBrowserScaleToZero: true,
+          managerOwnedPluginLifecycle: true,
+          packagedSeparateManagerLocalIpc: true,
+          officialAndOpenClawPluginUpgradeRollback: true,
           offlineFakeAndLoopbackOnlyPolicy: true,
           preloadedDockerRuntimeNeverPulls: true,
           offlineDockerRuntimeDeniesOutboundTcp: true,

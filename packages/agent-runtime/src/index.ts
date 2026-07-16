@@ -87,6 +87,15 @@ export class AgentRunner {
         }
       : undefined;
     const preparedRoute = modelContext ? await this.model.prepareRun?.(modelContext) : undefined;
+    if (params.runId) {
+      await this.tools.prepareRun?.({
+        runId: params.runId,
+        workspaceId: params.workspaceId,
+        ...(params.attemptId ? { attemptId: params.attemptId } : {}),
+        ...(params.allowedTools ? { allowedTools: Object.freeze([...params.allowedTools]) } : {}),
+        ...(params.principal ? { principal: params.principal } : {}),
+      });
+    }
     const compiledContext = await this.context?.compile({
       input: params.input,
       ...(params.instructions ? { instructions: params.instructions } : {}),
@@ -105,7 +114,13 @@ export class AgentRunner {
         : [{ role: "user" as const, content: params.input }]),
     ];
     const allowed = new Set(params.allowedTools ?? []);
-    const advertisedTools = (this.tools.listTools?.() ?? []).filter((tool) => allowed.has(tool.name));
+    const advertisedTools = (this.tools.listTools?.({
+      workspaceId: params.workspaceId,
+      ...(params.runId ? { runId: params.runId } : {}),
+      ...(params.attemptId ? { attemptId: params.attemptId } : {}),
+      allowedTools: Object.freeze([...allowed]),
+      ...(params.principal ? { principal: params.principal } : {}),
+    }) ?? []).filter((tool) => allowed.has(tool.name));
     const advertisedToolValidators = compileAdvertisedToolValidators(
       advertisedTools,
       this.#schemaCompiler,
@@ -324,6 +339,28 @@ export class FakeModelGateway implements ModelGateway {
     const canPublishArtifact = params.tools?.some((tool) => tool.name === "artifact_publish") ?? false;
 
     if (!hasToolResult) {
+      const writeFile = params.tools?.find((tool) => tool.name === "write_file");
+      const soleTool = params.tools?.length === 1 ? params.tools[0] : undefined;
+      if (!writeFile && soleTool) {
+        const input = params.messages.findLast((message) => message.role === "user")?.content ?? "{}";
+        let arguments_: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(input) as unknown;
+          arguments_ = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? parsed as Record<string, unknown>
+            : { value: parsed };
+        } catch {
+          arguments_ = { value: input };
+        }
+        yield { type: "text.delta", delta: `I will invoke ${soleTool.name}. ` };
+        yield {
+          type: "tool.call",
+          call: { id: createId("tool"), name: soleTool.name, arguments: arguments_ },
+        };
+        yield { type: "usage", inputTokens: 12, outputTokens: 8, costUsd: 0 };
+        yield { type: "completed", finishReason: "tool_calls" };
+        return;
+      }
       yield { type: "text.delta", delta: "I will create the requested file. " };
       yield {
         type: "tool.call",

@@ -31,11 +31,16 @@ export interface WorkspaceRunLifecycle {
   checkpoint(run: RunRecord, options?: { makeCold?: boolean; signal?: AbortSignal }): Promise<{ state: "WARM" | "COLD"; skipped: boolean; snapshot?: { sha256: string; plaintextBytes: number } }>;
 }
 
+export interface RunSnapshotReleaseResult {
+  outcome: "released" | "cleanup-debt-recorded";
+}
+
 export interface RunSnapshotConfiguration {
   runtimeProfile: RunSnapshot["runtimeProfile"];
   networkPolicy: RunSnapshot["networkPolicy"];
-  plugins?: RunSnapshot["plugins"];
+  plugins?: RunSnapshot["plugins"] | ((runId: string) => RunSnapshot["plugins"]);
   credentialProfileIds?: string[];
+  releaseRun?: (runId: string) => Promise<RunSnapshotReleaseResult | void> | RunSnapshotReleaseResult | void;
 }
 
 /**
@@ -667,6 +672,30 @@ export class RunService {
       this.#executionStartedAt.delete(runId);
       this.#firstModelToken.delete(runId);
       this.#firstVisibleAgentEvent.delete(runId);
+      try {
+        const release = await this.options.runSnapshot?.releaseRun?.(runId);
+        if (release?.outcome === "cleanup-debt-recorded") {
+          terminal = {
+            status: "ORPHANED",
+            type: "run.orphaned",
+            payload: {
+              code: "run_cleanup_failed",
+              message: "Required run cleanup exhausted its retry budget; durable cleanup debt was recorded",
+              retryable: true,
+            },
+          };
+        }
+      } catch {
+        terminal = {
+          status: "ORPHANED",
+          type: "run.orphaned",
+          payload: {
+            code: "run_finalization_failed",
+            message: "Required run finalization failed before cleanup completion or durable recovery state could be confirmed",
+            retryable: true,
+          },
+        };
+      }
       const latest = this.getRun(runId);
       if (terminal && latest && !isTerminalRunStatus(latest.status)) {
         this.#transition(runId, terminal.status, terminal.type, terminal.payload);
@@ -742,7 +771,9 @@ export class RunService {
       agent: structuredClone(profile),
       tools: prepared.tools.map((tool) => structuredClone(tool)).sort((left, right) => left.name.localeCompare(right.name)),
       skills: prepared.contextSnapshot.skills.map((skill) => ({ ...skill })).sort((left, right) => left.name.localeCompare(right.name)),
-      plugins: (configuration.plugins ?? []).map((plugin) => ({ ...plugin })).sort((left, right) => `${left.id}@${left.version}`.localeCompare(`${right.id}@${right.version}`)),
+      plugins: (typeof configuration.plugins === "function" ? configuration.plugins(run.id) : configuration.plugins ?? [])
+        .map((plugin) => ({ ...plugin }))
+        .sort((left, right) => `${left.id}@${left.version}`.localeCompare(`${right.id}@${right.version}`)),
       providerRoute: structuredClone(providerRoute), runtimeProfile: structuredClone(configuration.runtimeProfile),
       networkPolicy: structuredClone(configuration.networkPolicy), budget: structuredClone(run.budget),
       credentialProfileIds: [...new Set([providerRoute.selectedCredentialProfileId, ...(configuration.credentialProfileIds ?? [])])].sort(),

@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 import { killAndReapContainer, type DockerCommandOptions, type DockerCommandResult, type DockerCommandRunner } from "@lite-harness/runtime-docker";
@@ -174,11 +174,33 @@ export interface PluginLockEntry {
   trust: PluginTrustClass;
   grantedPermissions: PluginPermissions;
   enabled: boolean;
+  installState?: "staging" | "activation-pending" | "verified";
+  verifiedAt?: string;
+  stateDigest?: string;
+  rollbackPossible?: boolean;
+}
+
+export interface PluginActivationRecord {
+  activeVersion?: string;
+  previousVersion?: string;
+  resumeVersion?: string;
+  generation: number;
+}
+
+export interface PluginCleanupDebt {
+  id: string;
+  version: string;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  lastError: string;
 }
 
 export interface PluginLockfile {
   schemaVersion: 1;
   plugins: Record<string, PluginLockEntry>;
+  activations?: Record<string, PluginActivationRecord>;
+  cleanupDebts?: Record<string, PluginCleanupDebt>;
 }
 
 export class PluginInstallLock {
@@ -193,9 +215,14 @@ export class PluginInstallLock {
     try {
       const value = JSON.parse(readFileSync(this.#path, "utf8")) as PluginLockfile;
       if (value.schemaVersion !== 1 || !value.plugins || typeof value.plugins !== "object") throw new Error("Plugin lockfile is invalid");
-      return value;
+      const activations = value.activations ?? deriveLegacyActivations(value.plugins);
+      const cleanupDebts = value.cleanupDebts ?? {};
+      validatePluginLock(value.plugins, activations, cleanupDebts);
+      return { ...value, activations, cleanupDebts };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schemaVersion: 1, plugins: {} };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { schemaVersion: 1, plugins: {}, activations: {}, cleanupDebts: {} };
+      }
       throw error;
     }
   }
@@ -203,6 +230,7 @@ export class PluginInstallLock {
   install(inspected: InspectedPlugin, grant: Partial<PluginPermissions>): PluginLockEntry {
     const lock = this.read();
     const key = `${inspected.manifest.id}@${inspected.manifest.version}`;
+    if (lock.plugins[key]) throw new Error(`Plugin is already installed: ${key}`);
     const entry: PluginLockEntry = {
       id: inspected.manifest.id,
       version: inspected.manifest.version,
@@ -212,6 +240,7 @@ export class PluginInstallLock {
       trust: inspected.manifest.trust,
       grantedPermissions: grantPluginPermissions(inspected.manifest.permissions, grant),
       enabled: false,
+      installState: "staging",
     };
     lock.plugins[key] = entry;
     this.#write(lock);
@@ -224,9 +253,148 @@ export class PluginInstallLock {
     const key = `${id}@${version}`;
     const existing = lock.plugins[key];
     if (!existing) throw new Error(`Plugin is not installed: ${key}`);
-    lock.plugins[key] = { ...existing, enabled };
+    if (existing.installState === "staging" || existing.installState === "activation-pending") {
+      throw new Error(`Plugin verification is incomplete: ${key}`);
+    }
+    if (enabled) return this.activate(id, version).entry;
+    if (lock.activations?.[id]?.activeVersion === version) return this.disable(id).entry;
+    lock.plugins[key] = { ...existing, enabled: false };
     this.#write(lock);
     return lock.plugins[key] as PluginLockEntry;
+  }
+
+  activate(id: string, version: string): { entry: PluginLockEntry; activation: PluginActivationRecord } {
+    validatePackageCoordinates(id, version);
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    const existing = lock.plugins[key];
+    if (!existing) throw new Error(`Plugin is not installed: ${key}`);
+    if (existing.installState === "staging") throw new Error(`Plugin verification is incomplete: ${key}`);
+    if (lock.cleanupDebts?.[key]) throw new Error(`Plugin cleanup is still pending: ${key}`);
+    const current = lock.activations?.[id];
+    for (const [candidateKey, candidate] of Object.entries(lock.plugins)) {
+      if (candidate.id === id) lock.plugins[candidateKey] = {
+        ...candidate,
+        enabled: candidate.version === version,
+        ...(candidate.version === version ? { installState: "verified" as const } : {}),
+      };
+    }
+    const activation: PluginActivationRecord = {
+      activeVersion: version,
+      ...(current?.activeVersion && current.activeVersion !== version
+        ? { previousVersion: current.activeVersion }
+        : current?.previousVersion && current.previousVersion !== version ? { previousVersion: current.previousVersion } : {}),
+      generation: (current?.generation ?? 0) + 1,
+    };
+    lock.activations = { ...(lock.activations ?? {}), [id]: activation };
+    this.#write(lock);
+    return { entry: lock.plugins[key] as PluginLockEntry, activation };
+  }
+
+  disable(id: string): { entry: PluginLockEntry; activation: PluginActivationRecord } {
+    const lock = this.read();
+    const current = lock.activations?.[id];
+    if (!current?.activeVersion) throw new Error(`Plugin is not enabled: ${id}`);
+    const key = `${id}@${current.activeVersion}`;
+    const entry = lock.plugins[key];
+    if (!entry) throw new Error(`Plugin activation points to a missing package: ${key}`);
+    for (const [candidateKey, candidate] of Object.entries(lock.plugins)) {
+      if (candidate.id === id) lock.plugins[candidateKey] = { ...candidate, enabled: false };
+    }
+    const activation: PluginActivationRecord = {
+      ...(current.previousVersion && current.previousVersion !== current.activeVersion
+        ? { previousVersion: current.previousVersion }
+        : {}),
+      resumeVersion: current.activeVersion,
+      generation: current.generation + 1,
+    };
+    lock.activations = { ...(lock.activations ?? {}), [id]: activation };
+    this.#write(lock);
+    return { entry: { ...entry, enabled: false }, activation };
+  }
+
+  rollback(id: string): { entry: PluginLockEntry; activation: PluginActivationRecord } {
+    const lock = this.read();
+    const current = lock.activations?.[id];
+    if (!current?.previousVersion) throw new Error(`Plugin has no rollback generation: ${id}`);
+    const key = `${id}@${current.previousVersion}`;
+    const entry = lock.plugins[key];
+    if (!entry) throw new Error(`Plugin rollback package is missing: ${key}`);
+    if (entry.installState === "staging") throw new Error(`Plugin verification is incomplete: ${key}`);
+    if (lock.cleanupDebts?.[key]) throw new Error(`Plugin cleanup is still pending: ${key}`);
+    const previousActive = current.activeVersion ?? current.resumeVersion;
+    for (const [candidateKey, candidate] of Object.entries(lock.plugins)) {
+      if (candidate.id === id) lock.plugins[candidateKey] = { ...candidate, enabled: candidate.version === entry.version };
+    }
+    const activation: PluginActivationRecord = {
+      activeVersion: entry.version,
+      ...(previousActive ? { previousVersion: previousActive } : {}),
+      generation: current.generation + 1,
+    };
+    lock.activations = { ...(lock.activations ?? {}), [id]: activation };
+    this.#write(lock);
+    return { entry: { ...entry, enabled: true }, activation };
+  }
+
+  recordVerification(
+    id: string,
+    version: string,
+    verification: { verifiedAt: string; stateDigest?: string; rollbackPossible?: boolean; activationPending?: boolean },
+  ): PluginLockEntry {
+    validatePackageCoordinates(id, version);
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    const existing = lock.plugins[key];
+    if (!existing) throw new Error(`Plugin is not installed: ${key}`);
+    const { activationPending, ...recorded } = verification;
+    const updated: PluginLockEntry = {
+      ...existing,
+      ...recorded,
+      installState: activationPending ? "activation-pending" : "verified",
+    };
+    lock.plugins[key] = updated;
+    this.#write(lock);
+    return updated;
+  }
+
+  recordCleanupDebt(id: string, version: string, attempts: number, lastError: string): PluginCleanupDebt {
+    validatePackageCoordinates(id, version);
+    if (!Number.isSafeInteger(attempts) || attempts < 1) throw new Error("Plugin cleanup attempts must be a positive integer");
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    if (!lock.plugins[key]) throw new Error(`Plugin cleanup debt points to a missing package: ${key}`);
+    const previous = lock.cleanupDebts?.[key];
+    const now = new Date().toISOString();
+    const debt: PluginCleanupDebt = {
+      id,
+      version,
+      attempts: (previous?.attempts ?? 0) + attempts,
+      createdAt: previous?.createdAt ?? now,
+      updatedAt: now,
+      lastError: lastError.replace(/[\r\n\0]/g, " ").slice(0, 512) || "plugin cleanup failed",
+    };
+    lock.cleanupDebts = { ...(lock.cleanupDebts ?? {}), [key]: debt };
+    this.#write(lock);
+    return debt;
+  }
+
+  clearCleanupDebt(id: string, version: string): boolean {
+    validatePackageCoordinates(id, version);
+    const lock = this.read();
+    const key = `${id}@${version}`;
+    if (!lock.cleanupDebts?.[key]) return false;
+    delete lock.cleanupDebts[key];
+    this.#write(lock);
+    return true;
+  }
+
+  clearAllCleanupDebts(): number {
+    const lock = this.read();
+    const count = Object.keys(lock.cleanupDebts ?? {}).length;
+    if (count === 0) return 0;
+    lock.cleanupDebts = {};
+    this.#write(lock);
+    return count;
   }
 
   uninstall(id: string, version: string): boolean {
@@ -234,13 +402,26 @@ export class PluginInstallLock {
     const lock = this.read();
     const key = `${id}@${version}`;
     if (!lock.plugins[key]) return false;
+    const activation = lock.activations?.[id];
+    if (activation?.activeVersion === version) throw new Error(`Cannot uninstall active plugin generation: ${key}`);
+    if (lock.cleanupDebts?.[key]) throw new Error(`Cannot uninstall plugin generation with pending cleanup debt: ${key}`);
     delete lock.plugins[key];
+    if (activation) {
+      const next: PluginActivationRecord = {
+        ...(activation.activeVersion ? { activeVersion: activation.activeVersion } : {}),
+        ...(activation.previousVersion && activation.previousVersion !== version ? { previousVersion: activation.previousVersion } : {}),
+        ...(activation.resumeVersion && activation.resumeVersion !== version ? { resumeVersion: activation.resumeVersion } : {}),
+        generation: activation.generation,
+      };
+      lock.activations = { ...(lock.activations ?? {}), [id]: next };
+    }
     this.#write(lock);
     return true;
   }
 
   #write(lock: PluginLockfile): void {
-    const temporary = `${this.#path}.${process.pid}.tmp`;
+    validatePluginLock(lock.plugins, lock.activations ?? {}, lock.cleanupDebts ?? {});
+    const temporary = `${this.#path}.${process.pid}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(lock, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, this.#path);
   }
@@ -257,9 +438,10 @@ export class PluginPackageInstaller {
   }
 
   stage(sourceRoot: string, manifestName = "lite-plugin.json"): InspectedPlugin {
+    this.reconcileOrphans();
     const source = realpathSync(sourceRoot);
     const sourceManifest = inspectPluginManifest(resolve(source, manifestName));
-    const staging = resolve(this.root, `.stage-${process.pid}-${Date.now()}`);
+    const staging = resolve(this.root, `.stage-${process.pid}-${randomUUID()}`);
     if (isWithin(source, staging)) throw new Error("Plugin source may not contain the install staging directory");
     try {
       copyPackageTree(source, staging, this.limits.maxFiles ?? 2_048, this.limits.maxBytes ?? 64 * 1024 * 1024);
@@ -267,7 +449,8 @@ export class PluginPackageInstaller {
       if (staged.manifest.id !== sourceManifest.manifest.id || staged.manifest.version !== sourceManifest.manifest.version) {
         throw new Error("Staged plugin identity changed during copy");
       }
-      const target = resolve(this.root, staged.manifest.id, staged.manifest.version);
+      const digest = pluginPackageDigest(staged);
+      const target = resolve(this.root, ".objects", digest);
       if (!isWithin(this.root, target)) throw new Error("Plugin version escapes the install root");
       if (isWithin(target, staging) || isWithin(staging, target)) throw new Error("Plugin staging path is invalid");
       mkdirSync(dirname(target), { recursive: true });
@@ -281,6 +464,26 @@ export class PluginPackageInstaller {
     }
   }
 
+  reconcileOrphans(): number {
+    const lock = this.lock.read();
+    const referenced = new Set(Object.values(lock.plugins).map((entry) => resolve(entry.source)));
+    let removed = 0;
+    for (const entry of readdirSync(this.root, { withFileTypes: true })) {
+      if (!entry.name.startsWith(".stage-")) continue;
+      rmSync(resolve(this.root, entry.name), { recursive: true, force: true });
+      removed += 1;
+    }
+    const objects = resolve(this.root, ".objects");
+    if (!existsSync(objects)) return removed;
+    for (const entry of readdirSync(objects, { withFileTypes: true })) {
+      const path = resolve(objects, entry.name);
+      if (referenced.has(path)) continue;
+      rmSync(path, { recursive: true, force: true });
+      removed += 1;
+    }
+    return removed;
+  }
+
   async installAndVerify(
     sourceRoot: string,
     grant: Partial<PluginPermissions>,
@@ -288,19 +491,22 @@ export class PluginPackageInstaller {
     previousVersion?: string,
   ): Promise<PluginLockEntry> {
     const staged = this.stage(sourceRoot);
-    const entry = this.lock.install(staged, grant);
+    let entry: PluginLockEntry | undefined;
     try {
+      entry = this.lock.install(staged, grant);
       await verify(staged, entry);
-      const enabled = this.lock.setEnabled(entry.id, entry.version, true);
-      for (const installed of Object.values(this.lock.read().plugins)) {
-        if (installed.id === entry.id && installed.version !== entry.version && installed.enabled) {
-          this.lock.setEnabled(installed.id, installed.version, false);
-        }
+      entry = this.lock.recordVerification(entry.id, entry.version, {
+        verifiedAt: new Date().toISOString(),
+        rollbackPossible: true,
+        activationPending: true,
+      });
+      if (previousVersion && previousVersion !== entry.version) {
+        const active = this.lock.read().activations?.[entry.id]?.activeVersion;
+        if (active && active !== previousVersion) throw new Error(`Plugin active generation changed during verification: ${entry.id}`);
       }
-      if (previousVersion && previousVersion !== entry.version) this.lock.setEnabled(entry.id, previousVersion, false);
-      return enabled;
+      return this.lock.activate(entry.id, entry.version).entry;
     } catch (error) {
-      this.lock.uninstall(entry.id, entry.version);
+      if (entry) this.lock.uninstall(entry.id, entry.version);
       rmSync(staged.root, { recursive: true, force: true });
       throw error;
     }
@@ -308,12 +514,31 @@ export class PluginPackageInstaller {
 
   uninstall(id: string, version: string): boolean {
     validatePackageCoordinates(id, version);
-    const target = resolve(this.root, id, version);
+    const entry = this.lock.read().plugins[`${id}@${version}`];
+    if (!entry) return false;
+    const target = resolve(entry.source);
     if (!isWithin(this.root, target)) throw new Error("Plugin uninstall path escapes the install root");
+    try {
+      const realTarget = realpathSync(target);
+      if (!isWithin(this.root, realTarget)) throw new Error("Plugin uninstall path escapes the install root");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     const removed = this.lock.uninstall(id, version);
     if (removed) rmSync(target, { recursive: true, force: true });
     return removed;
   }
+}
+
+export function inspectLockedPlugin(entry: PluginLockEntry, manifestName = "lite-plugin.json"): InspectedPlugin {
+  const inspected = inspectPluginManifest(resolve(entry.source, manifestName));
+  if (inspected.manifest.id !== entry.id || inspected.manifest.version !== entry.version || inspected.manifest.trust !== entry.trust) {
+    throw new Error(`Installed plugin identity mismatch: ${entry.id}@${entry.version}`);
+  }
+  if (pluginPackageDigest(inspected) !== entry.digest) {
+    throw new Error(`Installed plugin digest mismatch: ${entry.id}@${entry.version}`);
+  }
+  return inspected;
 }
 
 export class ProcessPluginWorker implements PluginWorker {
@@ -444,6 +669,8 @@ export class LazyPluginSupervisor {
       idleTtlMs?: number;
       invocationTimeoutMs?: number;
       cleanupRetryMs?: number;
+      crashBackoffBaseMs?: number;
+      crashBackoffMaxMs?: number;
       onCleanupError?: (error: unknown) => void;
     } = {},
   ) {}
@@ -486,7 +713,9 @@ export class LazyPluginSupervisor {
     } catch (error) {
       if (worker) this.#failedWorkers.add(worker);
       this.#failures += 1;
-      this.#retryAt = Date.now() + Math.min(2 ** (this.#failures - 1) * 250, 30_000);
+      const base = Math.max(1, this.options.crashBackoffBaseMs ?? 250);
+      const maximum = Math.max(base, this.options.crashBackoffMaxMs ?? 30_000);
+      this.#retryAt = Date.now() + Math.min(2 ** (this.#failures - 1) * base, maximum);
       failed = true;
       failure = error;
     } finally {
@@ -510,10 +739,13 @@ export class LazyPluginSupervisor {
     this.#stopRequested = true;
     const operation = this.#stopWorker();
     this.#stopPromise = operation;
+    let failure: unknown;
     try { await operation; }
+    catch (error) { failure = error; throw error; }
     finally {
       this.#stopRequested = false;
       if (this.#stopPromise === operation) this.#stopPromise = undefined;
+      if (failure && this.#cleanupWorker) this.#armCleanupRetry(this.#cleanupWorker, failure);
     }
   }
 
@@ -670,6 +902,79 @@ function validateManifest(value: unknown): PluginManifest {
 function validatePackageCoordinates(id: string, version: string): void {
   if (!/^[a-z0-9][a-z0-9._-]{1,127}$/.test(id)) throw new Error("Plugin id is invalid");
   if (!isSafePluginVersion(version)) throw new Error("Plugin version is invalid");
+}
+
+function deriveLegacyActivations(plugins: Record<string, PluginLockEntry>): Record<string, PluginActivationRecord> {
+  const enabled = new Map<string, string>();
+  for (const entry of Object.values(plugins)) {
+    if (!entry.enabled) continue;
+    if (enabled.has(entry.id)) throw new Error(`Plugin lockfile has multiple enabled generations: ${entry.id}`);
+    enabled.set(entry.id, entry.version);
+  }
+  return Object.fromEntries([...enabled].map(([id, activeVersion]) => [id, { activeVersion, generation: 1 }]));
+}
+
+function validatePluginLock(
+  plugins: Record<string, PluginLockEntry>,
+  activations: Record<string, PluginActivationRecord>,
+  cleanupDebts: Record<string, PluginCleanupDebt>,
+): void {
+  for (const [key, entry] of Object.entries(plugins)) {
+    validatePackageCoordinates(entry.id, entry.version);
+    if (key !== `${entry.id}@${entry.version}`) throw new Error(`Plugin lockfile key does not match entry: ${key}`);
+    if (!/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Plugin lockfile digest is invalid: ${key}`);
+    if (entry.stateDigest !== undefined && !/^[a-f0-9]{64}$/.test(entry.stateDigest)) {
+      throw new Error(`Plugin state digest is invalid: ${key}`);
+    }
+    if (entry.installState !== undefined && entry.installState !== "staging" &&
+        entry.installState !== "activation-pending" && entry.installState !== "verified") {
+      throw new Error(`Plugin install state is invalid: ${key}`);
+    }
+  }
+  for (const [id, activation] of Object.entries(activations)) {
+    if (!Number.isSafeInteger(activation.generation) || activation.generation < 0) {
+      throw new Error(`Plugin activation generation is invalid: ${id}`);
+    }
+    if (activation.activeVersion && !plugins[`${id}@${activation.activeVersion}`]) {
+      throw new Error(`Plugin activation points to a missing package: ${id}@${activation.activeVersion}`);
+    }
+    if (activation.activeVersion && ["staging", "activation-pending"].includes(
+      plugins[`${id}@${activation.activeVersion}`]?.installState ?? "verified",
+    )) {
+      throw new Error(`Plugin activation points to an incomplete package: ${id}@${activation.activeVersion}`);
+    }
+    if (activation.previousVersion && !plugins[`${id}@${activation.previousVersion}`]) {
+      throw new Error(`Plugin rollback points to a missing package: ${id}@${activation.previousVersion}`);
+    }
+    if (activation.resumeVersion && !plugins[`${id}@${activation.resumeVersion}`]) {
+      throw new Error(`Plugin resume points to a missing package: ${id}@${activation.resumeVersion}`);
+    }
+    if (activation.resumeVersion && ["staging", "activation-pending"].includes(
+      plugins[`${id}@${activation.resumeVersion}`]?.installState ?? "verified",
+    )) {
+      throw new Error(`Plugin resume points to an incomplete package: ${id}@${activation.resumeVersion}`);
+    }
+    if (activation.activeVersion && activation.resumeVersion) {
+      throw new Error(`Plugin activation cannot be active and resumable simultaneously: ${id}`);
+    }
+  }
+  for (const entry of Object.values(plugins)) {
+    const active = activations[entry.id]?.activeVersion;
+    if (entry.enabled !== (active === entry.version)) {
+      throw new Error(`Plugin enablement disagrees with its activation record: ${entry.id}@${entry.version}`);
+    }
+  }
+  for (const [key, debt] of Object.entries(cleanupDebts)) {
+    validatePackageCoordinates(debt.id, debt.version);
+    if (key !== `${debt.id}@${debt.version}` || !plugins[key]) {
+      throw new Error(`Plugin cleanup debt is invalid: ${key}`);
+    }
+    if (!Number.isSafeInteger(debt.attempts) || debt.attempts < 1 ||
+        typeof debt.createdAt !== "string" || typeof debt.updatedAt !== "string" ||
+        typeof debt.lastError !== "string" || debt.lastError.length > 512) {
+      throw new Error(`Plugin cleanup debt is invalid: ${key}`);
+    }
+  }
 }
 
 function isSafePluginVersion(version: string): boolean {

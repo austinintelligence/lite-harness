@@ -1,22 +1,20 @@
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { loadManagerConfiguration } from "@lite-harness/config";
+import { loadManagerConfiguration, loadManagerIpcConfiguration } from "@lite-harness/config";
 import {
   isGatewayReadiness,
   LITE_IPC_PROTOCOL_VERSION,
+  LITE_IPC_VERSION_HEADER,
   PRODUCTION_READINESS_DEPENDENCY_KEYS,
 } from "@lite-harness/contracts";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { installUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
-import {
-  PluginInstallLock, PluginPackageInstaller, createOpenClawCompatibilityWorker, inspectPluginManifest,
-  pluginPackageDigest,
-  type PluginPermissions,
-} from "@lite-harness/plugin-core";
+import type { PluginPermissions } from "@lite-harness/plugin-core";
 import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
 import { SQLITE_SCHEMA_VERSION, SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
@@ -170,48 +168,52 @@ if (command === "doctor") {
   const report = inspectOpenClawRoot(argument);
   const importedSkills = extraArgument === "--apply" ? importOpenClawSkills(report, dataDir) : [];
   process.stdout.write(`${JSON.stringify({ mode: extraArgument === "--apply" ? "apply" : "inspect", report, importedSkills }, null, 2)}\n`);
-} else if (command === "plugin" && ["inspect", "install", "enable", "disable", "uninstall", "doctor", "migrate"].includes(subcommand ?? "")) {
-  const pluginRoot = join(dataDir, "plugins");
-  const lock = new PluginInstallLock(join(dataDir, "plugins.lock.json"));
-  const installer = new PluginPackageInstaller(pluginRoot, lock);
+} else if (command === "plugin" && ["inspect", "install", "enable", "disable", "uninstall", "doctor", "migrate", "rollback"].includes(subcommand ?? "")) {
   if (subcommand === "inspect") {
     if (!argument) throw new Error("Usage: plugin inspect <manifest-path>");
-    process.stdout.write(`${JSON.stringify(inspectPluginManifest(argument), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/plugins/inspect", { path: argument }), null, 2)}\n`);
   } else if (subcommand === "install") {
     if (!argument) throw new Error("Usage: plugin install <package-directory>");
-    const installed = await installer.installAndVerify(argument, pluginGrants(), async (plugin, entry) => {
-      if (plugin.manifest.trust === "data-only") return;
-      const worker = createOpenClawCompatibilityWorker(plugin, entry.grantedPermissions);
-      try { await worker.start(); } finally { await worker.stop(); }
+    const installed = await managerPluginRequest("POST", "/internal/plugins/install", {
+      sourceRoot: argument, grant: pluginGrants(),
     });
     process.stdout.write(`${JSON.stringify(installed, null, 2)}\n`);
   } else if (subcommand === "uninstall") {
-    if (!argument || !argument.includes("@")) throw new Error("Usage: plugin uninstall <id>@<version>");
-    const separator = argument.lastIndexOf("@");
-    process.stdout.write(`${JSON.stringify({ removed: installer.uninstall(argument.slice(0, separator), argument.slice(separator + 1)) })}\n`);
+    const coordinate = pluginCoordinate(argument, "uninstall");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+      "DELETE", `/internal/plugins/${encodeURIComponent(coordinate.id)}/${encodeURIComponent(coordinate.version)}`,
+    ))}\n`);
   } else if (subcommand === "enable" || subcommand === "disable") {
-    if (!argument || !argument.includes("@")) throw new Error(`Usage: plugin ${subcommand} <id>@<version>`);
-    const separator = argument.lastIndexOf("@");
-    process.stdout.write(`${JSON.stringify(lock.setEnabled(argument.slice(0, separator), argument.slice(separator + 1), subcommand === "enable"), null, 2)}\n`);
+    const coordinate = pluginCoordinate(argument, subcommand);
+    const path = subcommand === "enable"
+      ? `/internal/plugins/${encodeURIComponent(coordinate.id)}/${encodeURIComponent(coordinate.version)}/enable`
+      : `/internal/plugins/${encodeURIComponent(coordinate.id)}/${encodeURIComponent(coordinate.version)}/disable`;
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", path), null, 2)}\n`);
   } else if (subcommand === "migrate") {
     if (!argument || !extraArgument || !fifthArgument) throw new Error("Usage: plugin migrate <package-directory> <from> <to>");
-    const plugin = inspectPluginManifest(join(argument, "lite-plugin.json"));
-    const worker = createOpenClawCompatibilityWorker(plugin, pluginGrants());
-    try {
-      await worker.start();
-      process.stdout.write(`${JSON.stringify(await worker.migrate(extraArgument, fifthArgument), null, 2)}\n`);
-    } finally { await worker.stop(); }
+    const inspection = await managerPluginRequest<{ manifest: { id: string; version: string } }>(
+      "POST", "/internal/plugins/inspect", { path: argument },
+    );
+    if (inspection.manifest.version !== fifthArgument) throw new Error("Plugin migrate target does not match the package version");
+    const status = await managerPluginRequest<{ active: Array<{ id: string; version: string }> }>("GET", "/internal/plugins");
+    if (!status.active.some((entry) => entry.id === inspection.manifest.id && entry.version === extraArgument)) {
+      throw new Error(`Plugin migrate source is not the active generation: ${inspection.manifest.id}@${extraArgument}`);
+    }
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+      "POST", `/internal/plugins/${encodeURIComponent(inspection.manifest.id)}/upgrade`,
+      { sourceRoot: argument, grant: pluginGrants() },
+    ), null, 2)}\n`);
+  } else if (subcommand === "rollback") {
+    if (!argument) throw new Error("Usage: plugin rollback <id>");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+      "POST", `/internal/plugins/${encodeURIComponent(argument)}/rollback`,
+    ), null, 2)}\n`);
   } else {
-    const entries = Object.values(lock.read().plugins);
-    const report = entries.map((entry) => {
-      try {
-        const plugin = inspectPluginManifest(join(entry.source, "lite-plugin.json"));
-        return { id: entry.id, version: entry.version, enabled: entry.enabled,
-          healthy: plugin.manifest.version === entry.version && pluginPackageDigest(plugin) === entry.digest };
-      }
-      catch (error) { return { id: entry.id, version: entry.version, enabled: entry.enabled, healthy: false, error: error instanceof Error ? error.message : String(error) }; }
-    });
-    process.stdout.write(`${JSON.stringify({ ok: report.every((entry) => entry.healthy), plugins: report }, null, 2)}\n`);
+    const status = await managerPluginRequest<{ plugins: Array<{ healthy: boolean; cleanupDebt?: unknown }> }>("GET", "/internal/plugins");
+    process.stdout.write(`${JSON.stringify({
+      ok: status.plugins.every((entry) => entry.healthy && !entry.cleanupDebt),
+      ...status,
+    }, null, 2)}\n`);
   }
 } else if (command === "service" && ["install", "status", "uninstall"].includes(subcommand ?? "")) {
   const root = resolve(import.meta.dirname, "../../..");
@@ -233,7 +235,7 @@ if (command === "doctor") {
   }
 } else {
   process.stdout.write(
-    "Lite-Harness\n\nCommands:\n  doctor\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin doctor\n  service install|status|uninstall\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n",
+    "Lite-Harness\n\nCommands:\n  doctor\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin rollback <id>\n  plugin doctor\n  service install|status|uninstall\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n",
   );
 }
 
@@ -371,6 +373,69 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function pluginCoordinate(value: string | undefined, operation: string): { id: string; version: string } {
+  if (!value || !value.includes("@")) throw new Error(`Usage: plugin ${operation} <id>@<version>`);
+  const separator = value.lastIndexOf("@");
+  const id = value.slice(0, separator);
+  const version = value.slice(separator + 1);
+  if (!id || !version) throw new Error(`Usage: plugin ${operation} <id>@<version>`);
+  return { id, version };
+}
+
+async function managerPluginRequest<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  const configuration = loadManagerIpcConfiguration({ ...process.env, LITE_HARNESS_DATA_DIR: dataDir });
+  const credentials = new OsSecretStore({ windowsPath: join(configuration.dataDir, "credentials.dpapi.json") });
+  const internalToken = process.env.LITE_HARNESS_INTERNAL_TOKEN?.trim() || await credentials.get("service.internal-token");
+  if (!internalToken) throw new Error("Manager plugin commands require LITE_HARNESS_INTERNAL_TOKEN or an installed service token");
+  const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
+  return await new Promise<T>((resolveRequest, rejectRequest) => {
+    let settled = false;
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      callback();
+    };
+    const request = httpRequest({
+      socketPath: configuration.socketPath,
+      path,
+      method,
+      headers: {
+        [LITE_IPC_VERSION_HEADER]: LITE_IPC_PROTOCOL_VERSION,
+        "x-lite-internal-token": internalToken,
+        ...(payload ? { "content-type": "application/json", "content-length": String(payload.length) } : {}),
+      },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 4 * 1024 * 1024) {
+          request.destroy(new Error("Manager plugin response exceeds 4 MiB"));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.once("error", (error) => settle(() => rejectRequest(error)));
+      response.once("end", () => {
+        settle(() => {
+          try {
+            const text = Buffer.concat(chunks).toString("utf8");
+            const parsed = text ? JSON.parse(text) as unknown : {};
+            if ((response.statusCode ?? 500) >= 400) {
+              const error = parsed && typeof parsed === "object" ? (parsed as { error?: { message?: unknown } }).error : undefined;
+              throw new Error(typeof error?.message === "string" ? error.message : `Manager plugin request failed with HTTP ${response.statusCode}`);
+            }
+            resolveRequest(parsed as T);
+          } catch (error) { rejectRequest(error); }
+        });
+      });
+    });
+    request.setTimeout(120_000, () => request.destroy(new Error("Manager plugin request timed out")));
+    request.once("error", (error) => settle(() => rejectRequest(error)));
+    if (payload) request.end(payload); else request.end();
+  });
 }
 
 function pluginGrants(): PluginPermissions {

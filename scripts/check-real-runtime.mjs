@@ -120,6 +120,7 @@ try {
           packagedToolContainerSecretSentinelsAbsent: true,
           mcpContainersInstallationScopedForReconciliation: true,
           expiredLeaseReacquisitionIncrementsFence: true,
+          pausedWriterMutationRejectedAndResumed: true,
           cleanPackedSdkThroughHttpGatewayManagerIpcDockerAndArtifact: true,
           workspaceSurvivesContainerLiteAndDockerRestart: true,
           coldWorkspaceRestore: true,

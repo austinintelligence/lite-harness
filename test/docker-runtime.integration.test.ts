@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
+import type { ToolExecutionContext } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 const image = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
@@ -51,6 +55,74 @@ describe("Docker runtime integration", () => {
       store.close();
     }
   }, 60_000);
+
+  it("A06-PAUSED-WRITER-MUTATION rejects an expired stale owner before Docker mutation and resumes the fenced owner", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-a06-paused-writer-"));
+    const databasePath = join(root, "manager.db");
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const workspaceId = `a06-shared-workspace-${suffix}`;
+    const principal = { appId: "a06-app", tenantId: "a06-tenant", userId: "a06-user", scopes: [] as string[] };
+    const storeA = new SqliteRunStore(databasePath);
+    const storeB = new SqliteRunStore(databasePath);
+    const installationId = `a06-installation-${suffix}`;
+    const runtimeA = new DockerToolRuntime({
+      image, installationId, containerStore: storeA,
+      validateExecutionLease: (params) => hasActiveFence(storeA, params),
+    });
+    const runtimeB = new DockerToolRuntime({
+      image, installationId, containerStore: storeB,
+      validateExecutionLease: (params) => hasActiveFence(storeB, params),
+    });
+
+    try {
+      storeA.createOrGetRun("a06-run-a", {
+        agent: "coder", workspace: workspaceId, input: "paused writer A", idempotencyKey: "a06-request-a", principal,
+      });
+      const attemptA = storeA.createRunAttempt("a06-run-a", "a06-attempt-a");
+      storeB.createOrGetRun("a06-run-b", {
+        agent: "coder", workspace: workspaceId, input: "resumed writer B", idempotencyKey: "a06-request-b", principal,
+      });
+      const attemptB = storeB.createRunAttempt("a06-run-b", "a06-attempt-b");
+
+      const firstLease = storeA.acquireWorkspaceLease(workspaceId, "a06-run-a", 50);
+      expect(firstLease).toMatchObject({ ownerRunId: "a06-run-a", fencingToken: 1 });
+      const staleContext: ToolExecutionContext = {
+        runId: "a06-run-a", attemptId: attemptA.id, workspaceId, principal,
+        fencingToken: firstLease!.fencingToken,
+        call: { id: "a06-stale-write", name: "write_file", arguments: { path: "stale.txt", content: "must not land" } },
+      };
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const secondLease = storeB.acquireWorkspaceLease(workspaceId, "a06-run-b", 10_000);
+      expect(secondLease).toMatchObject({ ownerRunId: "a06-run-b", fencingToken: 2 });
+      expect(storeA.validateWorkspaceLease(firstLease!)).toBe(false);
+      expect(storeB.validateWorkspaceLease(secondLease!)).toBe(true);
+
+      await expect(runtimeA.execute(staleContext)).rejects.toThrow(/Workspace fence is not active/);
+      expect(storeA.listRuntimeContainers()).toEqual([]);
+
+      const resumedContext = (id: string, name: string, arguments_: Record<string, unknown>): ToolExecutionContext => ({
+        runId: "a06-run-b", attemptId: attemptB.id, workspaceId, principal,
+        fencingToken: secondLease!.fencingToken,
+        call: { id, name, arguments: arguments_ },
+      });
+      await expect(runtimeB.execute(resumedContext("a06-resumed-write", "write_file", {
+        path: "resumed.txt", content: "fenced owner wins\n",
+      }))).resolves.toMatchObject({ ok: true });
+      const read = await runtimeB.execute(resumedContext("a06-resumed-read", "read_file", { path: "resumed.txt" }));
+      expect(read).toMatchObject({ ok: true, content: "fenced owner wins\n" });
+      await expect(runtimeB.execute(resumedContext("a06-stale-read", "read_file", { path: "stale.txt" }))).resolves.toMatchObject({
+        ok: false,
+      });
+      expect(storeA.listRuntimeContainers()).toEqual([]);
+      expect(storeB.listRuntimeContainers()).toEqual([]);
+    } finally {
+      await runtimeB.removeWorkspace(workspaceId, principal).catch(() => undefined);
+      storeA.close();
+      storeB.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 90_000);
 
   it("persists a named-volume workspace across containers and restores an archive", async () => {
     const workspaceId = `integration-${Date.now()}`;
@@ -118,4 +190,15 @@ function requiredImage(name: string): string {
 
 function hasPair(args: readonly string[], name: string, value: string): boolean {
   return args.some((item, index) => item === name && args[index + 1] === value);
+}
+
+function hasActiveFence(store: SqliteRunStore, params: ToolExecutionContext): boolean {
+  if (!params.runId || !params.attemptId || !params.principal || params.fencingToken === undefined) return false;
+  const run = store.getRun(params.runId);
+  if (!run || run.workspaceId !== params.workspaceId || run.appId !== params.principal.appId ||
+      run.tenantId !== params.principal.tenantId || run.userId !== params.principal.userId) return false;
+  const attempt = store.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
+  const lease = store.getWorkspaceLease(run.workspaceId, run.id);
+  return attempt?.id === params.attemptId && lease?.fencingToken === params.fencingToken &&
+    store.validateWorkspaceLease(lease);
 }

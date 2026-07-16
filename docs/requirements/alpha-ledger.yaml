@@ -1525,7 +1525,8 @@
         "packages/storage-sqlite/src/index.ts"
       ],
       "testIds": [
-        "A06-SAME-RUN-EXPIRY-FENCING"
+        "A06-SAME-RUN-EXPIRY-FENCING",
+        "A06-PAUSED-WRITER-MUTATION"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [
@@ -1537,7 +1538,7 @@
       "status": "blocked",
       "blockers": [
         "current-evidence-stale",
-        "paused-writer-mutation-matrix-gap"
+        "two-manager-process-mutation-gap"
       ]
     },
     {

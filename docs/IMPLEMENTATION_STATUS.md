@@ -36,7 +36,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A06 One writer with fencing | blocked | traceability-not-yet-established |
 | A07 Limits always | blocked | traceability-not-yet-established |
 | A08 Cleanup and reconciliation | blocked | traceability-not-yet-established |
-| A09 Workspace durability | blocked | traceability-not-yet-established |
+| A09 Workspace durability | blocked | current-evidence-stale |
 | A10 Automatic encrypted cold restore | blocked | current-evidence-stale |
 | A11 Previous-good recovery | blocked | traceability-not-yet-established |
 | A12 Artifact ownership | blocked | current-evidence-stale |

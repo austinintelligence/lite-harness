@@ -1555,13 +1555,24 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/manager/src/main.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/storage-sqlite/src/index.ts"
+      ],
+      "testIds": [
+        "A09-REAL-RESTART-DURABILITY"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

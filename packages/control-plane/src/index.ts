@@ -257,16 +257,21 @@ export class RunService {
     const bindingValid = this.#approvalBindingIsCurrent(existing);
     const expired = Date.parse(existing.expiresAt) <= Date.now();
     const status = expired ? "EXPIRED" : bindingValid && approved ? "APPROVED" : "DENIED";
-    let resolved = this.store.resolveApproval(approvalId, status, existing.executionDigest);
+    let resolved = this.store.resolveApprovalAndAppendEvent(
+      approvalId,
+      status,
+      existing.executionDigest,
+      { approvalId, status, executionDigest: existing.executionDigest },
+    );
     if (status === "APPROVED" && resolved?.status === "PENDING") {
-      resolved = this.store.resolveApproval(approvalId, "EXPIRED", existing.executionDigest);
+      resolved = this.store.resolveApprovalAndAppendEvent(
+        approvalId,
+        "EXPIRED",
+        existing.executionDigest,
+        { approvalId, status: "EXPIRED", executionDigest: existing.executionDigest },
+      );
     }
-    if (resolved) {
-      this.store.appendEvent({
-        runId: resolved.runId,
-        type: "approval.resolved",
-        payload: { approvalId, status: resolved.status, executionDigest: resolved.executionDigest },
-      });
+    if (resolved && resolved.status !== "PENDING") {
       this.#notify(resolved.runId);
     }
     const waiter = this.#approvalWaiters.get(approvalId);
@@ -817,13 +822,13 @@ export class RunService {
         resolve(value);
       };
       const recordResolution = (status: "DENIED" | "EXPIRED") => {
-        const resolved = this.store.resolveApproval(id, status, record.executionDigest);
+        const resolved = this.store.resolveApprovalAndAppendEvent(
+          id,
+          status,
+          record.executionDigest,
+          { approvalId: id, status, executionDigest: record.executionDigest },
+        );
         if (resolved?.status !== status) return;
-        this.store.appendEvent({
-          runId: run.id,
-          type: "approval.resolved",
-          payload: { approvalId: id, status, executionDigest: record.executionDigest },
-        });
         this.#notify(run.id);
       };
       const onAbort = () => {
@@ -915,6 +920,8 @@ export class RunService {
   }
 
   #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent, attemptId?: string): void {
+    const current = this.getRun(run.id);
+    if (!current || isTerminalRunStatus(current.status)) return;
     const usage = event.type === "usage.updated"
       ? {
           inputTokens: numberValue(event.payload.inputTokens),
@@ -950,12 +957,17 @@ export class RunService {
         this.#safeObserve("model.cost_usd", event.payload.costUsd, telemetryAttributes);
       }
     }
-    this.store.appendEvent({
-      runId: run.id,
-      type: event.type,
-      payload: event.payload,
-      ...(usage ? { usage } : {}),
-    });
+    try {
+      this.store.appendEvent({
+        runId: run.id,
+        type: event.type,
+        payload: event.payload,
+        ...(usage ? { usage } : {}),
+      });
+    } catch (error) {
+      if (isTerminalRunStatus(this.getRun(run.id)?.status ?? run.status)) return;
+      throw error;
+    }
     if (event.type === "usage.updated") {
       this.#enforceBudget(this.getRun(run.id) as RunRecord);
     } else if (event.type === "tool.call.requested") {
@@ -1026,16 +1038,24 @@ export class RunService {
     this.#notify(runId);
     if (isTerminalRunStatus(status) && run.parentRunId) {
       const summary = [...this.store.listEvents(run.id)].reverse().find((event) => event.type === "agent.message.completed")?.payload.content;
-      this.store.appendEvent({
-        runId: run.parentRunId,
-        type: "subagent.completed",
-        payload: {
-          childRunId: run.id, status,
-          ...(typeof summary === "string" ? { summary } : {}),
-          ...(typeof payload.code === "string" ? { errorCode: payload.code } : {}),
-        },
-      });
-      this.#notify(run.parentRunId);
+      try {
+        this.store.appendEvent({
+          runId: run.parentRunId,
+          type: "subagent.completed",
+          payload: {
+            childRunId: run.id, status,
+            ...(typeof summary === "string" ? { summary } : {}),
+            ...(typeof payload.code === "string" ? { errorCode: payload.code } : {}),
+          },
+        });
+        this.#notify(run.parentRunId);
+      } catch (error) {
+        // A parent may have become terminal while a non-cooperative child was
+        // draining. Terminal parent state is final; dropping this summary is
+        // safer than reopening or mutating the parent run.
+        const parent = this.getRun(run.parentRunId);
+        if (!parent || !isTerminalRunStatus(parent.status)) throw error;
+      }
     }
   }
 

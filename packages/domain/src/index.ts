@@ -68,6 +68,12 @@ export interface RunStore {
     status: Exclude<ApprovalStatus, "PENDING">,
     expectedExecutionDigest: string,
   ): ApprovalRecord | undefined;
+  resolveApprovalAndAppendEvent(
+    id: string,
+    status: Exclude<ApprovalStatus, "PENDING">,
+    expectedExecutionDigest: string,
+    payload: Record<string, unknown>,
+  ): ApprovalRecord | undefined;
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord;
   getAgentProfile(id: string, owner: ResourceOwner): AgentProfileRecord | undefined;
   listAgentProfiles(principal: ResourceOwner): AgentProfileRecord[];

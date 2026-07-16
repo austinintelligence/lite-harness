@@ -967,58 +967,66 @@ export class SqliteRunStore implements RunStore {
   appendEvent(params: AppendRunEvent): RunEvent {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as
-        | RunRow
-        | undefined;
-      if (!row) {
-        throw new Error(`Run not found: ${params.runId}`);
-      }
-      const sequence = row.last_sequence + 1;
-      const createdAt = new Date().toISOString();
-      const payload = params.payload ?? {};
-      this.#database
-        .prepare(
-          `INSERT INTO run_events(run_id, sequence, type, payload_json, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(params.runId, sequence, params.type, JSON.stringify(payload), createdAt);
-      this.#database
-        .prepare(
-          `UPDATE runs SET
-             status = COALESCE(?, status),
-             last_sequence = ?,
-             error_code = COALESCE(?, error_code),
-             error_message = COALESCE(?, error_message),
-             usage_input_tokens = usage_input_tokens + ?,
-             usage_output_tokens = usage_output_tokens + ?,
-             usage_cost_usd = usage_cost_usd + ?,
-             usage_tool_calls = usage_tool_calls + ?,
-             updated_at = ?
-           WHERE id = ?`,
-        )
-        .run(
-          params.status ?? null,
-          sequence,
-          params.errorCode ?? null,
-          params.errorMessage ?? null,
-          params.usage?.inputTokens ?? 0,
-          params.usage?.outputTokens ?? 0,
-          params.usage?.costUsd ?? 0,
-          params.usage?.toolCalls ?? 0,
-          createdAt,
-          params.runId,
-        );
-      if (params.status && isTerminalRunStatus(params.status)) {
-        this.#database.prepare(
-          "UPDATE run_attempts SET status = ?, ended_at = ? WHERE run_id = ? AND status = 'RUNNING'",
-        ).run(params.status, createdAt, params.runId);
-      }
+      const event = this.#appendEventWithinTransaction(params);
       this.#database.exec("COMMIT");
-      return { runId: params.runId, sequence, type: params.type, payload, createdAt };
+      return event;
     } catch (error) {
       this.#database.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  #appendEventWithinTransaction(params: AppendRunEvent): RunEvent {
+    const row = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as
+      | RunRow
+      | undefined;
+    if (!row) {
+      throw new Error(`Run not found: ${params.runId}`);
+    }
+    if (isTerminalRunStatus(row.status)) {
+      throw new Error(`Run ${params.runId} is terminal; cannot append event ${params.type}`);
+    }
+    const sequence = row.last_sequence + 1;
+    const createdAt = new Date().toISOString();
+    const payload = params.payload ?? {};
+    this.#database
+      .prepare(
+        `INSERT INTO run_events(run_id, sequence, type, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(params.runId, sequence, params.type, JSON.stringify(payload), createdAt);
+    this.#database
+      .prepare(
+        `UPDATE runs SET
+           status = COALESCE(?, status),
+           last_sequence = ?,
+           error_code = COALESCE(?, error_code),
+           error_message = COALESCE(?, error_message),
+           usage_input_tokens = usage_input_tokens + ?,
+           usage_output_tokens = usage_output_tokens + ?,
+           usage_cost_usd = usage_cost_usd + ?,
+           usage_tool_calls = usage_tool_calls + ?,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        params.status ?? null,
+        sequence,
+        params.errorCode ?? null,
+        params.errorMessage ?? null,
+        params.usage?.inputTokens ?? 0,
+        params.usage?.outputTokens ?? 0,
+        params.usage?.costUsd ?? 0,
+        params.usage?.toolCalls ?? 0,
+        createdAt,
+        params.runId,
+      );
+    if (params.status && isTerminalRunStatus(params.status)) {
+      this.#database.prepare(
+        "UPDATE run_attempts SET status = ?, ended_at = ? WHERE run_id = ? AND status = 'RUNNING'",
+      ).run(params.status, createdAt, params.runId);
+    }
+    return { runId: params.runId, sequence, type: params.type, payload, createdAt };
   }
 
   listEvents(runId: string, after = 0, limit = 1_000): RunEvent[] {
@@ -1066,6 +1074,9 @@ export class SqliteRunStore implements RunStore {
       const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(params.runId) as RunRow | undefined;
       if (!run || !run.session_internal_id || run.session_id !== params.sessionId) {
         throw new Error("Session message does not belong to the supplied run");
+      }
+      if (isTerminalRunStatus(run.status)) {
+        throw new Error(`Run ${params.runId} is terminal; cannot append a session message`);
       }
       const next = this.#database.prepare(
         "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM session_messages WHERE session_internal_id = ?",
@@ -1237,12 +1248,61 @@ export class SqliteRunStore implements RunStore {
     expectedExecutionDigest: string,
   ): ApprovalRecord | undefined {
     const resolvedAt = new Date().toISOString();
-    this.#database.prepare(
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#resolveApprovalWithinTransaction(id, status, expectedExecutionDigest, resolvedAt);
+      const record = this.getApproval(id);
+      this.#database.exec("COMMIT");
+      return record;
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  resolveApprovalAndAppendEvent(
+    id: string,
+    status: Exclude<ApprovalStatus, "PENDING">,
+    expectedExecutionDigest: string,
+    payload: Record<string, unknown>,
+  ): ApprovalRecord | undefined {
+    const resolvedAt = new Date().toISOString();
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const changed = this.#resolveApprovalWithinTransaction(id, status, expectedExecutionDigest, resolvedAt);
+      const record = this.getApproval(id);
+      if (changed && record) {
+        this.#appendEventWithinTransaction({
+          runId: record.runId,
+          type: "approval.resolved",
+          payload,
+        });
+      }
+      this.#database.exec("COMMIT");
+      return record;
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  #resolveApprovalWithinTransaction(
+    id: string,
+    status: Exclude<ApprovalStatus, "PENDING">,
+    expectedExecutionDigest: string,
+    resolvedAt: string,
+  ): boolean {
+    const result = this.#database.prepare(
       `UPDATE approvals SET status = ?, resolved_at = ?
        WHERE id = ? AND status = 'PENDING' AND execution_digest = ?
-         AND (? != 'APPROVED' OR expires_at > ?)`,
+         AND (? != 'APPROVED' OR expires_at > ?)
+         AND EXISTS (
+           SELECT 1 FROM runs
+           WHERE runs.id = approvals.run_id
+             AND runs.status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'ORPHANED')
+         )`,
     ).run(status, resolvedAt, id, expectedExecutionDigest, status, resolvedAt);
-    return this.getApproval(id);
+    return Number(result.changes) === 1;
   }
 
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord {
@@ -1410,17 +1470,29 @@ export class SqliteRunStore implements RunStore {
   }
 
   recordUsage(runId: string, delta: Partial<RunUsage>): RunRecord {
-    this.#database.prepare(
-      `UPDATE runs SET usage_input_tokens = usage_input_tokens + ?,
-        usage_output_tokens = usage_output_tokens + ?, usage_cost_usd = usage_cost_usd + ?,
-        usage_tool_calls = usage_tool_calls + ?, updated_at = ? WHERE id = ?`,
-    ).run(
-      delta.inputTokens ?? 0, delta.outputTokens ?? 0, delta.costUsd ?? 0, delta.toolCalls ?? 0,
-      new Date().toISOString(), runId,
-    );
-    const run = this.getRun(runId);
-    if (!run) throw new Error(`Run not found: ${runId}`);
-    return run;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRow | undefined;
+      if (!current) throw new Error(`Run not found: ${runId}`);
+      if (isTerminalRunStatus(current.status)) {
+        throw new Error(`Run ${runId} is terminal; cannot record usage`);
+      }
+      this.#database.prepare(
+        `UPDATE runs SET usage_input_tokens = usage_input_tokens + ?,
+          usage_output_tokens = usage_output_tokens + ?, usage_cost_usd = usage_cost_usd + ?,
+          usage_tool_calls = usage_tool_calls + ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        delta.inputTokens ?? 0, delta.outputTokens ?? 0, delta.costUsd ?? 0, delta.toolCalls ?? 0,
+        new Date().toISOString(), runId,
+      );
+      const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRow | undefined;
+      if (!run) throw new Error(`Run not found: ${runId}`);
+      this.#database.exec("COMMIT");
+      return toRunRecord(run);
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   recordRuntimeContainer(record: RuntimeContainerRecord): void {

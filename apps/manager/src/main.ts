@@ -43,6 +43,7 @@ import { ManagerInstanceLock } from "@lite-harness/operations";
 import { JsonlObservabilitySink, StructuredObservability } from "@lite-harness/observability";
 import { buildManagerServer } from "./server.js";
 import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
+import { shutdownManagerStages } from "./shutdown.js";
 import { configureProductionOptionalSystems } from "./optional-systems.js";
 
 const configuration: ValidatedManagerConfiguration = loadManagerConfiguration();
@@ -97,6 +98,7 @@ const optionalSystems = await configureProductionOptionalSystems({
   dataDir,
   modelId: process.env.LITE_HARNESS_MODEL?.trim() || configuration.provider,
   runtime: brokeredRuntime,
+  offline: configuration.offline,
   ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
   workspaceStore: store,
   snapshotKey: snapshotRootKey,
@@ -121,8 +123,14 @@ const runSnapshotConfiguration = {
     })).digest("hex"),
   },
   networkPolicy: {
-    id: baseRuntime instanceof DockerToolRuntime ? "docker-tool-network-none-v1" : "development-in-memory-v1",
-    digest: createHash("sha256").update(baseRuntime instanceof DockerToolRuntime ? "docker:--network=none:v1" : "in-memory:no-egress:v1").digest("hex"),
+    id: configuration.offline
+      ? "offline-loopback-provider-tools-no-egress-v1"
+      : baseRuntime instanceof DockerToolRuntime ? "docker-tool-network-none-v1" : "development-in-memory-v1",
+    digest: createHash("sha256").update(JSON.stringify({
+      offline: configuration.offline,
+      toolRuntime: baseRuntime instanceof DockerToolRuntime ? "docker:--network=none:--pull=never:v1" : "in-memory:no-egress:v1",
+      provider: configuration.offline ? "fake-or-loopback-only:redirect-manual:v1" : "configured-provider-policy:v1",
+    })).digest("hex"),
   },
   plugins: optionalSystems.plugins,
   credentialProfileIds: ["snapshot.root", "browser.profile-root"],
@@ -185,15 +193,17 @@ const app = buildManagerServer({
 const automation = await configureAutomation(service, dataDir);
 const integrationDelivery = integrationStore ? await configureIntegrationDelivery(service, integrationStore) : undefined;
 app.addHook("onClose", async () => {
-  automation?.stop();
-  integrationDelivery?.stop();
-  await service.shutdown(configuration.shutdownTimeoutMs);
-  await brokeredCapabilities.stop();
-  await optionalSystems.stop();
-  memoryStore?.close();
-  integrationStore?.close();
-  store.close();
-  await instanceLock.release();
+  await shutdownManagerStages([
+    { name: "automation", stop: () => automation?.stop() },
+    { name: "integration-delivery", stop: () => integrationDelivery?.stop() },
+    { name: "run-service", stop: () => service.shutdown(configuration.shutdownTimeoutMs) },
+    { name: "brokered-capabilities", stop: () => brokeredCapabilities.stop() },
+    { name: "optional-systems", stop: () => optionalSystems.stop() },
+    { name: "memory-store", stop: () => memoryStore?.close() },
+    { name: "integration-store", stop: () => integrationStore?.close() },
+    { name: "run-store", stop: () => store.close() },
+    { name: "instance-lock", stop: () => instanceLock.release() },
+  ]);
 });
 
 async function configureBrokeredTools(

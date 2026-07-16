@@ -172,6 +172,13 @@ endpoint. Presets also cover `openrouter`, `gemini`, `xai`, `kimi`, and
 `minimax`. Set `LITE_HARNESS_CREDENTIAL_STORE=os` to resolve
 `LITE_HARNESS_CREDENTIAL_PROFILE` through DPAPI, Keychain, or Secret Service.
 
+For a fail-closed offline run, set `LITE_HARNESS_OFFLINE=true`. Offline mode
+accepts the deterministic fake provider in development or an
+`openai-compatible` provider at a loopback HTTP(S) URL. It rejects browser and
+callback egress plus non-loopback HTTP MCP servers. Runtime, MCP, plugin, and
+browser Docker launches use only preloaded digest-pinned images
+(`--pull=never`); missing images fail instead of being downloaded.
+
 For trusted owner-local delegated execution, use `codex` or `claude` as
 `LITE_HARNESS_PROVIDER`; see
 [`docs/DELEGATED_RUNTIMES.md`](docs/DELEGATED_RUNTIMES.md). Subscription

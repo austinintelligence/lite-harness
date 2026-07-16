@@ -41,9 +41,11 @@ const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 if (mode !== "rpc-side-effect") lines.on("line", (line) => {
   const message = JSON.parse(line);
   const response = (result) => send({ ...(message.jsonrpc ? { jsonrpc: "2.0" } : {}), id: message.id, result });
+  const failure = (value) => send({ ...(message.jsonrpc ? { jsonrpc: "2.0" } : {}), id: message.id, error: { code: -32000, message: value } });
 
   if (message.method === "initialize") {
-    response(mode.startsWith("mcp")
+    if (mode === "plugin-initialize-error") failure("fixture initialize failed");
+    else response(mode.startsWith("mcp")
       ? { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
       : { platformFamily: "test" });
   } else if (message.method === "thread/start") {
@@ -77,7 +79,8 @@ if (mode !== "rpc-side-effect") lines.on("line", (line) => {
       response({ content: [{ type: "text", text: JSON.stringify(message.params.arguments) }] });
     }
   } else if (message.method === "health") {
-    response({ ok: true });
+    if (mode === "plugin-health-error") failure("fixture health failed");
+    else response({ ok: true });
   } else if (message.method === "invoke") {
     response({ action: message.params.action, input: message.params.input });
   } else if (message.method === "migrate") {

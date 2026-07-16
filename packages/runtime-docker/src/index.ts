@@ -273,7 +273,7 @@ export class DockerToolRuntime implements ToolRuntime {
     const result = await runCommandBytes(
       this.#docker,
       [
-        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, { user: "1000:1000" }),
+        "run", "--pull=never", "--rm", ...dockerMaintenanceHardeningArgs(this.config, { user: "1000:1000" }),
         ...mountArgs(mount, true),
         this.config.image, "tar", "-C", "/workspace", "-cf", "-", ".",
       ],
@@ -311,7 +311,7 @@ export class DockerToolRuntime implements ToolRuntime {
       const extract = await runCommandBytes(
         this.#docker,
         [
-          "run", "--rm", "--interactive", ...dockerMaintenanceHardeningArgs(this.config, {
+          "run", "--pull=never", "--rm", "--interactive", ...dockerMaintenanceHardeningArgs(this.config, {
             capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
             user: "0:0",
           }),
@@ -355,6 +355,7 @@ export class DockerToolRuntime implements ToolRuntime {
     const initialize = await this.#run(
       [
         "run",
+        "--pull=never",
         "--rm",
         ...dockerMaintenanceHardeningArgs(this.config, { capabilities: ["CHOWN", "FOWNER"] }),
         "--volume",
@@ -380,7 +381,7 @@ export class DockerToolRuntime implements ToolRuntime {
   async #copyVolume(source: string, destination: string, signal?: AbortSignal): Promise<void> {
     const result = await this.#run(
       [
-        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
+        "run", "--pull=never", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
           user: "0:0",
         }),
@@ -395,7 +396,7 @@ export class DockerToolRuntime implements ToolRuntime {
   async #replaceVolumeContents(source: string, destination: string, signal?: AbortSignal): Promise<void> {
     const result = await this.#run(
       [
-        "run", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
+        "run", "--pull=never", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
           capabilities: ["CHOWN", "FOWNER", "DAC_OVERRIDE"],
           user: "0:0",
         }),
@@ -476,6 +477,7 @@ export class DockerToolRuntime implements ToolRuntime {
     const create = await this.#run(
       [
         "create",
+        "--pull=never",
         "--name", containerName,
         "--label", "lite-harness.managed=true",
         ...label("installation", installationId),

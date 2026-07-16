@@ -42,6 +42,7 @@ describe("tool runtime policy", () => {
     const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: [] };
     store.createOrGetRun("run-code", { agent: "coder", workspace: "workspace", input: "code", idempotencyKey: "code", principal });
     const creates: string[][] = [];
+    const runs: string[][] = [];
     const volumes: string[][] = [];
     const inputs: string[] = [];
     let sequence = 0;
@@ -49,7 +50,7 @@ describe("tool runtime policy", () => {
     let exists = false;
     const runner: DockerCommandRunner = async (args, options) => {
       if (args[0] === "volume") { volumes.push([...args]); return dockerOk("volume"); }
-      if (args[0] === "run") return dockerOk();
+      if (args[0] === "run") { runs.push([...args]); return dockerOk(); }
       if (args[0] === "create") {
         creates.push([...args]); current = (++sequence).toString(16).padStart(64, "a"); exists = true; return dockerOk(current);
       }
@@ -79,7 +80,9 @@ describe("tool runtime policy", () => {
       await expect(execute("shell_exec", { script: "true", cwd: "../escape" })).rejects.toThrow(/Unsafe workspace path/);
       expect(inputs).toContain("printf safe");
       expect(volumes.some((args) => args[1] === "create")).toBe(true);
-      expect(creates.every((args) => args.includes("none") && args.includes("--read-only") && args.includes("1000:1000"))).toBe(true);
+      expect(creates.every((args) => args.includes("--pull=never") && args.includes("none") && args.includes("--read-only") && args.includes("1000:1000"))).toBe(true);
+      expect(runs.length).toBeGreaterThan(0);
+      expect(runs.every((args) => args.includes("--pull=never") && args.includes("none"))).toBe(true);
       const rendered = creates.map((args) => args.join(" ")).join("\n");
       expect(rendered).toContain("type=volume");
       for (const token of ["bash --noprofile", "node --version", "rg --line-number", "git -c core.hooksPath=/dev/null apply", "git -c core.hooksPath=/dev/null -c commit.gpgSign=false", "corepack pnpm run test", "npm run compile", "corepack yarn pack"]) {

@@ -1,15 +1,19 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { BrokeredToolRuntime, InMemoryToolRuntime } from "@lite-harness/runtime";
 import { configureProductionOptionalSystems } from "../apps/manager/src/optional-systems.js";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("disabled optional packs", () => {
-  it("D24 BD-049-REGRESSION keeps removable capability packs lazy and creates zero resources while disabled", async () => {
+  it("A22-DISABLED-ZERO-RESOURCES D24 BD-049-REGRESSION keeps removable capability packs lazy and creates zero resources while disabled", async () => {
     const disabledPackResourceProbe = () => resourceCounts(process.getActiveResourcesInfo());
     const before = disabledPackResourceProbe();
     const parent = mkdtempSync(join(tmpdir(), "lite-disabled-packs-")); roots.push(parent);
@@ -32,6 +36,22 @@ describe("disabled optional packs", () => {
     const rootPackage = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
     expect(Object.keys(rootPackage.dependencies ?? {})).not.toEqual(expect.arrayContaining(["pxpipe-proxy"]));
     expect(rootPackage.optionalDependencies).toMatchObject({ "pxpipe-proxy": "0.8.0" });
+  });
+
+  it("A22-PRELOADED-OFFLINE-FAKE completes locally without a pull or outbound request and returns to its resource baseline", async () => {
+    const offlineResourceProbe = () => resourceCounts(process.getActiveResourcesInfo());
+    const before = offlineResourceProbe();
+    const fetch = vi.fn(async () => { throw new Error("offline fake run attempted outbound fetch"); });
+    vi.stubGlobal("fetch", fetch);
+    const runtime = new InMemoryToolRuntime();
+    await new AgentRunner(new FakeModelGateway(), runtime, 4).run({
+      input: "create the offline fixture", workspaceId: "offline-workspace", allowedTools: ["write_file"],
+      onEvent: () => undefined,
+    });
+    expect(runtime.readFile("offline-workspace", "hello.txt")).toContain("Lite-Harness completed");
+    expect(fetch).not.toHaveBeenCalled();
+    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    expect(offlineResourceProbe()).toEqual(before);
   });
 });
 

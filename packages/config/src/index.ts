@@ -1,4 +1,5 @@
 import { isAbsolute, join, resolve } from "node:path";
+import { isLoopbackHttpUrl } from "@lite-harness/contracts";
 
 export const LITE_CONFIG_SCHEMA_VERSION = 1 as const;
 
@@ -10,6 +11,7 @@ export interface ValidatedManagerConfiguration {
   provider: string;
   runtime: "fake" | "docker";
   mode: "development" | "production";
+  offline: boolean;
   approvalTimeoutMs: number;
   shutdownTimeoutMs: number;
   workspaceQuotaBytes: number;
@@ -56,9 +58,11 @@ export function loadManagerConfiguration(
   const provider = requiredIdentifier(environment, "LITE_HARNESS_PROVIDER");
   const runtime = requiredEnum(environment, "LITE_HARNESS_RUNTIME", ["fake", "docker"] as const);
   const mode = requiredEnum(environment, "LITE_HARNESS_MODE", ["development", "production"] as const, "production");
+  const offline = parseBooleanEnvironment(environment.LITE_HARNESS_OFFLINE, "LITE_HARNESS_OFFLINE");
   if (mode === "production" && (provider === "fake" || runtime === "fake")) {
     throw new Error("Production mode forbids fake provider and runtime implementations");
   }
+  if (offline) validateOfflineManagerConfiguration(environment, provider);
   return Object.freeze({
     schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
     dataDir,
@@ -67,6 +71,7 @@ export function loadManagerConfiguration(
     provider,
     runtime,
     mode,
+    offline,
     approvalTimeoutMs: boundedInteger(environment.LITE_HARNESS_APPROVAL_TIMEOUT_MS, "LITE_HARNESS_APPROVAL_TIMEOUT_MS", 1_000, 3_600_000, 60_000),
     shutdownTimeoutMs: boundedInteger(environment.LITE_HARNESS_SHUTDOWN_TIMEOUT_MS, "LITE_HARNESS_SHUTDOWN_TIMEOUT_MS", 1_000, 600_000, 30_000),
     workspaceQuotaBytes: boundedInteger(environment.LITE_HARNESS_WORKSPACE_QUOTA_BYTES, "LITE_HARNESS_WORKSPACE_QUOTA_BYTES", 1024 * 1024, 100 * 1024 * 1024 * 1024, 1024 * 1024 * 1024),
@@ -203,6 +208,23 @@ export function parseBooleanEnvironment(value: string | undefined, name: string,
   if (configured === "true") return true;
   if (configured === "false") return false;
   throw new Error(`${name} must be exactly true or false`);
+}
+
+function validateOfflineManagerConfiguration(environment: NodeJS.ProcessEnv, provider: string): void {
+  if (provider !== "fake") {
+    if (provider !== "openai-compatible" || !isLoopbackHttpUrl(environment.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "")) {
+      throw new Error("Offline mode requires the fake provider or an openai-compatible provider at a loopback HTTP(S) URL");
+    }
+  }
+  const outboundSettings = [
+    "LITE_HARNESS_APP_CALLBACK_URL",
+    "LITE_HARNESS_WEBHOOK_REPLY_URL",
+    "LITE_HARNESS_BROWSER_IMAGE",
+    "LITE_HARNESS_BROWSER_REMOTE_CDP",
+  ].filter((name) => environment[name]?.trim());
+  if (outboundSettings.length) {
+    throw new Error(`Offline mode forbids outbound-capable settings: ${outboundSettings.join(", ")}`);
+  }
 }
 
 function boundedNumber(value: string, name: string, minimum: number, maximum: number): number {

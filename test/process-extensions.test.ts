@@ -18,6 +18,7 @@ import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
 import type { ModelRunContext } from "@lite-harness/provider-core";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import { createDelegatedWorkspaceResolver } from "../apps/manager/src/delegated-workspace.js";
+import { shutdownManagerStages } from "../apps/manager/src/shutdown.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/process-peer.mjs", import.meta.url));
 const cleanup: string[] = [];
@@ -161,7 +162,7 @@ describe("process-backed extensions", () => {
     await supervisor.stopAll();
   });
 
-  it("D25 locks permissions and invokes a third-party plugin only in its worker process", async () => {
+  it("D25 A22-HOST-PLUGIN-IDLE-ZERO locks permissions, invokes in one worker process, and reaps it after idle", async () => {
     const root = mkdtempSync(join(tmpdir(), "lite-plugin-"));
     cleanup.push(root);
     const entry = join(root, "dist", "worker.js");
@@ -180,13 +181,139 @@ describe("process-backed extensions", () => {
     expect(lock.install(inspected, { tools: ["echo"] }).grantedPermissions.tools).toEqual(["echo"]);
     expect(lock.setEnabled("example.fixture", "1.0.0", true).enabled).toBe(true);
 
+    const processResourcesBefore = process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length;
     const worker = new LazyPluginSupervisor(() => new ProcessPluginWorker(
       { command: process.execPath, args: [fixture, "plugin"] },
       { manifest: inspected.manifest, config: {}, grants: lock.read().plugins["example.fixture@1.0.0"]!.grantedPermissions },
-    ));
+    ), { idleTtlMs: 25 });
     await expect(worker.invoke("echo", { value: 2 })).resolves.toEqual({ action: "echo", input: { value: 2 } });
     expect(worker.active).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(worker.active).toBe(false);
+    expect(process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length).toBeLessThanOrEqual(processResourcesBefore);
     await worker.stop();
+  });
+
+  it.each(["plugin-initialize-error", "plugin-health-error"])(
+    "A22-PLUGIN-START-FAILURE-REAP reaps the process and cleanup handle after %s",
+    async (mode) => {
+      const processResourcesBefore = process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length;
+      let cleanups = 0;
+      const worker = new ProcessPluginWorker(
+        { command: process.execPath, args: [fixture, mode], cleanup: async () => { cleanups += 1; } },
+        {
+          manifest: {
+            schemaVersion: 1, id: "example.failure", version: "1.0.0", entry: "worker.mjs", trust: "isolated",
+            permissions: { tools: [], secrets: [], events: [], files: [], networkOrigins: [] },
+          },
+          config: {},
+          grants: { tools: [], secrets: [], events: [], files: [], networkOrigins: [] },
+        },
+      );
+      await expect(worker.start()).rejects.toThrow(/fixture (?:initialize|health) failed/);
+      expect(cleanups).toBe(1);
+      await waitForProcessWrapCount(processResourcesBefore);
+      expect(process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length)
+        .toBeLessThanOrEqual(processResourcesBefore);
+    },
+  );
+
+  it("A22-PLUGIN-CLEANUP-RETRY keeps a failed Docker reap poisoned until shutdown retries it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-plugin-cleanup-retry-"));
+    cleanup.push(root);
+    writeFileSync(join(root, "worker.mjs"), "export default {};\n");
+    writeFileSync(join(root, "lite-plugin.json"), JSON.stringify({
+      schemaVersion: 1, id: "example.cleanup-retry", version: "1.0.0", entry: "worker.mjs", trust: "isolated",
+      permissions: { tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [] },
+    }));
+    const plugin = inspectPluginManifest(join(root, "lite-plugin.json"));
+    const commands: string[][] = [];
+    let exists = true;
+    let running = true;
+    let failFirstInspect = true;
+    const sandbox = new DockerPluginExecutionSandbox({
+      image: `sha256:${"a".repeat(64)}`,
+      installationId: "cleanup-retry-test",
+      cleanupRunner: async (args) => {
+        commands.push([...args]);
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (failFirstInspect) {
+            failFirstInspect = false;
+            return { code: 1, stdout: "", stderr: "temporary Docker daemon failure" };
+          }
+          if (!exists) return { code: 1, stdout: "", stderr: "No such container" };
+          return { code: 0, stdout: args.includes("--format") ? `${running}|${running ? "running" : "exited"}` : "{}", stderr: "" };
+        }
+        if (args[0] === "container" && args[1] === "kill") { running = false; return { code: 0, stdout: "killed", stderr: "" }; }
+        if (args[0] === "container" && args[1] === "wait") return { code: 0, stdout: "137", stderr: "" };
+        if (args[0] === "container" && args[1] === "rm") { exists = false; return { code: 0, stdout: "removed", stderr: "" }; }
+        throw new Error(`Unexpected Docker cleanup command: ${args.join(" ")}`);
+      },
+    });
+    const spec = sandbox.processSpec(plugin, { tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [] });
+    let invocations = 0;
+    let reportCleanupFailure!: () => void;
+    const cleanupFailed = new Promise<void>((resolve) => { reportCleanupFailure = resolve; });
+    const supervisor = new LazyPluginSupervisor(() => ({
+      start: async () => undefined,
+      invoke: async () => { invocations += 1; return "ok"; },
+      stop: async () => { await spec.cleanup?.(); },
+    }), {
+      idleTtlMs: 10,
+      cleanupRetryMs: 60_000,
+      onCleanupError: () => reportCleanupFailure(),
+    });
+
+    await expect(supervisor.invoke("echo", {})).resolves.toBe("ok");
+    await cleanupFailed;
+    expect({ active: supervisor.active, cleanupPending: supervisor.cleanupPending, exists }).toEqual({ active: true, cleanupPending: true, exists: true });
+    await expect(supervisor.invoke("must-not-run", {})).rejects.toThrow(/cleanup is pending/);
+    expect(invocations).toBe(1);
+    await supervisor.stop();
+    expect({ active: supervisor.active, cleanupPending: supervisor.cleanupPending, exists }).toEqual({ active: false, cleanupPending: false, exists: false });
+    expect(commands.map((args) => args.slice(0, 2).join(" "))).toEqual([
+      "container inspect", "container inspect", "container kill", "container wait", "container rm", "container inspect",
+    ]);
+  });
+
+  it("A22-MANAGER-SHUTDOWN-CONTINUES retries poisoned plugin cleanup after an earlier stage fails", async () => {
+    let stopAttempts = 0;
+    let reportCleanupFailure!: () => void;
+    const cleanupFailed = new Promise<void>((resolve) => { reportCleanupFailure = resolve; });
+    const supervisor = new LazyPluginSupervisor(() => ({
+      start: async () => undefined,
+      invoke: async () => "ok",
+      stop: async () => {
+        stopAttempts += 1;
+        if (stopAttempts === 1) throw new Error("transient plugin cleanup failure");
+      },
+    }), {
+      idleTtlMs: 10,
+      cleanupRetryMs: 60_000,
+      onCleanupError: () => reportCleanupFailure(),
+    });
+    await supervisor.invoke("echo", {});
+    await cleanupFailed;
+    expect(supervisor.cleanupPending).toBe(true);
+
+    const order: string[] = [];
+    let shutdownError: unknown;
+    try {
+      await shutdownManagerStages([
+        { name: "automation", stop: () => { order.push("automation"); } },
+        { name: "run-service", stop: () => { order.push("run-service"); throw new Error("service shutdown failed"); } },
+        { name: "brokered-capabilities", stop: () => { order.push("brokered-capabilities"); } },
+        { name: "optional-systems", stop: async () => { order.push("optional-systems"); await supervisor.stop(); } },
+        { name: "run-store", stop: () => { order.push("run-store"); } },
+        { name: "instance-lock", stop: () => { order.push("instance-lock"); } },
+      ]);
+    } catch (error) { shutdownError = error; }
+
+    expect(shutdownError).toBeInstanceOf(AggregateError);
+    expect((shutdownError as AggregateError).errors).toHaveLength(1);
+    expect((shutdownError as Error).message).toMatch(/cleanup failures/);
+    expect(order).toEqual(["automation", "run-service", "brokered-capabilities", "optional-systems", "run-store", "instance-lock"]);
+    expect({ active: supervisor.active, cleanupPending: supervisor.cleanupPending, stopAttempts }).toEqual({ active: false, cleanupPending: false, stopAttempts: 2 });
   });
 
   it("BD-007-REGRESSION rejects a plugin version before it can escape install or uninstall roots", () => {
@@ -226,15 +353,29 @@ describe("process-backed extensions", () => {
       await expect(worker.invoke("echo", { value: 1 })).rejects.toThrow(/denied.*sandbox/i);
     } finally { await worker.stop(); }
 
-    const sandbox = new DockerPluginExecutionSandbox({ image: `node@sha256:${"a".repeat(64)}` });
+    const sandbox = new DockerPluginExecutionSandbox({
+      image: `node@sha256:${"a".repeat(64)}`,
+      installationId: "process-extension-test",
+    });
     const spec = sandbox.processSpec(plugin, {
       tools: ["echo"], secrets: [], events: [], files: [], networkOrigins: [],
     });
     expect(spec.command).toBe("docker");
     expect(spec.args).toEqual(expect.arrayContaining([
+      "--pull=never", "--name", expect.stringMatching(/^lite-harness-plugin-/),
+      "lite-harness.managed=true", "lite-harness.component=plugin",
       "--network", "none", "--read-only", "--cap-drop", "ALL", "no-new-privileges=true", "--user", "1000:1000",
     ]));
+    expect(spec.args).not.toContain("--rm");
     expect(spec.args?.join(" ")).toContain("readonly");
     expect(spec.env).toBeUndefined();
   });
 });
+
+async function waitForProcessWrapCount(maximum: number): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (process.getActiveResourcesInfo().filter((resource) => resource === "ProcessWrap").length > maximum) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for plugin process reap");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

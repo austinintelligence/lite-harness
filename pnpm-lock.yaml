@@ -226,7 +226,11 @@ importers:
         specifier: workspace:*
         version: link:../process-rpc
 
-  packages/config: {}
+  packages/config:
+    dependencies:
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/context: {}
 
@@ -269,6 +273,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lite-harness/process-rpc':
         specifier: workspace:*
         version: link:../process-rpc
@@ -295,11 +302,17 @@ importers:
       '@lite-harness/process-rpc':
         specifier: workspace:*
         version: link:../process-rpc
+      '@lite-harness/runtime-docker':
+        specifier: workspace:*
+        version: link:../runtime-docker
 
   packages/process-rpc: {}
 
   packages/provider-anthropic:
     dependencies:
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lite-harness/provider-core':
         specifier: workspace:*
         version: link:../provider-core
@@ -312,6 +325,9 @@ importers:
 
   packages/provider-openai-compatible:
     dependencies:
+      '@lite-harness/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lite-harness/provider-core':
         specifier: workspace:*
         version: link:../provider-core

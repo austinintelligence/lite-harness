@@ -1,4 +1,5 @@
-import { createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -10,6 +11,7 @@ import {
   EncryptedBrowserProfileStore,
   ManagedBrowserBroker,
   assertBrowserUrlAllowed,
+  reconcileBrowserResources,
   type BrowserAction,
   type BrowserActionResult,
   type BrowserDriver,
@@ -93,6 +95,26 @@ describe("managed browser broker", () => {
       driver.releaseArtifact(screenshot.artifact?.localPath as string);
     } finally {
       await driver.stop();
+    }
+  }, 90_000);
+
+  it("A22-REAL-BROWSER-IDLE-ZERO reaps real Chromium, egress, network, and quarantine state after idle", async () => {
+    const installationId = mkdtempSync(join(tmpdir(), "lite-browser-idle-")); cleanup.push(installationId);
+    const quarantineRoot = join(installationId, "quarantine");
+    const broker = new ManagedBrowserBroker(() => new DockerBrowserDriver({
+      image: browserImage, installationId, quarantineRoot, timeoutMs: 60_000,
+    }), { idleTtlMs: 100 });
+    const owner = { appId: "app", tenantId: "tenant", userId: "user", runId: "run-real-idle" };
+    try {
+      const session = broker.create(owner);
+      await expect(broker.execute(session, owner, { action: "snapshot" })).resolves.toMatchObject({ snapshot: expect.any(Object) });
+      const label = createHash("sha256").update(installationId).digest("hex").slice(0, 32);
+      await waitFor(() => broker.activeCount === 0 && browserDockerResources(label).length === 0, 15_000);
+      expect(broker.activeCount).toBe(0);
+      expect(browserDockerResources(label)).toEqual([]);
+    } finally {
+      await broker.closeAll();
+      await reconcileBrowserResources({ installationId }).catch(() => undefined);
     }
   }, 90_000);
 
@@ -263,4 +285,20 @@ function requiredBrowserImage(): string {
   const value = process.env.LITE_HARNESS_TEST_BROWSER_IMAGE?.trim();
   if (!value) throw new Error("LITE_HARNESS_TEST_BROWSER_IMAGE is required; run this suite through pnpm test:real-runtime");
   return value;
+}
+
+function browserDockerResources(installationLabel: string): string[] {
+  const filter = ["--filter", `label=lite-harness.installation=${installationLabel}`, "--format", "{{.ID}}"];
+  const containers = spawnSync("docker", ["ps", "--all", ...filter], { encoding: "utf8", windowsHide: true });
+  const networks = spawnSync("docker", ["network", "ls", ...filter], { encoding: "utf8", windowsHide: true });
+  if (containers.status !== 0 || networks.status !== 0) throw new Error("Could not inspect browser scale-to-zero resources");
+  return `${containers.stdout}\n${networks.stdout}`.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for browser scale-to-zero cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }

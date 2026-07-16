@@ -36,10 +36,10 @@ describe("external browser egress boundary", () => {
     const externalConnects = dockerCalls.filter((args) => args[0] === "network" && args[1] === "connect");
     expect(create).toEqual(expect.arrayContaining(["--internal", "--driver", "bridge"]));
     const internalNetwork = create?.at(-1);
-    expect(proxyRun).toEqual(expect.arrayContaining(["--network", internalNetwork, "--cap-drop", "ALL", "--read-only"]));
+    expect(proxyRun).toEqual(expect.arrayContaining(["--pull=never", "--network", internalNetwork, "--cap-drop", "ALL", "--read-only"]));
     expect(externalConnects).toHaveLength(1);
     expect(externalConnects[0]).toEqual(["network", "connect", "bridge", expect.stringMatching(/^lite-browser-egress-/)]);
-    expect(processSpec?.args).toEqual(expect.arrayContaining(["--network", internalNetwork, "--cap-drop", "ALL"]));
+    expect(processSpec?.args).toEqual(expect.arrayContaining(["--pull=never", "--network", internalNetwork, "--cap-drop", "ALL"]));
     expect(processSpec?.args).not.toContain("bridge");
     expect(processOptions?.initialization.proxyServer).toMatch(/^http:\/\/lite-browser-egress-.*:8080$/);
     expect(process.starts).toEqual([policy]);

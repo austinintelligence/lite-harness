@@ -17,6 +17,7 @@ describe("versioned application configuration", () => {
     }, "C:/fixture", "win32");
     expect(manager).toMatchObject({
       schemaVersion: 1, provider: "fake", runtime: "fake",
+      offline: false,
       approvalTimeoutMs: 60_000, shutdownTimeoutMs: 30_000,
       workspaceQuotaBytes: 1024 * 1024 * 1024, browserIdleMs: 60_000,
       runtimeMemory: "512m", runtimeCpus: "1", runtimePids: 128,
@@ -66,6 +67,7 @@ describe("versioned application configuration", () => {
     "LITE_HARNESS_CONTEXT_OPTIMIZATION",
     "LITE_HARNESS_ENABLE_PLUGINS",
     "LITE_HARNESS_ENABLE_CACHE_CATALOG",
+    "LITE_HARNESS_OFFLINE",
   ])("rejects misspelled Manager boolean %s instead of silently disabling it", (name) => {
     expect(() => loadManagerConfiguration({
       ...tokens,
@@ -120,5 +122,31 @@ describe("versioned application configuration", () => {
     expect(() => loadManagerConfiguration({
       ...tokens, LITE_HARNESS_PROVIDER: "openai-compatible", LITE_HARNESS_RUNTIME: "fake",
     }, "C:/fixture", "win32")).toThrow(/Production mode forbids fake/);
+  });
+
+  it("A22-OFFLINE-FAIL-CLOSED permits only fake or loopback model routes and rejects outbound packs", () => {
+    const offlineDevelopment = {
+      ...tokens, LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_RUNTIME: "fake",
+      LITE_HARNESS_MODE: "development", LITE_HARNESS_OFFLINE: "true",
+    };
+    expect(loadManagerConfiguration(offlineDevelopment, "C:/fixture", "win32")).toMatchObject({ offline: true, provider: "fake" });
+    expect(loadManagerConfiguration({
+      ...tokens, LITE_HARNESS_PROVIDER: "openai-compatible", LITE_HARNESS_PROVIDER_BASE_URL: "http://127.0.0.1:8645/v1",
+      LITE_HARNESS_RUNTIME: "docker", LITE_HARNESS_OFFLINE: "true",
+    }, "C:/fixture", "win32")).toMatchObject({ offline: true, provider: "openai-compatible" });
+    expect(() => loadManagerConfiguration({
+      ...offlineDevelopment, LITE_HARNESS_PROVIDER: "openai-compatible", LITE_HARNESS_PROVIDER_BASE_URL: "https://provider.example/v1",
+    }, "C:/fixture", "win32")).toThrow(/loopback/);
+    for (const baseUrl of ["http://127.0.0.2:8645/v1", "http://agent.localhost:8645/v1"]) {
+      expect(() => loadManagerConfiguration({
+        ...offlineDevelopment, LITE_HARNESS_PROVIDER: "openai-compatible", LITE_HARNESS_PROVIDER_BASE_URL: baseUrl,
+      }, "C:/fixture", "win32")).toThrow(/loopback/);
+    }
+    expect(() => loadManagerConfiguration({
+      ...offlineDevelopment, LITE_HARNESS_BROWSER_IMAGE: `sha256:${"a".repeat(64)}`,
+    }, "C:/fixture", "win32")).toThrow(/Offline mode forbids.*BROWSER_IMAGE/);
+    expect(() => loadManagerConfiguration({
+      ...offlineDevelopment, LITE_HARNESS_APP_CALLBACK_URL: "http://127.0.0.1/callback",
+    }, "C:/fixture", "win32")).toThrow(/Offline mode forbids.*APP_CALLBACK_URL/);
   });
 });

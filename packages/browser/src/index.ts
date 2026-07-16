@@ -408,7 +408,7 @@ export class ExternalBrowserEgressBroker {
     if (network.code !== 0) throw new Error(`Could not create browser isolation network: ${network.stderr}`);
     try {
       const proxy = await run([
-        "run", "--detach", "--rm", "--name", this.containerName,
+        "run", "--pull=never", "--detach", "--rm", "--name", this.containerName,
         "--label", "lite-harness.managed=true", "--label", "lite-harness.kind=browser",
         "--label", "lite-harness.browser-role=egress", "--label", `lite-harness.installation=${installation}`,
         "--network", this.networkName, "--read-only", "--cap-drop", "ALL",
@@ -494,7 +494,7 @@ export class DockerBrowserDriver implements BrowserDriver {
     const spec: ProcessSpec = {
       command: this.#options.dockerCommand ?? "docker",
       args: [
-        "run", "--rm", "--interactive", "--init", "--user", "pwuser",
+        "run", "--pull=never", "--rm", "--interactive", "--init", "--user", "pwuser",
         "--label", "lite-harness.managed=true", "--label", "lite-harness.kind=browser",
         "--label", "lite-harness.browser-role=chromium",
         "--label", `lite-harness.installation=${browserLabelDigest(this.#options.installationId ?? process.cwd())}`,
@@ -659,12 +659,18 @@ interface ManagedSession {
   started: boolean;
   expiresAt: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  activeOperations: number;
+  closing: boolean;
+  drainResolvers: Set<() => void>;
+  startPromise?: Promise<void>;
+  closePromise?: Promise<void>;
   profileId?: string;
   profileLoaded: boolean;
 }
 
 export class ManagedBrowserBroker {
   readonly #sessions = new Map<string, ManagedSession>();
+  #closeAllPromise: Promise<void> | undefined;
 
   constructor(
     private readonly factory: () => BrowserDriver,
@@ -678,11 +684,13 @@ export class ManagedBrowserBroker {
   ) {}
 
   create(owner: BrowserOwner, policy: BrowserNetworkPolicy = {}, profileId?: string): string {
+    if (this.#closeAllPromise) throw new Error("Browser broker is closing all sessions");
     if (this.#sessions.size >= (this.options.maxSessions ?? 8)) throw new Error("Browser session limit reached");
     const sessionId = `browser_${randomUUID().replaceAll("-", "")}`;
     const session: ManagedSession = {
       owner: { ...owner }, policy: { ...policy }, driver: this.factory(), started: false,
       expiresAt: Date.now() + (this.options.idleTtlMs ?? 60_000), profileLoaded: false,
+      activeOperations: 0, closing: false, drainResolvers: new Set(),
       ...(profileId ? { profileId } : {}),
     };
     this.options.durabilityStore?.createSession(
@@ -694,32 +702,25 @@ export class ManagedBrowserBroker {
   }
 
   async execute(sessionId: string, owner: BrowserOwner, command: BrowserAction, signal?: AbortSignal): Promise<BrowserActionResult> {
-    const session = this.#owned(sessionId, owner);
+    const session = this.#beginOperation(sessionId, owner);
     const target = command.action === "navigate" ? command.url : "ref" in command ? command.ref : undefined;
     try {
       if (command.action === "navigate") await assertBrowserUrlAllowed(command.url, session.policy);
       await this.#ensureStarted(session);
       const result = await session.driver.execute(command, signal);
       this.#audit(sessionId, session, command.action, true, target);
-      this.#armIdle(sessionId, session);
       return result;
     } catch (error) {
       this.#audit(sessionId, session, command.action, false, target, error instanceof Error ? error.message : String(error));
       throw error;
+    } finally {
+      this.#finishOperation(sessionId, session);
     }
   }
 
   async close(sessionId: string, owner: BrowserOwner): Promise<void> {
     const session = this.#owned(sessionId, owner);
-    this.#sessions.delete(sessionId);
-    if (session.idleTimer) clearTimeout(session.idleTimer);
-    try {
-      await this.#stopSession(session);
-      this.options.durabilityStore?.closeSession(sessionId, session.owner, "CLOSED");
-    } catch (error) {
-      this.options.durabilityStore?.closeSession(sessionId, session.owner, "FAILED");
-      throw error;
-    }
+    await this.#closeManagedSession(sessionId, session, "CLOSED");
   }
 
   async prepareUpload(
@@ -728,12 +729,14 @@ export class ManagedBrowserBroker {
     name: string,
     materialize: (path: string) => Promise<void>,
   ): Promise<string> {
-    const session = this.#owned(sessionId, owner);
-    await this.#ensureStarted(session);
-    if (!session.driver.prepareUpload) throw new Error("Browser driver does not support authorized artifact uploads");
-    const quarantineId = await session.driver.prepareUpload(name, materialize);
-    this.#armIdle(sessionId, session);
-    return quarantineId;
+    const session = this.#beginOperation(sessionId, owner);
+    try {
+      await this.#ensureStarted(session);
+      if (!session.driver.prepareUpload) throw new Error("Browser driver does not support authorized artifact uploads");
+      return await session.driver.prepareUpload(name, materialize);
+    } finally {
+      this.#finishOperation(sessionId, session);
+    }
   }
 
   recordArtifact(sessionId: string, owner: BrowserOwner, artifactId: string, direction: "UPLOAD" | "DOWNLOAD"): void {
@@ -752,45 +755,96 @@ export class ManagedBrowserBroker {
   }
 
   async closeAll(): Promise<void> {
+    if (this.#closeAllPromise) return await this.#closeAllPromise;
+    const operation = this.#closeEverySession();
+    this.#closeAllPromise = operation;
+    try { await operation; }
+    finally { if (this.#closeAllPromise === operation) this.#closeAllPromise = undefined; }
+  }
+
+  async #closeEverySession(): Promise<void> {
     const sessions = [...this.#sessions.entries()];
-    this.#sessions.clear();
-    await Promise.allSettled(sessions.map(async ([sessionId, session]) => {
-      if (session.idleTimer) clearTimeout(session.idleTimer);
-      try {
-        await this.#stopSession(session);
-        this.options.durabilityStore?.closeSession(sessionId, session.owner, "CLOSED");
-      } catch (error) {
-        try { this.options.durabilityStore?.closeSession(sessionId, session.owner, "FAILED"); } catch { /* preserve stop failure */ }
-        throw error;
-      }
-    }));
+    const results = await Promise.allSettled(
+      sessions.map(([sessionId, session]) => this.#closeManagedSession(sessionId, session, "CLOSED")),
+    );
+    const failures = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason);
+    if (failures.length > 0) throw new AggregateError(failures, "One or more browser sessions failed to close");
   }
 
   #owned(sessionId: string, owner: BrowserOwner): ManagedSession {
     const session = this.#sessions.get(sessionId);
-    if (!session || session.expiresAt <= Date.now()) throw new Error("Browser session is unavailable or expired");
+    if (!session || session.closing || (session.activeOperations === 0 && session.expiresAt <= Date.now())) {
+      throw new Error("Browser session is unavailable, closing, or expired");
+    }
     if (Object.keys(owner).some((key) => owner[key as keyof BrowserOwner] !== session.owner[key as keyof BrowserOwner])) {
       throw new Error("Browser session does not belong to this run");
     }
     return session;
   }
 
+  #beginOperation(sessionId: string, owner: BrowserOwner): ManagedSession {
+    const session = this.#owned(sessionId, owner);
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    session.idleTimer = undefined;
+    session.activeOperations += 1;
+    return session;
+  }
+
+  #finishOperation(sessionId: string, session: ManagedSession): void {
+    session.activeOperations = Math.max(0, session.activeOperations - 1);
+    if (session.activeOperations === 0) {
+      for (const resolveDrain of session.drainResolvers) resolveDrain();
+      session.drainResolvers.clear();
+    }
+    if (session.activeOperations === 0 && this.#sessions.get(sessionId) === session) this.#armIdle(sessionId, session);
+  }
+
+  #beginClosing(sessionId: string, session: ManagedSession): void {
+    session.closing = true;
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    session.idleTimer = undefined;
+  }
+
+  async #waitForOperations(session: ManagedSession): Promise<void> {
+    if (session.activeOperations === 0) return;
+    await new Promise<void>((resolveDrain) => session.drainResolvers.add(resolveDrain));
+  }
+
+  #closeManagedSession(sessionId: string, session: ManagedSession, state: "CLOSED" | "EXPIRED"): Promise<void> {
+    if (session.closePromise) return session.closePromise;
+    this.#beginClosing(sessionId, session);
+    const operation = (async () => {
+      try {
+        await this.#waitForOperations(session);
+        await this.#stopSession(session);
+        this.options.durabilityStore?.closeSession(sessionId, session.owner, state);
+      } catch (error) {
+        try { this.options.durabilityStore?.closeSession(sessionId, session.owner, "FAILED"); } catch { /* preserve original failure */ }
+        try { await session.driver.stop(); } catch { /* authoritative cleanup was already attempted */ }
+        throw error;
+      } finally {
+        if (this.#sessions.get(sessionId) === session) this.#sessions.delete(sessionId);
+      }
+    })();
+    session.closePromise = operation;
+    return operation;
+  }
+
   #armIdle(sessionId: string, session: ManagedSession): void {
     if (session.idleTimer) clearTimeout(session.idleTimer);
+    if (session.closing || session.activeOperations > 0 || this.#sessions.get(sessionId) !== session) return;
     const ttl = this.options.idleTtlMs ?? 60_000;
     session.expiresAt = Date.now() + ttl;
     this.options.durabilityStore?.touchSession(sessionId, session.owner, new Date(session.expiresAt).toISOString());
-    session.idleTimer = setTimeout(() => {
-      this.#sessions.delete(sessionId);
-      void this.#stopSession(session).then(
-        () => this.options.durabilityStore?.closeSession(sessionId, session.owner, "EXPIRED"),
-        async () => {
-          try { this.options.durabilityStore?.closeSession(sessionId, session.owner, "FAILED"); } catch { /* preserve cleanup */ }
-          try { await session.driver.stop(); } catch { /* idle cleanup is best-effort */ }
-        },
-      );
+    const timer = setTimeout(() => {
+      if (session.idleTimer !== timer || session.closing || session.activeOperations > 0 || this.#sessions.get(sessionId) !== session) return;
+      session.idleTimer = undefined;
+      void this.#closeManagedSession(sessionId, session, "EXPIRED").catch(() => undefined);
     }, ttl);
-    session.idleTimer.unref?.();
+    session.idleTimer = timer;
+    timer.unref?.();
   }
 
   #audit(sessionId: string, session: ManagedSession, action: BrowserAction["action"], allowed: boolean, target?: string, error?: string): void {
@@ -804,20 +858,28 @@ export class ManagedBrowserBroker {
 
   async #ensureStarted(session: ManagedSession): Promise<void> {
     if (session.started) return;
-    await session.driver.start(session.policy);
-    session.started = true;
-    if (session.profileId && this.options.profileStore && session.driver.restoreProfile) {
-      const data = await this.options.profileStore.load(session.profileId, browserProfileOwner(session.owner));
-      if (data) await session.driver.restoreProfile(data);
-      session.profileLoaded = true;
-    }
+    if (session.startPromise) return await session.startPromise;
+    const operation = (async () => {
+      await session.driver.start(session.policy);
+      if (session.profileId && this.options.profileStore && session.driver.restoreProfile) {
+        const data = await this.options.profileStore.load(session.profileId, browserProfileOwner(session.owner));
+        if (data) await session.driver.restoreProfile(data);
+        session.profileLoaded = true;
+      }
+      session.started = true;
+    })();
+    session.startPromise = operation;
+    try { await operation; }
+    finally { if (session.startPromise === operation) session.startPromise = undefined; }
   }
 
   async #stopSession(session: ManagedSession): Promise<void> {
+    if (session.startPromise) await session.startPromise.catch(() => undefined);
     if (session.started && session.profileId && session.profileLoaded && this.options.profileStore && session.driver.exportProfile) {
       const data = await session.driver.exportProfile();
       await this.options.profileStore.save(session.profileId, browserProfileOwner(session.owner), data);
     }
+    session.started = false;
     await session.driver.stop();
   }
 }

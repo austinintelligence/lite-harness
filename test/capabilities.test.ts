@@ -66,6 +66,108 @@ describe("optional capability kernel", () => {
     await supervisor.stop();
   });
 
+  it("A22-ENABLED-IDLE-ZERO keeps one lazy worker alive through overlapping calls and reaps it after the last call idles", async () => {
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const invoke = vi.fn(async (action: string) => {
+      if (action === "slow") await slow;
+      return action;
+    });
+    let factories = 0;
+    const supervisor = new LazyPluginSupervisor(() => {
+      factories += 1;
+      return { start, stop, invoke };
+    }, { idleTtlMs: 20 });
+
+    const slowCall = supervisor.invoke("slow", {});
+    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    await expect(supervisor.invoke("fast", {})).resolves.toBe("fast");
+    await new Promise((resolveDone) => setTimeout(resolveDone, 35));
+    expect(supervisor.active).toBe(true);
+    expect(stop).not.toHaveBeenCalled();
+    releaseSlow();
+    await expect(slowCall).resolves.toBe("slow");
+    await new Promise((resolveDone) => setTimeout(resolveDone, 35));
+    expect(supervisor.active).toBe(false);
+    expect({ factories, starts: start.mock.calls.length, stops: stop.mock.calls.length }).toEqual({ factories: 1, starts: 1, stops: 1 });
+  });
+
+  it("A22-PLUGIN-STOP-DRAIN waits through accepted startup and invocation before stopping the worker", async () => {
+    let releaseStart!: () => void;
+    let releaseInvoke!: () => void;
+    let markInvokeStarted!: () => void;
+    const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const invokeGate = new Promise<void>((resolve) => { releaseInvoke = resolve; });
+    const invokeStarted = new Promise<void>((resolve) => { markInvokeStarted = resolve; });
+    let stopped = false;
+    let stopSettled = false;
+    const supervisor = new LazyPluginSupervisor(() => ({
+      start: async () => { await startGate; },
+      invoke: async () => {
+        if (stopped) throw new Error("plugin invoked after stop");
+        markInvokeStarted();
+        await invokeGate;
+        if (stopped) throw new Error("plugin stopped during invocation");
+        return "completed-before-stop";
+      },
+      stop: async () => { stopped = true; },
+    }));
+
+    const invocation = supervisor.invoke("run", {});
+    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    expect(supervisor.active).toBe(true);
+    const stopping = supervisor.stop().then(() => { stopSettled = true; });
+    releaseStart();
+    await invokeStarted;
+    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    expect({ stopped, stopSettled }).toEqual({ stopped: false, stopSettled: false });
+    releaseInvoke();
+    await expect(invocation).resolves.toBe("completed-before-stop");
+    await stopping;
+    expect({ stopped, stopSettled, active: supervisor.active }).toEqual({ stopped: true, stopSettled: true, active: false });
+  });
+
+  it("A22-PLUGIN-CRASH-BACKOFF preserves a concurrent failure after a sibling succeeds", async () => {
+    let releaseCrash!: () => void;
+    let releaseSuccess!: () => void;
+    let markBothStarted!: () => void;
+    const crashGate = new Promise<void>((resolve) => { releaseCrash = resolve; });
+    const successGate = new Promise<void>((resolve) => { releaseSuccess = resolve; });
+    const bothStarted = new Promise<void>((resolve) => { markBothStarted = resolve; });
+    let calls = 0;
+    let factories = 0;
+    const supervisor = new LazyPluginSupervisor(() => {
+      factories += 1;
+      return {
+        start: async () => undefined,
+        invoke: async (action: string) => {
+          calls += 1;
+          if (calls === 2) markBothStarted();
+          if (action === "crash") {
+            await crashGate;
+            throw new Error("fixture crash");
+          }
+          await successGate;
+          return "fixture success";
+        },
+        stop: async () => undefined,
+      };
+    });
+
+    const crashing = supervisor.invoke("crash", {});
+    const succeeding = supervisor.invoke("success", {});
+    await bothStarted;
+    releaseCrash();
+    await new Promise<void>((resolveDone) => setImmediate(resolveDone));
+    releaseSuccess();
+    await expect(succeeding).resolves.toBe("fixture success");
+    await expect(crashing).rejects.toThrow("fixture crash");
+    await expect(supervisor.invoke("too-soon", {})).rejects.toThrow(/crash backoff/);
+    expect(factories).toBe(1);
+  });
+
   it("stages plugin packages and rolls back both disk and lock state when verification fails", async () => {
     const source = mkdtempSync(join(tmpdir(), "lite-plugin-source-"));
     const installRoot = mkdtempSync(join(tmpdir(), "lite-plugin-install-"));

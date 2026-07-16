@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { isLoopbackHostname } from "@lite-harness/contracts";
 
 const addFormats = addFormatsImport as unknown as FormatsPlugin;
 const mcpSchemaMetaValidator = new Ajv2020({ allErrors: false, strict: true });
@@ -159,7 +160,7 @@ export function createDockerMcpProcessSpec(options: {
   return {
     command: options.dockerCommand ?? "docker",
     args: [
-      "run", "--interactive", "--init", "--name", containerName,
+      "run", "--pull=never", "--interactive", "--init", "--name", containerName,
       "--label", "lite-harness.managed=true", "--label", "lite-harness.component=mcp",
       "--network", "none",
       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
@@ -237,7 +238,7 @@ export class StreamableHttpMcpTransport implements McpTransport {
     this.#url = new URL(options.url);
     if (this.#url.username || this.#url.password) throw new Error("MCP URL must not contain credentials");
     if (!options.allowedOrigins.includes(this.#url.origin)) throw new Error(`MCP origin is not allowlisted: ${this.#url.origin}`);
-    if (this.#url.protocol !== "https:" && !(this.#url.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(this.#url.hostname))) {
+    if (this.#url.protocol !== "https:" && !(this.#url.protocol === "http:" && isLoopbackHostname(this.#url.hostname))) {
       throw new Error("Remote MCP requires HTTPS or a loopback-local HTTP endpoint");
     }
     this.#fetch = options.fetch ?? globalThis.fetch;

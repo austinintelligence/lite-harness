@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { AgentContextCompiler } from "@lite-harness/agent-runtime";
 import { parseBooleanEnvironment } from "@lite-harness/config";
-import { LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
+import { isLoopbackHttpUrl, LITE_IPC_PROTOCOL_VERSION, type InternalPrincipal, type ToolDefinition } from "@lite-harness/contracts";
 import type { McpSupervisor } from "@lite-harness/mcp";
 import type { LazyPluginSupervisor } from "@lite-harness/plugin-core";
 import type { BrokeredToolRuntime } from "@lite-harness/runtime";
@@ -25,6 +25,7 @@ interface OptionalSystemsOptions {
   workspaceStore?: WorkspaceLifecycleStore;
   snapshotKey?: Buffer;
   environment?: NodeJS.ProcessEnv;
+  offline?: boolean;
   featureFlags?: {
     contextOptimization: boolean;
     plugins: boolean;
@@ -47,16 +48,21 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
     plugins: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_PLUGINS, "LITE_HARNESS_ENABLE_PLUGINS"),
     cacheCatalog: parseBooleanEnvironment(environment.LITE_HARNESS_ENABLE_CACHE_CATALOG, "LITE_HARNESS_ENABLE_CACHE_CATALOG"),
   };
+  const offline = options.offline ?? parseBooleanEnvironment(environment.LITE_HARNESS_OFFLINE, "LITE_HARNESS_OFFLINE");
   const stops: Array<() => Promise<void>> = [];
   const contextCompilers: AgentContextCompiler[] = [];
   const operatorContext = await configureContext(options.runtime, options.dataDir, options.modelId, environment, featureFlags.contextOptimization);
   if (operatorContext) { contextCompilers.push(operatorContext.context); stops.push(operatorContext.stop); }
   const skills = await configureSkills(options.runtime, options.dataDir, environment);
   if (skills) { contextCompilers.push(skills.context); stops.push(skills.stop); }
-  const mcp = await configureMcp(options.runtime, environment);
+  const mcp = await configureMcp(options.runtime, environment, offline);
   if (mcp) stops.push(() => mcp.stopAll());
   const plugins = await configurePlugins(options.runtime, options.dataDir, environment, featureFlags.plugins);
-  if (plugins.supervisors.length) stops.push(() => Promise.all(plugins.supervisors.map((plugin) => plugin.stop())).then(() => undefined));
+  if (plugins.supervisors.length) stops.push(async () => {
+    const results = await Promise.allSettled(plugins.supervisors.map((plugin) => plugin.stop()));
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason);
+    if (failures.length > 0) throw new AggregateError(failures, "One or more plugin supervisors failed to stop");
+  });
   const workspaceLifecycle = configureSnapshots(options);
   configureCacheCatalog(options.runtime, options.dataDir, featureFlags.cacheCatalog);
   const context = contextCompilers.length ? composeContextCompilers(contextCompilers) : undefined;
@@ -64,7 +70,13 @@ export async function configureProductionOptionalSystems(options: OptionalSystem
     ...(context ? { context } : {}),
     ...(workspaceLifecycle ? { workspaceLifecycle } : {}),
     plugins: plugins.snapshots,
-    stop: async () => { for (const stop of stops.reverse()) await stop(); },
+    stop: async () => {
+      const failures: unknown[] = [];
+      for (const stop of [...stops].reverse()) {
+        try { await stop(); } catch (error) { failures.push(error); }
+      }
+      if (failures.length > 0) throw new AggregateError(failures, "One or more optional systems failed to stop");
+    },
   };
 }
 
@@ -206,7 +218,7 @@ function composeContextCompilers(compilers: readonly AgentContextCompiler[]): Ag
   };
 }
 
-async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv): Promise<McpSupervisor | undefined> {
+async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.ProcessEnv, offline: boolean): Promise<McpSupervisor | undefined> {
   const raw = environment.LITE_HARNESS_MCP_SERVERS?.trim();
   if (!raw) return undefined;
   const { BrokeredMcpToolPolicy, DockerStdioMcpTransport, McpSupervisor, StreamableHttpMcpTransport } = await import("@lite-harness/mcp");
@@ -237,6 +249,13 @@ async function configureMcp(runtime: BrokeredToolRuntime, environment: NodeJS.Pr
     } else if (server.transport === "http") {
       const url = requiredString(server.url, "MCP URL");
       const allowedOrigins = optionalStringArray(server.allowedOrigins, "MCP allowed origins") ?? [];
+      let endpointOrigin: string;
+      try { endpointOrigin = new URL(url).origin; }
+      catch { throw new Error(`MCP server ${id} URL is invalid`); }
+      if (!allowedOrigins.includes(endpointOrigin)) throw new Error(`MCP server ${id} endpoint origin must be explicitly allowed`);
+      if (offline && (!isLoopbackHttpUrl(url) || allowedOrigins.some((origin) => !isLoopbackHttpUrl(origin)))) {
+        throw new Error(`Offline mode requires MCP HTTP server ${id} and every allowed origin to use loopback HTTP(S) URLs`);
+      }
       const authorizationEnvironment = server.authorizationEnvironment === undefined
         ? undefined : environmentName(server.authorizationEnvironment, "MCP authorization environment");
       supervisor.register(id, () => new StreamableHttpMcpTransport({
@@ -270,7 +289,11 @@ async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, e
   const image = requiredString(environment.LITE_HARNESS_PLUGIN_IMAGE, "LITE_HARNESS_PLUGIN_IMAGE");
   const pluginRoot = join(dataDir, "plugins");
   const lock = new PluginInstallLock(join(dataDir, "plugins.lock.json"));
-  const sandbox = new DockerPluginExecutionSandbox({ image });
+  const sandbox = new DockerPluginExecutionSandbox({ image, installationId: dataDir });
+  const reapedPluginContainers = await sandbox.reconcileContainers();
+  if (reapedPluginContainers > 0) {
+    process.stderr.write(`lite-harness manager: reaped ${reapedPluginContainers} interrupted plugin container(s)\n`);
+  }
   const supervisors: LazyPluginSupervisor[] = [];
   const snapshots: Array<{ id: string; version: string; digest: string }> = [];
   for (const entry of Object.values(lock.read().plugins).filter((item) => item.enabled)) {
@@ -280,7 +303,11 @@ async function configurePlugins(runtime: BrokeredToolRuntime, dataDir: string, e
     if (pluginPackageDigest(inspected) !== entry.digest) throw new Error(`Enabled plugin digest mismatch: ${entry.id}@${entry.version}`);
     const supervisor = new LazyPluginSupervisor(() => createOpenClawCompatibilityWorker(
       inspected, entry.grantedPermissions, {}, { sandbox },
-    ));
+    ), {
+      onCleanupError: () => process.stderr.write(
+        `lite-harness manager: plugin cleanup pending retry for ${entry.id}@${entry.version}\n`,
+      ),
+    });
     supervisors.push(supervisor);
     for (const tool of entry.grantedPermissions.tools) {
       runtime.register(tool, async (params) => ({

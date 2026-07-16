@@ -15,9 +15,51 @@ const model = (id: string, providerId: string): ModelDescriptor => ({
 });
 
 describe("direct provider adapters", () => {
+  it("A22-OFFLINE-REDIRECT-DENIED keeps a loopback-compatible provider on its configured origin", async () => {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new URL(String(input)).origin).toBe("http://127.0.0.1:8645");
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, { status: 302, headers: { location: "https://provider.example/escape" } });
+    });
+    const adapter = new OpenAICompatibleProvider({
+      providerId: "openai-compatible", baseUrl: "http://127.0.0.1:8645/v1", allowedOrigins: ["http://127.0.0.1:8645"], fetch,
+    });
+    await expect(async () => {
+      for await (const _event of adapter.stream({
+        model: model("offline-local", "openai-compatible"), messages: [{ role: "user", content: "offline" }],
+        credential: { authorizationHeader: "Bearer local" },
+      })) { /* response must fail before yielding */ }
+    }).rejects.toThrow(/HTTP 302/);
+    expect(fetch).toHaveBeenCalledOnce();
+    for (const baseUrl of ["http://127.0.0.2:8645/v1", "http://agent.localhost:8645/v1"]) {
+      expect(() => new OpenAICompatibleProvider({
+        providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin], fetch,
+      })).toThrow(/loopback/);
+    }
+  });
+
+  it("A22-CREDENTIAL-REDIRECT-DENIED does not forward an Anthropic key across a redirect", async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({ "x-api-key": "anthropic-secret" });
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, { status: 302, headers: { location: "https://credential-sink.example/" } });
+    });
+    const adapter = new AnthropicProvider({
+      baseUrl: "http://127.0.0.1:8999/v1", allowedOrigins: ["http://127.0.0.1:8999"], fetch,
+    });
+    await expect(async () => {
+      for await (const _event of adapter.stream({
+        model: model("claude-local", "anthropic"), messages: [{ role: "user", content: "offline" }],
+        credential: { authorizationHeader: "Bearer anthropic-secret" },
+      })) { /* a redirect is terminal */ }
+    }).rejects.toThrow(/HTTP 302/);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it("normalizes an OpenAI-compatible response", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ authorization: "Bearer upstream-secret" });
+      expect(init?.redirect).toBe("manual");
       expect(JSON.parse(String(init?.body))).toMatchObject({
         messages: [{ role: "system", content: "Be precise" }, { role: "user", content: "hi" }],
         tools: [{ type: "function", function: { name: "read_file" } }], tool_choice: "auto",
@@ -78,6 +120,7 @@ describe("direct provider adapters", () => {
   it("D26-DIRECT BD-032-REGRESSION uses the native Lite loop with OpenAI Responses contracts", async () => {
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toBe("https://api.openai.com/v1/responses");
+      expect(init?.redirect).toBe("manual");
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({
         model: "gpt-fixture",
@@ -182,6 +225,7 @@ describe("direct provider adapters", () => {
   it("normalizes an Anthropic response", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "x-api-key": "upstream-secret" });
+      expect(init?.redirect).toBe("manual");
       expect(JSON.parse(String(init?.body))).toMatchObject({ system: "Be precise", tools: [{ name: "read_file" }] });
       return new Response(JSON.stringify({
         content: [{ type: "text", text: "hello" }],
@@ -214,9 +258,13 @@ describe("direct provider adapters", () => {
     })).toThrow(/embedded credentials|allowlisted/);
     expect(fetch).not.toHaveBeenCalled();
 
+    expect(() => new AnthropicProvider({
+      baseUrl: "http://127.0.0.2:8999/v1/", allowedOrigins: ["http://127.0.0.2:8999"], fetch,
+    })).toThrow(/loopback/);
+
     const local = new AnthropicProvider({
-      baseUrl: "http://127.0.0.2:8999/v1/",
-      allowedOrigins: ["http://127.0.0.2:8999"],
+      baseUrl: "http://127.0.0.1:8999/v1/",
+      allowedOrigins: ["http://127.0.0.1:8999"],
       fetch: vi.fn(async () => new Response(JSON.stringify({
         content: [{ type: "text", text: "local" }],
         stop_reason: "end_turn",

@@ -56,6 +56,25 @@ describe("Docker stdio MCP integration", () => {
     }
   }, 60_000);
 
+  it("A22-REAL-MCP-IDLE-ZERO reaps the real MCP container after its final idle interval", async () => {
+    const containerName = `lite-harness-mcp-${randomUUID().replaceAll("-", "")}`;
+    const supervisor = new McpSupervisor({ timeoutMs: 30_000, idleTtlMs: 75 });
+    supervisor.register("idle-real", () => new DockerStdioMcpTransport({
+      image, command: "node", args: ["-e", SERVER], containerName, timeoutMs: 30_000,
+    }));
+    try {
+      await expect(supervisor.call("idle-real", "echo", { text: "scale-zero" })).resolves.toMatchObject({
+        content: [{ text: "scale-zero" }],
+      });
+      expect(containerExists(containerName)).toBe(true);
+      await waitFor(() => !supervisor.isActive("idle-real") && !containerExists(containerName), 10_000);
+      expect(supervisor.isActive("idle-real")).toBe(false);
+      expect(containerExists(containerName)).toBe(false);
+    } finally {
+      await supervisor.stopAll();
+    }
+  }, 60_000);
+
   it("A21-REAL-CONTAINER-CHAOS reaps Docker MCP hang, crash, huge, malicious-schema, and malformed peers while a sibling stays live", async () => {
     const supervisor = new McpSupervisor({ timeoutMs: 30_000, maxPayloadBytes: 1024, idleTtlMs: 0 });
     const names: string[] = [];
@@ -124,4 +143,12 @@ function requiredImage(name: string): string {
 
 function containerExists(name: string): boolean {
   return spawnSync("docker", ["container", "inspect", name], { stdio: "ignore" }).status === 0;
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for Docker MCP scale-to-zero cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }

@@ -286,6 +286,9 @@ describe("brokered Streamable HTTP MCP", () => {
     expect(() => new StreamableHttpMcpTransport({ url: "https://other.test/rpc", allowedOrigins: ["https://mcp.test"] })).toThrow(/allowlisted/);
     expect(() => new StreamableHttpMcpTransport({ url: "https://user:pass@mcp.test/rpc", allowedOrigins: ["https://mcp.test"] })).toThrow(/credentials/);
     expect(() => new StreamableHttpMcpTransport({ url: "http://mcp.test/rpc", allowedOrigins: ["http://mcp.test"] })).toThrow(/requires HTTPS/);
+    for (const url of ["http://127.0.0.2:9234/rpc", "http://agent.localhost:9234/rpc"]) {
+      expect(() => new StreamableHttpMcpTransport({ url, allowedOrigins: [new URL(url).origin] })).toThrow(/loopback/);
+    }
   });
 });
 

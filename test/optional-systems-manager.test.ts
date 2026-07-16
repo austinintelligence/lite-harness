@@ -27,6 +27,56 @@ describe("production optional-system composition", () => {
     await systems.stop();
   });
 
+  it("A22-OFFLINE-FAIL-CLOSED allows local MCP HTTP only and rejects remote endpoints or redirect origins", async () => {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new URL(String(input)).origin).toBe("http://127.0.0.1:9234");
+      expect(init?.redirect).toBe("manual");
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      const body = JSON.parse(String(init?.body)) as { id?: number; method?: string };
+      if (body.method === "initialize") return Response.json({
+        jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-11-25", capabilities: { tools: {} } },
+      }, { headers: { "mcp-session-id": "offline-local-session" } });
+      if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (body.method === "tools/list") return Response.json({
+        jsonrpc: "2.0", id: body.id, result: { tools: [{ name: "echo", inputSchema: { type: "object", additionalProperties: false } }] },
+      });
+      if (body.method === "tools/call") return Response.json({
+        jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "offline-ok" }] },
+      });
+      throw new Error(`Unexpected offline MCP request: ${body.method}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const localRuntime = new BrokeredToolRuntime(new InMemoryToolRuntime());
+    const local = await configureProductionOptionalSystems({
+      dataDir: temporaryRoot(), modelId: "offline-local", runtime: localRuntime, offline: true,
+      environment: { LITE_HARNESS_MCP_SERVERS: JSON.stringify([{
+        transport: "http", id: "local", url: "http://127.0.0.1:9234/mcp",
+        allowedOrigins: ["http://127.0.0.1:9234"],
+        tools: [{ name: "echo", inputSchema: { type: "object", additionalProperties: false } }],
+      }]) },
+    });
+    expect(localRuntime.listTools().map((tool) => tool.name)).toContain("mcp_local_echo");
+    const localResult = await localRuntime.execute({
+      ...execution("mcp_local_echo", {}, { appId: "app", tenantId: "tenant", userId: "offline", scopes: [] }),
+      allowedTools: ["mcp_local_echo"],
+    });
+    expect(localResult).toMatchObject({ ok: true, content: expect.stringContaining("offline-ok") });
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(4);
+    await local.stop();
+
+    for (const server of [
+      { transport: "http", id: "remote", url: "https://mcp.example/rpc", allowedOrigins: ["https://mcp.example"] },
+      { transport: "http", id: "redirect", url: "http://127.0.0.1:9234/mcp", allowedOrigins: ["https://mcp.example"] },
+    ]) {
+      await expect(configureProductionOptionalSystems({
+        dataDir: temporaryRoot(), modelId: "offline-denied", runtime: new BrokeredToolRuntime(new InMemoryToolRuntime()), offline: true,
+        environment: { LITE_HARNESS_MCP_SERVERS: JSON.stringify([{
+          ...server, tools: [{ name: "echo", inputSchema: { type: "object", additionalProperties: false } }],
+        }]) },
+      })).rejects.toThrow(/Offline mode requires MCP HTTP server|endpoint origin must be explicitly allowed/);
+    }
+  });
+
   it("BD-050-REGRESSION keeps context optimization off by default and retains native text", async () => {
     const root = temporaryRoot();
     const exact = `${"Default-off semantic reference line.\n".repeat(80)}Recovery token: DEFAULT-OFF-42`;

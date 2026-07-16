@@ -817,3 +817,19 @@ const terminalStatuses = new Set<RunStatus>([
 export function isTerminalRunStatus(status: RunStatus): boolean {
   return terminalStatuses.has(status);
 }
+
+/** Shared fail-closed hostname rule for plaintext and explicitly offline transports. */
+export function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+export function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username && !url.password && isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}

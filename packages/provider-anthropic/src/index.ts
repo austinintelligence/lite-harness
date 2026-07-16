@@ -1,5 +1,6 @@
 import type { ModelEvent, ProviderAdapter, ProviderAdapterEvent } from "@lite-harness/provider-core";
 import { ProviderError, readProviderJson, readSseData, type ModelMessage } from "@lite-harness/provider-core";
+import { isLoopbackHostname } from "@lite-harness/contracts";
 
 export class AnthropicProvider implements ProviderAdapter {
   readonly providerId = "anthropic";
@@ -16,7 +17,7 @@ export class AnthropicProvider implements ProviderAdapter {
     if (!allowed.includes(this.#baseUrl.origin)) throw new Error(`Provider endpoint origin is not allowlisted: ${this.#baseUrl.origin}`);
     if (!['https:', 'http:'].includes(this.#baseUrl.protocol)) throw new Error("Anthropic endpoint must use HTTP or HTTPS");
     if (this.#baseUrl.username || this.#baseUrl.password) throw new Error("Anthropic endpoint must not contain embedded credentials");
-    if (this.#baseUrl.protocol === "http:" && !isLoopbackHost(this.#baseUrl.hostname)) {
+    if (this.#baseUrl.protocol === "http:" && !isLoopbackHostname(this.#baseUrl.hostname)) {
       throw new Error("plaintext Anthropic endpoints must be loopback-local");
     }
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -25,6 +26,7 @@ export class AnthropicProvider implements ProviderAdapter {
   async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
     const response = await this.#fetch(new URL("messages", ensureTrailingSlash(this.#baseUrl)), {
       method: "POST",
+      redirect: "manual",
       headers: {
         "x-api-key": stripBearer(params.credential.authorizationHeader),
         "anthropic-version": "2023-06-01",
@@ -177,9 +179,4 @@ function stripBearer(value: string): string {
 
 function ensureTrailingSlash(url: URL): URL {
   return new URL(url.href.endsWith("/") ? url.href : `${url.href}/`);
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
 }

@@ -4,6 +4,7 @@ import type {
   ProviderAdapter,
 } from "@lite-harness/provider-core";
 import { ProviderError, readProviderJson, readSseData } from "@lite-harness/provider-core";
+import { isLoopbackHostname } from "@lite-harness/contracts";
 
 export interface OpenAICompatiblePreset {
   providerId: "openai" | "openrouter" | "xai" | "moonshot" | "minimax" | "gemini";
@@ -33,6 +34,7 @@ export class OpenAIResponsesProvider implements ProviderAdapter {
   async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
     const response = await this.#fetch("https://api.openai.com/v1/responses", {
       method: "POST",
+      redirect: "manual",
       headers: {
         authorization: params.credential.authorizationHeader,
         "content-type": "application/json",
@@ -92,7 +94,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       throw new Error(`Provider endpoint origin is not allowlisted: ${this.#baseUrl.origin}`);
     }
     if (!['https:', 'http:'].includes(this.#baseUrl.protocol)) throw new Error("Provider endpoint must use HTTP or HTTPS");
-    if (this.#baseUrl.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(this.#baseUrl.hostname)) {
+    if (this.#baseUrl.protocol === "http:" && !isLoopbackHostname(this.#baseUrl.hostname)) {
       throw new Error("Plain HTTP provider endpoints must be loopback-local");
     }
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -102,6 +104,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
     const response = await this.#fetch(new URL("chat/completions", ensureTrailingSlash(this.#baseUrl)), {
       method: "POST",
+      redirect: "manual",
       headers: {
         authorization: params.credential.authorizationHeader,
         "content-type": "application/json",

@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { JsonLineRpcClient, type ProcessSpec } from "@lite-harness/process-rpc";
+import { killAndReapContainer, type DockerCommandOptions, type DockerCommandResult, type DockerCommandRunner } from "@lite-harness/runtime-docker";
 
 export type PluginTrustClass = "data-only" | "official" | "isolated" | "openclaw-compat";
 
@@ -63,17 +65,27 @@ export interface ExecutablePluginWorker extends PluginWorker {
   migrate(from: string, to: string): Promise<unknown>;
 }
 
+export interface PluginProcessSpec extends ProcessSpec {
+  cleanup?: () => Promise<void>;
+}
+
 export interface PluginExecutionSandbox {
-  processSpec(plugin: InspectedPlugin, grants: PluginPermissions): ProcessSpec;
+  processSpec(plugin: InspectedPlugin, grants: PluginPermissions): PluginProcessSpec;
 }
 
 export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
+  readonly #installationLabel: string;
+  readonly #runner: DockerCommandRunner;
+
   constructor(private readonly config: {
     image: string;
+    installationId: string;
     dockerCommand?: string;
     memory?: string;
     cpus?: string;
     pidsLimit?: number;
+    cleanupTimeoutMs?: number;
+    cleanupRunner?: DockerCommandRunner;
   }) {
     if (!/^(?:sha256:[a-f0-9]{64}|[^@\s]+@sha256:[a-f0-9]{64})$/.test(config.image)) {
       throw new Error("Plugin sandbox image must be pinned by sha256 digest");
@@ -81,16 +93,27 @@ export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
     if (config.pidsLimit !== undefined && (!Number.isSafeInteger(config.pidsLimit) || config.pidsLimit < 16)) {
       throw new Error("Plugin sandbox PID limit must be an integer of at least 16");
     }
+    if (config.cleanupTimeoutMs !== undefined && (!Number.isSafeInteger(config.cleanupTimeoutMs) || config.cleanupTimeoutMs < 1_000 || config.cleanupTimeoutMs > 120_000)) {
+      throw new Error("Plugin cleanup timeout must be between 1000 and 120000 milliseconds");
+    }
+    if (!config.installationId.trim()) throw new Error("Plugin sandbox installation identity is required");
+    this.#installationLabel = pluginLabelDigest(config.installationId);
+    const dockerCommand = config.dockerCommand ?? "docker";
+    this.#runner = config.cleanupRunner ?? ((args, options) => runDockerPluginCommand(dockerCommand, args, options));
   }
 
-  processSpec(plugin: InspectedPlugin, _grants: PluginPermissions): ProcessSpec {
+  processSpec(plugin: InspectedPlugin, _grants: PluginPermissions): PluginProcessSpec {
     const host = realpathSync(resolve(import.meta.dirname, "openclaw-host.mjs"));
     const entry = relative(plugin.root, plugin.entryPath).replaceAll("\\", "/");
     if (!entry || entry.startsWith("../") || entry.includes("\0")) throw new Error("Plugin entry escapes the sandbox package root");
+    const containerName = managedPluginContainerName(this.config.installationId, plugin.manifest.id, plugin.manifest.version);
     return {
       command: this.config.dockerCommand ?? "docker",
       args: [
-        "run", "--rm", "--interactive", "--init",
+        "run", "--pull=never", "--interactive", "--init", "--name", containerName,
+        "--label", "lite-harness.managed=true", "--label", "lite-harness.component=plugin",
+        "--label", `lite-harness.installation=${this.#installationLabel}`,
+        "--label", `lite-harness.plugin=${pluginLabelDigest(`${plugin.manifest.id}@${plugin.manifest.version}`)}`,
         "--network", "none", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges=true", "--user", "1000:1000",
         "--pids-limit", String(this.config.pidsLimit ?? 64),
@@ -105,7 +128,40 @@ export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
         "node", "/lite/openclaw-host.mjs",
       ],
       inheritEnv: ["PATH", "Path", "SystemRoot", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"],
+      cleanup: () => this.#cleanupContainer(containerName),
     };
+  }
+
+  async reconcileContainers(): Promise<number> {
+    const listed = await this.#runner([
+      "ps", "--all", "--no-trunc",
+      "--filter", "label=lite-harness.managed=true",
+      "--filter", "label=lite-harness.component=plugin",
+      "--filter", `label=lite-harness.installation=${this.#installationLabel}`,
+      "--format", "{{.ID}}",
+    ]);
+    if (listed.code !== 0) throw new Error(`Could not list managed plugin containers: ${listed.stderr}`);
+    const containerIds = [...new Set(listed.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
+    const failures: unknown[] = [];
+    for (const containerId of containerIds) {
+      try { await this.#cleanupContainer(containerId); }
+      catch (error) { failures.push(error); }
+    }
+    if (failures.length > 0) throw new AggregateError(failures, "Plugin startup reconciliation failed");
+    return containerIds.length;
+  }
+
+  async #cleanupContainer(containerId: string): Promise<void> {
+    const controller = new AbortController();
+    const timeoutMs = this.config.cleanupTimeoutMs ?? 30_000;
+    const timer = setTimeout(() => controller.abort(new Error(`Plugin Docker cleanup timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer.unref?.();
+    const runner: DockerCommandRunner = (args, options = {}) => this.#runner(args, {
+      ...options,
+      signal: options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
+    });
+    try { await killAndReapContainer(runner, containerId); }
+    finally { clearTimeout(timer); }
   }
 }
 
@@ -262,10 +318,13 @@ export class PluginPackageInstaller {
 
 export class ProcessPluginWorker implements PluginWorker {
   readonly #rpc: JsonLineRpcClient;
+  readonly #cleanup: (() => Promise<void>) | undefined;
   #started = false;
+  #startPromise: Promise<void> | undefined;
+  #stopPromise: Promise<void> | undefined;
 
   constructor(
-    spec: ProcessSpec,
+    spec: PluginProcessSpec,
     private readonly initialization: {
       manifest: PluginManifest;
       config: unknown;
@@ -273,6 +332,7 @@ export class ProcessPluginWorker implements PluginWorker {
     },
     options: { timeoutMs?: number; maxPayloadBytes?: number } = {},
   ) {
+    this.#cleanup = spec.cleanup;
     this.#rpc = new JsonLineRpcClient(spec, {
       requestTimeoutMs: options.timeoutMs ?? 30_000,
       maxLineBytes: options.maxPayloadBytes ?? 4 * 1024 * 1024,
@@ -285,9 +345,23 @@ export class ProcessPluginWorker implements PluginWorker {
 
   async start(): Promise<void> {
     if (this.#started) return;
-    await this.#rpc.request("initialize", this.initialization);
-    await this.#rpc.request("health", {});
-    this.#started = true;
+    if (this.#startPromise) return await this.#startPromise;
+    const operation = this.#start();
+    this.#startPromise = operation;
+    try { await operation; }
+    finally { if (this.#startPromise === operation) this.#startPromise = undefined; }
+  }
+
+  async #start(): Promise<void> {
+    try {
+      await this.#rpc.request("initialize", this.initialization);
+      await this.#rpc.request("health", {});
+      this.#started = true;
+    } catch (error) {
+      try { await this.stop(); }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], "Plugin startup and cleanup both failed"); }
+      throw error;
+    }
   }
 
   async invoke(action: string, input: unknown): Promise<unknown> {
@@ -301,11 +375,23 @@ export class ProcessPluginWorker implements PluginWorker {
   }
 
   async stop(): Promise<void> {
-    if (!this.#started) return;
-    try { await this.#rpc.request("shutdown", { deadlineMs: 2_000 }, { timeoutMs: 2_000 }); }
-    catch { /* process termination remains authoritative */ }
+    if (this.#stopPromise) return await this.#stopPromise;
+    const operation = this.#stopAndReap();
+    this.#stopPromise = operation;
+    try { await operation; }
+    finally { if (this.#stopPromise === operation) this.#stopPromise = undefined; }
+  }
+
+  async #stopAndReap(): Promise<void> {
+    const failures: unknown[] = [];
+    if (this.#rpc.running) {
+      try { await this.#rpc.request("shutdown", { deadlineMs: 2_000 }, { timeoutMs: 2_000 }); }
+      catch { /* process termination remains authoritative */ }
+    }
     this.#started = false;
-    await this.#rpc.stop();
+    try { await this.#rpc.stop(); } catch (error) { failures.push(error); }
+    try { await this.#cleanup?.(); } catch (error) { failures.push(error); }
+    if (failures.length > 0) throw new AggregateError(failures, "Plugin process and container cleanup failed");
   }
 }
 
@@ -340,18 +426,34 @@ class SandboxRequiredPluginWorker implements ExecutablePluginWorker {
 
 export class LazyPluginSupervisor {
   #worker: PluginWorker | undefined;
+  #cleanupWorker: PluginWorker | undefined;
+  #startPromise: Promise<PluginWorker> | undefined;
+  #stopPromise: Promise<void> | undefined;
   #idleTimer: ReturnType<typeof setTimeout> | undefined;
+  #acceptedInvocations = 0;
+  readonly #drainResolvers = new Set<() => void>();
+  #stopRequested = false;
   #starts = 0;
   #failures = 0;
   #retryAt = 0;
+  readonly #failedWorkers = new WeakSet<PluginWorker>();
 
   constructor(
     private readonly factory: () => PluginWorker,
-    private readonly options: { idleTtlMs?: number; invocationTimeoutMs?: number } = {},
+    private readonly options: {
+      idleTtlMs?: number;
+      invocationTimeoutMs?: number;
+      cleanupRetryMs?: number;
+      onCleanupError?: (error: unknown) => void;
+    } = {},
   ) {}
 
   get active(): boolean {
-    return this.#worker !== undefined;
+    return this.#worker !== undefined || this.#cleanupWorker !== undefined || this.#startPromise !== undefined || this.#stopPromise !== undefined;
+  }
+
+  get cleanupPending(): boolean {
+    return this.#cleanupWorker !== undefined;
   }
 
   get startCount(): number {
@@ -359,53 +461,139 @@ export class LazyPluginSupervisor {
   }
 
   async invoke(action: string, input: unknown): Promise<unknown> {
+    if (this.#stopPromise) await this.#stopPromise;
+    if (this.#cleanupWorker) throw new Error("Plugin worker cleanup is pending; invocation is denied");
     if (Date.now() < this.#retryAt) throw new Error("Plugin worker is in crash backoff");
+    this.#acceptedInvocations += 1;
+    this.#clearIdleTimer();
+    let worker: PluginWorker | undefined;
+    let succeeded = false;
+    let failed = false;
+    let failure: unknown;
+    let result: unknown;
     try {
-      const worker = await this.#ensureWorker();
-      this.#clearIdleTimer();
-      const result = await withTimeout(
+      worker = await this.#ensureWorker();
+      result = await withTimeout(
         worker.invoke(action, input),
         this.options.invocationTimeoutMs ?? 30_000,
         `Plugin action timed out: ${action}`,
       );
-      this.#armIdleTimer();
-      this.#failures = 0;
-      this.#retryAt = 0;
-      return result;
+      if (!this.#failedWorkers.has(worker)) {
+        this.#failures = 0;
+        this.#retryAt = 0;
+      }
+      succeeded = true;
     } catch (error) {
+      if (worker) this.#failedWorkers.add(worker);
       this.#failures += 1;
       this.#retryAt = Date.now() + Math.min(2 ** (this.#failures - 1) * 250, 30_000);
-      await this.stop();
-      throw error;
+      failed = true;
+      failure = error;
+    } finally {
+      this.#releaseInvocation();
     }
+    if (failed) {
+      try { await this.stop(); }
+      catch (cleanupError) {
+        const cleanupWorker = this.#cleanupWorker;
+        if (cleanupWorker) this.#armCleanupRetry(cleanupWorker, cleanupError);
+        throw new AggregateError([failure, cleanupError], "Plugin invocation failed and cleanup remains pending");
+      }
+      throw failure;
+    }
+    if (succeeded && worker === this.#worker && this.#acceptedInvocations === 0) this.#armIdleTimer();
+    return result;
   }
 
   async stop(): Promise<void> {
+    if (this.#stopPromise) return await this.#stopPromise;
+    this.#stopRequested = true;
+    const operation = this.#stopWorker();
+    this.#stopPromise = operation;
+    try { await operation; }
+    finally {
+      this.#stopRequested = false;
+      if (this.#stopPromise === operation) this.#stopPromise = undefined;
+    }
+  }
+
+  async #stopWorker(): Promise<void> {
     this.#clearIdleTimer();
-    const worker = this.#worker;
+    await this.#waitForInvocations();
+    const worker = this.#worker ?? this.#cleanupWorker;
     this.#worker = undefined;
-    if (worker) await worker.stop();
+    if (!worker) return;
+    this.#cleanupWorker = worker;
+    await worker.stop();
+    if (this.#cleanupWorker === worker) this.#cleanupWorker = undefined;
   }
 
   async #ensureWorker(): Promise<PluginWorker> {
     if (this.#worker) return this.#worker;
+    if (this.#cleanupWorker) throw new Error("Plugin worker cleanup is pending; a replacement cannot start");
+    if (this.#startPromise) return await this.#startPromise;
     const worker = this.factory();
-    await worker.start();
-    this.#worker = worker;
-    this.#starts += 1;
-    return worker;
+    const operation = (async () => {
+      try {
+        await worker.start();
+        this.#worker = worker;
+        this.#starts += 1;
+        return worker;
+      } catch (error) {
+        try { await worker.stop(); }
+        catch (cleanupError) {
+          this.#cleanupWorker = worker;
+          throw new AggregateError([error, cleanupError], "Plugin startup failed and cleanup remains pending");
+        }
+        throw error;
+      }
+    })();
+    this.#startPromise = operation;
+    try { return await operation; }
+    finally { if (this.#startPromise === operation) this.#startPromise = undefined; }
   }
 
   #armIdleTimer(): void {
     const ttl = this.options.idleTtlMs ?? 60_000;
-    if (ttl <= 0) return;
-    this.#idleTimer = setTimeout(() => { void this.stop().catch(() => undefined); }, ttl);
-    this.#idleTimer.unref?.();
+    if (ttl <= 0 || !this.#worker || this.#acceptedInvocations > 0 || this.#stopRequested) return;
+    const worker = this.#worker;
+    const timer = setTimeout(() => {
+      if (this.#idleTimer !== timer || this.#worker !== worker || this.#acceptedInvocations > 0 || this.#stopRequested) return;
+      this.#idleTimer = undefined;
+      void this.stop().catch((error) => this.#armCleanupRetry(worker, error));
+    }, ttl);
+    this.#idleTimer = timer;
+    timer.unref?.();
   }
 
   #clearIdleTimer(): void {
     if (this.#idleTimer) clearTimeout(this.#idleTimer);
     this.#idleTimer = undefined;
+  }
+
+  #armCleanupRetry(worker: PluginWorker, error: unknown): void {
+    if (this.#cleanupWorker !== worker || this.#stopRequested) return;
+    try { this.options.onCleanupError?.(error); } catch { /* cleanup retries must not depend on observers */ }
+    const delay = Math.max(1, this.options.cleanupRetryMs ?? Math.min(Math.max(this.options.idleTtlMs ?? 60_000, 250), 5_000));
+    const timer = setTimeout(() => {
+      if (this.#idleTimer !== timer || this.#cleanupWorker !== worker || this.#stopRequested) return;
+      this.#idleTimer = undefined;
+      void this.stop().catch((retryError) => this.#armCleanupRetry(worker, retryError));
+    }, delay);
+    this.#idleTimer = timer;
+    timer.unref?.();
+  }
+
+  #releaseInvocation(): void {
+    this.#acceptedInvocations = Math.max(0, this.#acceptedInvocations - 1);
+    if (this.#acceptedInvocations !== 0) return;
+    for (const resolveDrain of this.#drainResolvers) resolveDrain();
+    this.#drainResolvers.clear();
+  }
+
+  async #waitForInvocations(): Promise<void> {
+    if (this.#acceptedInvocations === 0) return;
+    await new Promise<void>((resolveDrain) => this.#drainResolvers.add(resolveDrain));
   }
 }
 
@@ -486,6 +674,67 @@ function validatePackageCoordinates(id: string, version: string): void {
 
 function isSafePluginVersion(version: string): boolean {
   return /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version);
+}
+
+function managedPluginContainerName(installationId: string, pluginId: string, version: string): string {
+  const hash = createHash("sha256");
+  for (const value of [installationId, pluginId, version]) hash.update(String(value.length)).update(":").update(value).update(";");
+  return `lite-harness-plugin-${hash.digest("hex").slice(0, 32)}`;
+}
+
+function pluginLabelDigest(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+
+function runDockerPluginCommand(
+  command: string,
+  args: readonly string[],
+  options: DockerCommandOptions = {},
+): Promise<DockerCommandResult> {
+  return new Promise((resolveCommand, reject) => {
+    const child = spawn(command, [...args], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    const maxBytes = Math.min(options.maxOutputBytes ?? 64 * 1024, 64 * 1024);
+    let bytes = 0;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => {
+      child.kill("SIGKILL");
+      finish(() => reject(options.signal?.reason ?? new Error("Plugin Docker cleanup was aborted")));
+    };
+    const collect = (target: Buffer[], chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        child.kill("SIGKILL");
+        finish(() => reject(new Error("Plugin Docker cleanup output exceeded 64 KiB")));
+        return;
+      }
+      target.push(chunk);
+    };
+    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.once("error", (error) => finish(() => reject(error)));
+    child.once("close", (code) => finish(() => resolveCommand({
+      code: code ?? 1,
+      stdout: Buffer.concat(stdout).toString("utf8"),
+      stderr: Buffer.concat(stderr).toString("utf8"),
+    })));
+    if (options.signal?.aborted) { abort(); return; }
+    options.signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error("Plugin Docker cleanup timed out after 15000ms")));
+    }, 15_000);
+    timer.unref?.();
+  });
 }
 
 function dockerReadOnlyBind(source: string, destination: string): string {

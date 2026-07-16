@@ -21,7 +21,7 @@ describe("brokered MCP isolation BD-045-REGRESSION", () => {
     });
     expect(spec.command).toBe("docker");
     expect(spec.args).toEqual(expect.arrayContaining([
-      "--init", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+      "--pull=never", "--init", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
       "--name", "lite-harness-mcp-spec", "--label", "lite-harness.managed=true", "--label", "lite-harness.component=mcp",
       "--security-opt", "seccomp=/policy/seccomp.json", "--user", "1000:1000",
       "--pids-limit", "64", "--memory", "256m", "--cpus", "1",

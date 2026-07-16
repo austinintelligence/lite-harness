@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -278,6 +279,44 @@ describe("process-backed extensions", () => {
     expect(commands.map((args) => args.slice(0, 2).join(" "))).toEqual([
       "container inspect", "container inspect", "container kill", "container wait", "container rm", "container inspect",
     ]);
+  });
+
+  it("keeps startup Docker commands independent from the shorter cleanup budget", () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-plugin-command-timeout-"));
+    cleanup.push(root);
+    writeFileSync(join(root, "ps"), "setTimeout(() => process.exit(0), 3000);\n");
+    const helper = join(root, "timeout-repro.mts");
+    const pluginCore = new URL("../packages/plugin-core/src/index.ts", import.meta.url).href;
+    writeFileSync(helper, `
+      import { DockerPluginExecutionSandbox } from ${JSON.stringify(pluginCore)};
+      process.chdir(${JSON.stringify(root)});
+      const sandbox = new DockerPluginExecutionSandbox({
+        image: "sha256:${"a".repeat(64)}",
+        installationId: "configured-command-timeout",
+        dockerCommand: process.execPath,
+        cleanupTimeoutMs: 1000,
+      });
+      const started = Date.now();
+      try {
+        const reaped = await sandbox.reconcileContainers();
+        process.stdout.write(JSON.stringify({ reaped, elapsedMs: Date.now() - started }));
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ message: error instanceof Error ? error.message : String(error), elapsedMs: Date.now() - started }));
+        process.exitCode = 2;
+      }
+    `);
+    const result = spawnSync(process.execPath, ["--import", "tsx", helper], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      encoding: "utf8",
+      timeout: 7_000,
+      windowsHide: true,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const output = JSON.parse(result.stdout) as { reaped: number; elapsedMs: number };
+    expect(output.reaped).toBe(0);
+    expect(output.elapsedMs).toBeGreaterThanOrEqual(2_800);
+    expect(output.elapsedMs).toBeLessThan(5_000);
   });
 
   it("A22-MANAGER-SHUTDOWN-CONTINUES retries poisoned plugin cleanup after an earlier stage fails", async () => {

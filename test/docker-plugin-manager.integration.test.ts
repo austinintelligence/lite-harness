@@ -48,6 +48,7 @@ describe("packaged Manager Docker plugin lifecycle over local IPC", () => {
 
     activeManager = await startPackagedManager(dataDir);
     let manager = activeManager;
+    let testFailure: unknown;
     try {
       expect(manager.pid).not.toBe(process.pid);
       expect(manager.socketPath).toMatch(process.platform === "win32" ? /^\\\\\.\\pipe\\/ : /manager\.sock$/);
@@ -203,11 +204,21 @@ describe("packaged Manager Docker plugin lifecycle over local IPC", () => {
       await waitFor(() => managedContainers(dataDir).length === 0, 30_000);
       expect((await manager.request("GET", "/healthz")).status).toBe(200);
       expect(await manager.status()).toMatchObject({ plugins: [], active: [] });
-    } finally {
-      await manager.stop().catch(() => undefined);
-      if (activeManager === manager) activeManager = undefined;
-      await waitFor(() => managedContainers(dataDir).length === 0, 30_000);
+    } catch (error) {
+      testFailure = error;
     }
+    const cleanupFailures: unknown[] = [];
+    try {
+      await manager.stop();
+      if (activeManager === manager) activeManager = undefined;
+    } catch (error) { cleanupFailures.push(error); }
+    try { await waitFor(() => managedContainers(dataDir).length === 0, 30_000); }
+    catch (error) { cleanupFailures.push(error); }
+    if (testFailure && cleanupFailures.length) {
+      throw new AggregateError([testFailure, ...cleanupFailures], "Plugin lifecycle and cleanup both failed");
+    }
+    if (testFailure) throw testFailure;
+    if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "Plugin lifecycle cleanup failed");
   }, 300_000);
 });
 

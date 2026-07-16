@@ -99,7 +99,9 @@ export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
     if (!config.installationId.trim()) throw new Error("Plugin sandbox installation identity is required");
     this.#installationLabel = pluginLabelDigest(config.installationId);
     const dockerCommand = config.dockerCommand ?? "docker";
-    this.#runner = config.cleanupRunner ?? ((args, options) => runDockerPluginCommand(dockerCommand, args, options));
+    const commandTimeoutMs = Math.max(config.cleanupTimeoutMs ?? 0, 30_000);
+    this.#runner = config.cleanupRunner ?? ((args, options) =>
+      runDockerPluginCommand(dockerCommand, args, options, commandTimeoutMs));
   }
 
   processSpec(plugin: InspectedPlugin, _grants: PluginPermissions): PluginProcessSpec {
@@ -995,6 +997,7 @@ function runDockerPluginCommand(
   command: string,
   args: readonly string[],
   options: DockerCommandOptions = {},
+  commandTimeoutMs = 30_000,
 ): Promise<DockerCommandResult> {
   return new Promise((resolveCommand, reject) => {
     const child = spawn(command, [...args], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -1036,8 +1039,8 @@ function runDockerPluginCommand(
     options.signal?.addEventListener("abort", abort, { once: true });
     timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(() => reject(new Error("Plugin Docker cleanup timed out after 15000ms")));
-    }, 15_000);
+      finish(() => reject(new Error(`Plugin Docker command timed out after ${commandTimeoutMs}ms`)));
+    }, commandTimeoutMs);
     timer.unref?.();
   });
 }

@@ -645,13 +645,16 @@ export async function killAndReapContainer(
   if (runningText !== "true" && runningText !== "false") {
     throw new Error("Docker tool container state was invalid");
   }
-  if (runningText === "true" || status === "running" || status === "restarting" || status === "paused") {
+  const active = runningText === "true" || status === "running" || status === "restarting" || status === "paused";
+  let waitForExit = active;
+  if (active) {
     const killed = await runner(["container", "kill", runtimeContainerId]);
-    if (killed.code !== 0 && !isNoSuchContainer(killed)) {
-      throw new Error(`Could not kill Docker tool container: ${killed.stderr}`);
+    if (killed.code !== 0) {
+      if (isNoSuchContainer(killed) || isContainerNotRunning(killed)) waitForExit = false;
+      else throw new Error(`Could not kill Docker tool container: ${killed.stderr}`);
     }
   }
-  if (status !== "created" && status !== "removing") {
+  if (waitForExit) {
     const waited = await runner(["container", "wait", runtimeContainerId]);
     if (waited.code !== 0 && !isNoSuchContainer(waited)) {
       throw new Error(`Could not wait for Docker tool container: ${waited.stderr}`);
@@ -669,6 +672,10 @@ export async function killAndReapContainer(
 
 function isNoSuchContainer(result: DockerCommandResult): boolean {
   return /no such (?:container|object)/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+function isContainerNotRunning(result: DockerCommandResult): boolean {
+  return /container\b.*\bis not running\b/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
 function deterministicContainerName(...identity: string[]): string {

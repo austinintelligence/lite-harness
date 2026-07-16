@@ -256,7 +256,7 @@ class PackagedPluginManager {
         socketPath: this.socketPath,
         path,
         method,
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(90_000),
         headers: {
           [LITE_IPC_VERSION_HEADER]: LITE_IPC_PROTOCOL_VERSION,
           "x-lite-internal-token": internalToken,
@@ -412,7 +412,7 @@ async function startPackagedManager(dataDir: string): Promise<PackagedPluginMana
       LITE_HARNESS_ENABLE_PLUGINS: "true",
       LITE_HARNESS_PLUGIN_IMAGE: image,
       LITE_HARNESS_PLUGIN_IDLE_MS: "100",
-      LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS: "10000",
+      LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS: "30000",
       LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS: "4000",
       LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS: "100",
       LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS: "3",

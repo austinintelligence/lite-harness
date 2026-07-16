@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DockerCommandRunner } from "@lite-harness/runtime-docker";
-import { DockerToolRuntime } from "@lite-harness/runtime-docker";
+import { DockerToolRuntime, killAndReapContainer } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 const image = `sha256:${"f".repeat(64)}`;
@@ -133,6 +133,49 @@ describe("durable Docker tool lifecycle", () => {
     } finally {
       store.close();
     }
+  });
+
+  it("removes an already-exited container without waiting on a stale Docker event", async () => {
+    const commands: string[][] = [];
+    let exists = true;
+    const runner: DockerCommandRunner = async (args) => {
+      commands.push([...args]);
+      if (args[0] === "container" && args[1] === "inspect") {
+        return exists ? ok(args.includes("--format") ? "false|exited" : "{}") : missing();
+      }
+      if (args[0] === "container" && args[1] === "rm") { exists = false; return ok("removed"); }
+      throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+    };
+
+    await killAndReapContainer(runner, "terminal-plugin-container");
+
+    expect(commands.map((args) => args.slice(0, 2).join(" "))).toEqual([
+      "container inspect", "container rm", "container inspect",
+    ]);
+    expect(exists).toBe(false);
+  });
+
+  it("treats a natural exit between inspect and kill as terminal and still removes the container", async () => {
+    const commands: string[][] = [];
+    let exists = true;
+    const runner: DockerCommandRunner = async (args) => {
+      commands.push([...args]);
+      if (args[0] === "container" && args[1] === "inspect") {
+        return exists ? ok(args.includes("--format") ? "true|running" : "{}") : missing();
+      }
+      if (args[0] === "container" && args[1] === "kill") {
+        return { code: 1, stdout: "", stderr: "Error response from daemon: cannot kill container: fixture is not running" };
+      }
+      if (args[0] === "container" && args[1] === "rm") { exists = false; return ok("removed"); }
+      throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+    };
+
+    await killAndReapContainer(runner, "naturally-exited-plugin-container");
+
+    expect(commands.map((args) => args.slice(0, 2).join(" "))).toEqual([
+      "container inspect", "container kill", "container rm", "container inspect",
+    ]);
+    expect(exists).toBe(false);
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ArtifactPublishingRuntime, CODING_TOOL_DEFINITIONS, InMemoryToolRuntime, validateWorkspacePath } from "@lite-harness/runtime";
+import { ArtifactPublishingRuntime, CODING_TOOL_DEFINITIONS, InMemoryToolRuntime, validateWorkspacePath, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime, type DockerCommandRunner } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
@@ -152,6 +152,35 @@ describe("tool runtime policy", () => {
         path: "reports/result.txt", mediaType: "text/plain", content: "forged bytes",
       } },
     })).rejects.toThrow(/authorized workspace path/);
+  });
+
+  it("BD-035-REGRESSION does not publish bytes after the reader loses its fence", async () => {
+    let active = true;
+    let published = false;
+    const inner: ToolRuntime = {
+      execute: async () => ({ callId: "unused", ok: false, content: "unused" }),
+      readWorkspaceArtifact: async () => {
+        active = false;
+        return Buffer.from("late bytes");
+      },
+    };
+    const runtime = new ArtifactPublishingRuntime(inner, {
+      publish: () => {
+        published = true;
+        return {
+          id: "art_00000000000000000000000000000001",
+          runId: "run-fence", appId: "app", tenantId: "tenant", userId: "user", workspaceId: "workspace",
+          path: "result.txt", mediaType: "text/plain", sizeBytes: 9, sha256: "digest", createdAt: new Date().toISOString(),
+        };
+      },
+    }, undefined, (params) => active && params.fencingToken === 1);
+
+    await expect(runtime.execute({
+      workspaceId: "workspace", runId: "run-fence", attemptId: "attempt-fence", fencingToken: 1,
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      call: { id: "tool-fence", name: "artifact_publish", arguments: { path: "result.txt", mediaType: "text/plain" } },
+    })).rejects.toThrow(/fence changed/i);
+    expect(published).toBe(false);
   });
 });
 

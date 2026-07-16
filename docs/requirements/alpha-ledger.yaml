@@ -1939,13 +1939,56 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/config/src/index.ts",
+        "packages/contracts/src/index.ts",
+        "apps/manager/src/main.ts",
+        "apps/manager/src/optional-systems.ts",
+        "apps/manager/src/shutdown.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/plugin-core/src/index.ts",
+        "packages/mcp/src/index.ts",
+        "packages/browser/src/index.ts",
+        "packages/provider-openai-compatible/src/index.ts",
+        "packages/provider-anthropic/src/index.ts"
+      ],
+      "testIds": [
+        "A22-DISABLED-ZERO-RESOURCES",
+        "A22-PRELOADED-OFFLINE-FAKE",
+        "A22-OFFLINE-CONFIG-FAIL-CLOSED",
+        "A22-OFFLINE-MCP-FAIL-CLOSED",
+        "A22-OFFLINE-REDIRECT-DENIED",
+        "A22-CREDENTIAL-REDIRECT-DENIED",
+        "A22-PLUGIN-IDLE-ZERO",
+        "A22-PLUGIN-STOP-DRAIN",
+        "A22-PLUGIN-CRASH-BACKOFF",
+        "A22-PLUGIN-START-FAILURE-REAP",
+        "A22-PLUGIN-CLEANUP-RETRY",
+        "A22-MANAGER-SHUTDOWN-CONTINUES",
+        "A22-HOST-PLUGIN-IDLE-ZERO",
+        "A22-REAL-PLUGIN-IDLE-ZERO",
+        "A22-REAL-PLUGIN-STARTUP-FAILURE-ZERO",
+        "A22-REAL-PLUGIN-CHAOS-ZERO",
+        "A22-REAL-PLUGIN-ORPHAN-RECONCILE",
+        "A22-REAL-MCP-IDLE-ZERO",
+        "A22-BROWSER-IDLE-ZERO",
+        "A22-BROWSER-CLOSE-DRAIN",
+        "A22-BROWSER-UPLOAD-CLOSE-DRAIN",
+        "A22-BROWSER-CLOSE-ALL-DRAIN",
+        "A22-BROWSER-CLOSE-ALL-FAILURE",
+        "A22-REAL-BROWSER-IDLE-ZERO",
+        "A22-REAL-PRELOADED-NO-PULL-NO-EGRESS"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

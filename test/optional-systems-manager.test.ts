@@ -27,7 +27,7 @@ describe("production optional-system composition", () => {
     await systems.stop();
   });
 
-  it("A22-OFFLINE-FAIL-CLOSED allows local MCP HTTP only and rejects remote endpoints or redirect origins", async () => {
+  it("A22-OFFLINE-MCP-FAIL-CLOSED allows local MCP HTTP only and rejects remote endpoints or redirect origins", async () => {
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(new URL(String(input)).origin).toBe("http://127.0.0.1:9234");
       expect(init?.redirect).toBe("manual");

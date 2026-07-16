@@ -7,7 +7,7 @@ import {
 } from "@lite-harness/browser";
 
 describe("managed browser scale-to-zero lifecycle", () => {
-  it("A22-ENABLED-IDLE-ZERO single-flights startup, protects overlapping actions, and reaps after final idle", async () => {
+  it("A22-BROWSER-IDLE-ZERO single-flights startup, protects overlapping actions, and reaps after final idle", async () => {
     let releaseStart!: () => void;
     let releaseSlow!: () => void;
     const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });

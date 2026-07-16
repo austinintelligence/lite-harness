@@ -124,7 +124,7 @@ describe("versioned application configuration", () => {
     }, "C:/fixture", "win32")).toThrow(/Production mode forbids fake/);
   });
 
-  it("A22-OFFLINE-FAIL-CLOSED permits only fake or loopback model routes and rejects outbound packs", () => {
+  it("A22-OFFLINE-CONFIG-FAIL-CLOSED permits only fake or loopback model routes and rejects outbound packs", () => {
     const offlineDevelopment = {
       ...tokens, LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_RUNTIME: "fake",
       LITE_HARNESS_MODE: "development", LITE_HARNESS_OFFLINE: "true",

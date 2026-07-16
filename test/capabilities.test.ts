@@ -66,7 +66,7 @@ describe("optional capability kernel", () => {
     await supervisor.stop();
   });
 
-  it("A22-ENABLED-IDLE-ZERO keeps one lazy worker alive through overlapping calls and reaps it after the last call idles", async () => {
+  it("A22-PLUGIN-IDLE-ZERO keeps one lazy worker alive through overlapping calls and reaps it after the last call idles", async () => {
     let releaseSlow!: () => void;
     const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
     const start = vi.fn(async () => undefined);

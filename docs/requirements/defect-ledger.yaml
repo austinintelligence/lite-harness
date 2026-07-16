@@ -1867,11 +1867,12 @@
         "path": "test/optional-packs.test.ts",
         "result": "pass",
         "evidenceArtifact": {
-          "path": "evidence/m9/optional-composition.json"
+          "path": "evidence/m3/required-real-runtime.json"
         }
       },
       "fixCommits": [
-        "c2e74838e125e581eb54aca0d276a034de13331d"
+        "c2e74838e125e581eb54aca0d276a034de13331d",
+        "81c8a499f2ec11b7e5dc8b824c4948eaf1c2e0e3"
       ],
       "blockers": [
         "current-regression-evidence-missing"

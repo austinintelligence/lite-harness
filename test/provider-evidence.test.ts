@@ -5,7 +5,14 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { candidateEvidenceProducer, requiredExternalGateAuthorities } from "../scripts/assemble-ci-evidence.mjs";
-import { providerLiveEvidencePaths, providerLiveGateNames, providerLiveGates, validateProviderLiveInvocation } from "../scripts/evidence-provider.js";
+import {
+  isAuthenticationFailure,
+  isCancellationFailure,
+  providerLiveEvidencePaths,
+  providerLiveGateNames,
+  providerLiveGates,
+  validateProviderLiveInvocation,
+} from "../scripts/evidence-provider.js";
 
 describe("external provider evidence producer", () => {
   it("declares the three owner-controlled provider authorities with a distinct scope", () => {
@@ -30,6 +37,22 @@ describe("external provider evidence producer", () => {
       expect.stringContaining("Provider live evidence is CI-only"),
     );
     expect(validateProviderLiveInvocation("unknown", { GITHUB_ACTIONS: "true" })[0]).toContain("--gate must be one of");
+  });
+
+  it("only accepts a semantically authenticated negative response", () => {
+    expect(isAuthenticationFailure({ status: 401 })).toBe(true);
+    expect(isAuthenticationFailure({ code: "authentication_failed" })).toBe(true);
+    expect(isAuthenticationFailure({ code: "process_failed", message: "login required" })).toBe(true);
+    expect(isAuthenticationFailure({ code: "process_failed", message: "connection refused" })).toBe(false);
+    expect(isAuthenticationFailure({ status: 500 })).toBe(false);
+  });
+
+  it("only accepts cancellation after an abort-shaped failure", () => {
+    const aborted = AbortSignal.abort(new DOMException("cancelled", "AbortError"));
+    expect(isCancellationFailure(new DOMException("The operation was aborted", "AbortError"), aborted)).toBe(true);
+    expect(isCancellationFailure({ code: "provider_unavailable", status: 503 }, aborted)).toBe(false);
+    expect(isCancellationFailure(new Error("connection reset"), aborted)).toBe(false);
+    expect(isCancellationFailure(new DOMException("The operation was aborted", "AbortError"), new AbortController().signal)).toBe(false);
   });
 
   it("writes a redacted fail envelope when CI prerequisites are absent", async () => {

@@ -17,7 +17,6 @@ import {
   RoutedModelGateway,
   type ModelDescriptor,
   type ModelEvent,
-  type ModelGateway,
   type ModelMessage,
 } from "@lite-harness/provider-core";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
@@ -109,6 +108,32 @@ export function validateProviderLiveInvocation(gate: string | undefined, env: No
     }
   }
   return failures;
+}
+
+/**
+ * A negative credential scenario must prove an authentication boundary, not
+ * merely observe that some unrelated network/process error occurred. Keep the
+ * predicate intentionally narrow because the evidence is release-authority
+ * material.
+ */
+export function isAuthenticationFailure(error: unknown): boolean {
+  const record = asErrorRecord(error);
+  if (record.status === 401 || record.status === 403) return true;
+  const descriptor = `${record.code ?? ""} ${record.name ?? ""} ${record.message ?? ""}`;
+  return /(?:authentication[_ -]?failed|auth(?:entication)?[_ -]?(?:required|failed|error)|unauthori[sz]ed|forbidden|invalid[_ -]?(?:api[_ -]?key|credential)|credential[_ -]?(?:invalid|missing|expired)|not[_ -]?authenticated|login[_ -]?required|sign[_ -]?in[_ -]?required)/i.test(descriptor);
+}
+
+/**
+ * Cancellation evidence must identify an abort/cancel path after the signal
+ * fired; a provider 5xx, timeout, or malformed response is not cancellation.
+ */
+export function isCancellationFailure(error: unknown, signal: AbortSignal): boolean {
+  if (!signal.aborted) return false;
+  const record = asErrorRecord(error);
+  const code = `${record.code ?? ""} ${record.name ?? ""}`;
+  const message = record.message ?? "";
+  return record.name === "AbortError" || /(?:abort(?:ed|ing)?|cancel(?:led|ed)?)/i.test(code) ||
+    /(?:abort(?:ed|ing)?|cancel(?:led|ed)?)/i.test(message);
 }
 
 export async function runProviderEvidence(gate: string, output: string): Promise<ProviderEvidenceResult> {
@@ -343,7 +368,8 @@ async function scenarioCancellation(session: ProviderSession): Promise<ScenarioR
       if (next.done) return { passed: false, detail: "completed-before-cancellation" };
     }
   } catch (error) {
-    return { passed: controller.signal.aborted, detail: controller.signal.aborted ? undefined : safeErrorCode(error) };
+    const cancelled = isCancellationFailure(error, controller.signal);
+    return { passed: cancelled, detail: cancelled ? undefined : safeErrorCode(error) };
   } finally {
     clearTimeout(timer);
     await iterator.return?.().catch(() => undefined);
@@ -376,7 +402,7 @@ async function scenarioAuthError(providerId: string, modelId: string, pricing: {
         if (next.done) return { passed: false, detail: "isolated-codex-home-authenticated" };
       }
     } catch (error) {
-      return { passed: true, detail: safeErrorCode(error) };
+      return { passed: isAuthenticationFailure(error), detail: safeErrorCode(error) };
     } finally {
       rmSync(isolatedHome, { recursive: true, force: true });
     }
@@ -404,7 +430,7 @@ async function scenarioAuthError(providerId: string, modelId: string, pricing: {
     }
     return { passed: false, detail: `${keyEnv ?? "provider"}-accepted-invalid-credential` };
   } catch (error) {
-    return { passed: true, detail: safeErrorCode(error) };
+    return { passed: isAuthenticationFailure(error), detail: safeErrorCode(error) };
   }
 }
 
@@ -464,13 +490,27 @@ function numberEnv(name: string): number | undefined {
 }
 
 function safeErrorCode(error: unknown): string {
-  if (error && typeof error === "object") {
-    const value = error as { code?: unknown; name?: unknown; status?: unknown };
-    if (typeof value.code === "string") return value.code.slice(0, 128);
-    if (typeof value.name === "string") return value.name.slice(0, 128);
-    if (typeof value.status === "number") return `http-${value.status}`;
-  }
+  const value = asErrorRecord(error);
+  if (value.code) return value.code.slice(0, 128);
+  if (value.name) return value.name.slice(0, 128);
+  if (value.status !== undefined) return `http-${value.status}`;
   return "provider-live-error";
+}
+
+function asErrorRecord(error: unknown): {
+  code?: string;
+  name?: string;
+  message?: string;
+  status?: number;
+} {
+  if (!error || typeof error !== "object") return {};
+  const value = error as { code?: unknown; name?: unknown; message?: unknown; status?: unknown };
+  return {
+    ...(typeof value.code === "string" ? { code: value.code } : {}),
+    ...(typeof value.name === "string" ? { name: value.name } : {}),
+    ...(typeof value.message === "string" ? { message: value.message } : {}),
+    ...(typeof value.status === "number" ? { status: value.status } : {}),
+  };
 }
 
 function option(name: string): string | undefined {

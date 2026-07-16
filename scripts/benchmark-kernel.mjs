@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -7,6 +8,9 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const dataDir = await mkdtemp(join(tmpdir(), "lite-harness-benchmark-"));
 const port = await freePort();
+const managerSocket = process.platform === "win32"
+  ? `\\\\.\\pipe\\lite-harness-benchmark-${process.pid}`
+  : join(dataDir, "manager.sock");
 const appToken = "benchmark-app-token";
 const startedAt = performance.now();
 const child = spawn(process.execPath, ["--import", "tsx", "apps/launcher/src/main.ts", "--data-dir", dataDir], {
@@ -15,9 +19,7 @@ const child = spawn(process.execPath, ["--import", "tsx", "apps/launcher/src/mai
     ...process.env,
     LITE_HARNESS_APP_TOKEN: appToken,
     LITE_HARNESS_INTERNAL_TOKEN: "benchmark-internal-token",
-    LITE_HARNESS_MANAGER_SOCKET: process.platform === "win32"
-      ? `\\\\.\\pipe\\lite-harness-benchmark-${process.pid}`
-      : join(dataDir, "manager.sock"),
+    LITE_HARNESS_MANAGER_SOCKET: managerSocket,
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
     LITE_HARNESS_PROVIDER: "fake",
@@ -36,6 +38,9 @@ try {
   const ready = await pollJson(`http://127.0.0.1:${port}/readyz`, 20_000);
   const startupMs = performance.now() - startedAt;
   const health = await fetchJson(`http://127.0.0.1:${port}/healthz`);
+  const managerHealth = await fetchManagerHealth(managerSocket);
+  assertMemoryMetric("Gateway", health.rssBytes);
+  assertMemoryMetric("Manager", managerHealth.rssBytes);
   const runStartedAt = performance.now();
   const created = await fetchJson(`http://127.0.0.1:${port}/v1/runs`, {
     method: "POST",
@@ -72,7 +77,7 @@ try {
     startupReadyMs: Number(startupMs.toFixed(1)),
     runTerminalMs: Number((performance.now() - runStartedAt).toFixed(1)),
     gatewayRssBytes: health.rssBytes,
-    managerRssBytes: ready.dependencies.manager.rssBytes,
+    managerRssBytes: managerHealth.rssBytes,
     terminalStatus: terminal.status,
     note: "This measures the process/kernel path only; credentialed inference uses the Hermes test wrapper.",
   };
@@ -150,6 +155,10 @@ function taskkillError(pid, result) {
   return new Error(`taskkill failed for benchmark launcher ${pid} (exit ${result.code}): ${result.stderr || "unknown error"}`);
 }
 
+function assertMemoryMetric(name, value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} RSS metric is not a nonnegative integer`);
+}
+
 async function removeBenchmarkDirectory(path) {
   let lastError;
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -170,6 +179,27 @@ async function fetchJson(url, init) {
   const text = await response.text();
   if (!response.ok) throw new Error(`${url} returned ${response.status}: ${text}`);
   return text ? JSON.parse(text) : {};
+}
+
+async function fetchManagerHealth(socketPath) {
+  if (!socketPath) throw new Error("Manager IPC socket path is missing");
+  return await new Promise((resolveHealth, rejectHealth) => {
+    const request = httpRequest({ socketPath, path: "/healthz", method: "GET" }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => {
+        if ((response.statusCode ?? 500) >= 400) {
+          rejectHealth(new Error(`Manager /healthz returned ${response.statusCode}: ${body}`));
+          return;
+        }
+        try { resolveHealth(JSON.parse(body)); }
+        catch (error) { rejectHealth(error); }
+      });
+    });
+    request.once("error", rejectHealth);
+    request.end();
+  });
 }
 
 async function pollJson(url, timeoutMs) {

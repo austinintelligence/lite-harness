@@ -84,7 +84,11 @@ for (const workflowName of ["ci.yml", "images.yml"]) {
 }
 if (existsSync(resolve(root, "docs/performance-baseline.json"))) {
   const performance = JSON.parse(readFileSync(resolve(root, "docs/performance-baseline.json"), "utf8"));
-  if (performance.provider !== "fake" || performance.terminalStatus !== "SUCCEEDED") failures.push("kernel performance baseline is missing a successful model-free run");
+  if (performance.provider !== "fake" || performance.terminalStatus !== "SUCCEEDED" ||
+      !Number.isSafeInteger(performance.gatewayRssBytes) || performance.gatewayRssBytes < 0 ||
+      !Number.isSafeInteger(performance.managerRssBytes) || performance.managerRssBytes < 0) {
+    failures.push("kernel performance baseline is missing a successful model-free run with Gateway and Manager RSS metrics");
+  }
 }
 if (existsSync(resolve(root, "docs/pxpipe-evaluation.json"))) {
   const contextEvaluation = JSON.parse(readFileSync(resolve(root, "docs/pxpipe-evaluation.json"), "utf8"));

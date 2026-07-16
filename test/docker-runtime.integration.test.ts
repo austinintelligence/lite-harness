@@ -187,6 +187,50 @@ describe("Docker runtime integration", () => {
     );
   }, 180_000);
 
+  it("A07-REAL-TOOL-HARDENING-INSPECT enforces identity, rootfs, capability, network, CPU, memory, PID, and tmpfs limits", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const workspaceId = `a07-workspace-${suffix}`;
+    const runId = `a07-run-${suffix}`;
+    const installationId = `a07-installation-${suffix}`;
+    const principal = { appId: "a07-app", tenantId: "a07-tenant", userId: "a07-user", scopes: [] as string[] };
+    const store = new SqliteRunStore(":memory:");
+    const runtime = new DockerToolRuntime({
+      image, installationId, containerStore: store, memory: "32m", cpus: "0.5", pidsLimit: 32,
+    });
+    const controller = new AbortController();
+    try {
+      store.createOrGetRun(runId, {
+        agent: "coder", workspace: workspaceId, input: "A07 hardening", idempotencyKey: `a07-request-${suffix}`, principal,
+      });
+      const attempt = store.createRunAttempt(runId, `a07-attempt-${suffix}`);
+      const execution = runtime.execute({
+        runId, attemptId: attempt.id, workspaceId, principal,
+        call: { id: "a07-running-shell", name: "shell_exec", arguments: { script: "sleep 30" } },
+        signal: controller.signal,
+      });
+      await waitForDockerContainers(installationId, 15_000);
+      const containerId = listManagedDockerContainers(installationId)[0]!;
+      const inspected = inspectDockerContainer(containerId);
+      expect(inspected.Config.User).toBe("1000:1000");
+      expect(inspected.HostConfig.ReadonlyRootfs).toBe(true);
+      expect(inspected.HostConfig.NetworkMode).toBe("none");
+      expect(inspected.HostConfig.CapDrop).toEqual(expect.arrayContaining(["ALL"]));
+      expect(inspected.HostConfig.SecurityOpt).toEqual(expect.arrayContaining(["no-new-privileges"]));
+      expect(inspected.HostConfig.Memory).toBe(32 * 1024 * 1024);
+      expect(inspected.HostConfig.NanoCpus).toBe(500_000_000);
+      expect(inspected.HostConfig.PidsLimit).toBe(32);
+      expect(inspected.HostConfig.Tmpfs["/tmp"]).toMatch(/noexec/);
+      controller.abort(new Error("A07 inspection complete"));
+      await expect(execution).rejects.toThrow(/A07 inspection complete|aborted/i);
+      await waitForDockerContainers(installationId, 15_000, true);
+      expect(store.listRuntimeContainers()).toEqual([]);
+    } finally {
+      controller.abort();
+      await runtime.removeWorkspace(workspaceId, principal).catch(() => undefined);
+      store.close();
+    }
+  }, 90_000);
+
   it("persists a named-volume workspace across containers and restores an archive", async () => {
     const workspaceId = `integration-${Date.now()}`;
     const runId = `run_${Date.now()}`;
@@ -274,6 +318,23 @@ function listManagedDockerContainers(installationId: string): string[] {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Could not inspect A08 Docker inventory: ${result.stderr || result.stdout}`);
   return (result.stdout ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function inspectDockerContainer(containerId: string): {
+  Config: { User: string };
+  HostConfig: {
+    ReadonlyRootfs: boolean; NetworkMode: string; CapDrop: string[]; SecurityOpt: string[];
+    Memory: number; NanoCpus: number; PidsLimit: number; Tmpfs: Record<string, string>;
+  };
+} {
+  const result = spawnSync("docker", ["container", "inspect", containerId], {
+    encoding: "utf8", windowsHide: true, timeout: 30_000,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Could not inspect A07 Docker container: ${result.stderr || result.stdout}`);
+  const parsed = JSON.parse(result.stdout ?? "") as unknown;
+  if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== "object") throw new Error("A07 Docker inspect output was invalid");
+  return parsed[0] as ReturnType<typeof inspectDockerContainer>;
 }
 
 async function waitForDockerContainers(installationId: string, timeoutMs: number, empty = false): Promise<void> {

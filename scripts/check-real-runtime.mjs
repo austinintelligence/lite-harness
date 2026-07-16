@@ -119,6 +119,7 @@ try {
           dockerToolExecution: true,
           packagedToolContainerSecretSentinelsAbsent: true,
           pluginMcpBrowserContainerSecretSentinelsAbsent: true,
+          toolContainerHardeningLimitsInspected: true,
           mcpContainersInstallationScopedForReconciliation: true,
           expiredLeaseReacquisitionIncrementsFence: true,
           pausedWriterMutationRejectedAndResumed: true,

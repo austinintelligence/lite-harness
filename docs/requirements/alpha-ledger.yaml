@@ -1559,13 +1559,26 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/browser/src/index.ts",
+        "packages/mcp/src/index.ts",
+        "packages/plugin-core/src/index.ts",
+        "packages/runtime-docker/src/index.ts"
+      ],
+      "testIds": [
+        "A07-REAL-TOOL-HARDENING-INSPECT"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale",
+        "limits-surface-coverage-gap"
       ]
     },
     {

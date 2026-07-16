@@ -448,10 +448,14 @@ export class DockerBrowserDriver implements BrowserDriver {
     image: string; dockerCommand?: string; memory?: string; cpus?: string; pidsLimit?: number;
     seccompProfile?: string; timeoutMs?: number; remoteCdpEndpoint?: string; dockerRunner?: BrowserDockerRunner;
     processFactory?: BrowserProcessFactory; quarantineRoot?: string; installationId?: string;
+    maxRetainedUploads?: number; maxRetainedUploadBytes?: number;
   };
   #driver?: BrowserDriver;
   #egress?: ExternalBrowserEgressBroker;
   #quarantineRoot?: string;
+  #retainedUploads = new Map<string, number>();
+  #retainedUploadBytes = 0;
+  #pendingUploads = 0;
 
   constructor(options: {
     image: string;
@@ -466,6 +470,8 @@ export class DockerBrowserDriver implements BrowserDriver {
     processFactory?: BrowserProcessFactory;
     quarantineRoot?: string;
     installationId?: string;
+    maxRetainedUploads?: number;
+    maxRetainedUploadBytes?: number;
   }) {
     if (!options.image.includes("@sha256:") && !/^sha256:[a-f0-9]{64}$/.test(options.image)) {
       throw new Error("Browser image must be pinned by sha256 digest");
@@ -474,7 +480,15 @@ export class DockerBrowserDriver implements BrowserDriver {
       validateRemoteCdpEndpoint(options.remoteCdpEndpoint);
       throw new Error("Remote CDP is disabled until it can use the external browser egress broker");
     }
-    this.#options = { ...options };
+    const maxRetainedUploads = options.maxRetainedUploads ?? 16;
+    const maxRetainedUploadBytes = options.maxRetainedUploadBytes ?? 128 * 1024 * 1024;
+    if (!Number.isSafeInteger(maxRetainedUploads) || maxRetainedUploads < 1 || maxRetainedUploads > 1_000) {
+      throw new Error("Browser retained upload count limit is invalid");
+    }
+    if (!Number.isSafeInteger(maxRetainedUploadBytes) || maxRetainedUploadBytes < 1 || maxRetainedUploadBytes > 1024 * 1024 * 1024) {
+      throw new Error("Browser retained upload byte limit is invalid");
+    }
+    this.#options = { ...options, maxRetainedUploads, maxRetainedUploadBytes };
   }
 
   async start(policy: BrowserNetworkPolicy): Promise<void> {
@@ -543,22 +557,38 @@ export class DockerBrowserDriver implements BrowserDriver {
 
   async prepareUpload(_name: string, materialize: (path: string) => Promise<void>): Promise<string> {
     if (!this.#driver || !this.#quarantineRoot) throw new Error("Browser driver is not initialized");
+    if (this.#retainedUploads.size + this.#pendingUploads >= (this.#options.maxRetainedUploads ?? 16)) {
+      throw new Error("Browser retained upload count quota exceeded");
+    }
+    this.#pendingUploads += 1;
     const quarantineId = `q_${randomBytes(16).toString("hex")}`;
     const path = this.#quarantinePath(quarantineId);
     try {
       await materialize(path);
       const stat = lstatSync(path);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw new Error("Browser upload artifact failed validation");
+      if (this.#retainedUploadBytes + stat.size > (this.#options.maxRetainedUploadBytes ?? 128 * 1024 * 1024)) {
+        throw new Error("Browser retained upload byte quota exceeded");
+      }
       chmodSync(path, 0o644);
+      this.#retainedUploads.set(path, stat.size);
+      this.#retainedUploadBytes += stat.size;
       return quarantineId;
     } catch (error) {
       rmSync(path, { force: true });
       throw error;
+    } finally {
+      this.#pendingUploads = Math.max(0, this.#pendingUploads - 1);
     }
   }
 
   releaseArtifact(localPath: string): void {
     if (localPath !== this.#quarantinePath(basename(localPath))) throw new Error("Browser quarantine path is invalid");
+    const retainedBytes = this.#retainedUploads.get(localPath);
+    if (retainedBytes !== undefined) {
+      this.#retainedUploads.delete(localPath);
+      this.#retainedUploadBytes = Math.max(0, this.#retainedUploadBytes - retainedBytes);
+    }
     rmSync(localPath, { force: true });
   }
   restoreProfile(data: string): Promise<void> {
@@ -572,6 +602,7 @@ export class DockerBrowserDriver implements BrowserDriver {
   async stop(): Promise<void> {
     const driver = this.#driver; const egress = this.#egress; const quarantineRoot = this.#quarantineRoot;
     this.#driver = undefined; this.#egress = undefined; this.#quarantineRoot = undefined;
+    this.#retainedUploads.clear(); this.#retainedUploadBytes = 0; this.#pendingUploads = 0;
     try { await driver?.stop(); } finally {
       try { await egress?.stop(); } finally { if (quarantineRoot) rmSync(quarantineRoot, { recursive: true, force: true }); }
     }

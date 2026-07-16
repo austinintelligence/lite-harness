@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -84,6 +84,90 @@ describe("durable browser sessions and artifact quarantine BD-043-REGRESSION", (
     driver.releaseArtifact(result.artifact?.localPath as string);
     expect(() => readFileSync(result.artifact?.localPath as string)).toThrow();
     await driver.stop();
+  });
+
+  it("bounds retained upload staging and removes it at session teardown", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-browser-upload-quota-")); cleanup.push(directory);
+    let mountedRoot = "";
+    const driver = new DockerBrowserDriver({
+      image: `sha256:${"e".repeat(64)}`,
+      quarantineRoot: directory,
+      dockerRunner: async () => ({ code: 0, stdout: "ok", stderr: "" }),
+      processFactory: (spec) => {
+        const mount = spec.args?.find((argument) => argument.startsWith("type=bind,source="));
+        mountedRoot = mount?.slice("type=bind,source=".length).replace(",target=/quarantine", "") ?? "";
+        return new QuarantineFakeDriver(() => mountedRoot);
+      },
+      maxRetainedUploads: 2,
+      maxRetainedUploadBytes: 5,
+    });
+    await driver.start({});
+    await driver.prepareUpload("first.txt", async (path) => writeFileSync(path, "1234"));
+    await expect(driver.prepareUpload("too-large.txt", async (path) => writeFileSync(path, "12")))
+      .rejects.toThrow(/byte quota/);
+    await driver.prepareUpload("second.txt", async (path) => writeFileSync(path, "5"));
+    await expect(driver.prepareUpload("too-many.txt", async (path) => writeFileSync(path, "6")))
+      .rejects.toThrow(/count quota/);
+    expect(readdirSync(mountedRoot)).toHaveLength(2);
+    await driver.stop();
+    expect(readdirSync(directory)).toEqual([]);
+  });
+
+  it("reserves retained upload slots across concurrent materializers and releases failed reservations", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-browser-upload-reservation-")); cleanup.push(directory);
+    let mountedRoot = "";
+    const driver = new DockerBrowserDriver({
+      image: `sha256:${"f".repeat(64)}`,
+      quarantineRoot: directory,
+      dockerRunner: async () => ({ code: 0, stdout: "ok", stderr: "" }),
+      processFactory: (spec) => {
+        const mount = spec.args?.find((argument) => argument.startsWith("type=bind,source="));
+        mountedRoot = mount?.slice("type=bind,source=".length).replace(",target=/quarantine", "") ?? "";
+        return new QuarantineFakeDriver(() => mountedRoot);
+      },
+      maxRetainedUploads: 1,
+      maxRetainedUploadBytes: 1024,
+    });
+    await driver.start({});
+
+    let releaseSuccess!: () => void;
+    let markSuccessStarted!: () => void;
+    const successGate = new Promise<void>((resolve) => { releaseSuccess = resolve; });
+    const successStarted = new Promise<void>((resolve) => { markSuccessStarted = resolve; });
+    const pendingSuccess = driver.prepareUpload("pending-success.txt", async (path) => {
+      markSuccessStarted();
+      await successGate;
+      writeFileSync(path, "success");
+    });
+    await successStarted;
+    let blockedMaterializerRan = false;
+    await expect(driver.prepareUpload("blocked.txt", async (path) => {
+      blockedMaterializerRan = true;
+      writeFileSync(path, "blocked");
+    })).rejects.toThrow(/count quota/);
+    expect(blockedMaterializerRan).toBe(false);
+    releaseSuccess();
+    const retainedId = await pendingSuccess;
+    driver.releaseArtifact(join(mountedRoot, retainedId));
+
+    let releaseFailure!: () => void;
+    let markFailureStarted!: () => void;
+    const failureGate = new Promise<void>((resolve) => { releaseFailure = resolve; });
+    const failureStarted = new Promise<void>((resolve) => { markFailureStarted = resolve; });
+    const pendingFailure = driver.prepareUpload("pending-failure.txt", async () => {
+      markFailureStarted();
+      await failureGate;
+      throw new Error("materialization failed");
+    });
+    await failureStarted;
+    await expect(driver.prepareUpload("blocked-again.txt", async (path) => writeFileSync(path, "blocked")))
+      .rejects.toThrow(/count quota/);
+    releaseFailure();
+    await expect(pendingFailure).rejects.toThrow(/materialization failed/);
+    const afterFailureId = await driver.prepareUpload("after-failure.txt", async (path) => writeFileSync(path, "available"));
+    expect(readFileSync(join(mountedRoot, afterFailureId), "utf8")).toBe("available");
+    await driver.stop();
+    expect(readdirSync(directory)).toEqual([]);
   });
 
   it("reaps installation-scoped browser containers and networks after restart", async () => {

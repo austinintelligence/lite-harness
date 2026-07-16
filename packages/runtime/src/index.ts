@@ -42,8 +42,8 @@ export class BrokeredToolRuntime implements ToolRuntime {
 
   constructor(private readonly inner: ToolRuntime) {}
 
-  register(name: string, handler: BrokeredToolHandler, definition?: Omit<ToolDefinition, "name">): void {
-    this.registerDynamic(name, handler, () => definition ? { name, ...definition } : {
+  register(name: string, handler: BrokeredToolHandler, definition?: Omit<ToolDefinition, "name">): () => void {
+    return this.registerDynamic(name, handler, () => definition ? { name, ...definition } : {
       name,
       description: `Invoke the Manager-brokered ${name} capability.`,
       inputSchema: { type: "object", additionalProperties: true },

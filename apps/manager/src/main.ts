@@ -1,11 +1,10 @@
-import { basename, join } from "node:path";
-import { accessSync, constants, mkdirSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { accessSync, constants, readFileSync, statfsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { loadManagerConfiguration, type ValidatedManagerConfiguration } from "@lite-harness/config";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import type { IntervalTrigger } from "@lite-harness/automation";
-import type { BrowserAction, BrowserOwner } from "@lite-harness/browser";
 import { RunService } from "@lite-harness/control-plane";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegated-runtime";
@@ -288,83 +287,22 @@ async function configureBrokeredTools(
   }
   const browserImage = process.env.LITE_HARNESS_BROWSER_IMAGE;
   if (!browserImage) return { stop: async () => undefined };
-  const { DockerBrowserDriver, DurableBrowserSessionStore, EncryptedBrowserProfileStore, ManagedBrowserBroker, reconcileBrowserResources } = await import("@lite-harness/browser");
   const allowedOrigins = (process.env.LITE_HARNESS_BROWSER_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   const remoteCdpEndpoint = process.env.LITE_HARNESS_BROWSER_REMOTE_CDP;
   const profileId = process.env.LITE_HARNESS_BROWSER_PROFILE_ID;
   const profileKey = profileId ? await resolveStoredKey("LITE_HARNESS_BROWSER_PROFILE_KEY", "browser.profile-root") : undefined;
-  const reapedBrowserResources = await reconcileBrowserResources({ installationId: dataDir });
-  if (reapedBrowserResources.containers || reapedBrowserResources.networks) {
-    process.stderr.write(`lite-harness manager: reaped ${reapedBrowserResources.containers} browser container(s) and ${reapedBrowserResources.networks} network(s)\n`);
-  }
-  const browserQuarantineRoot = join(dataDir, "browser-quarantine");
-  rmSync(browserQuarantineRoot, { recursive: true, force: true });
-  mkdirSync(browserQuarantineRoot, { recursive: true, mode: 0o700 });
-  const browserStore = new DurableBrowserSessionStore(join(dataDir, "browser.sqlite"));
-  const interruptedBrowserSessions = browserStore.reconcileInterrupted();
-  if (interruptedBrowserSessions > 0) {
-    process.stderr.write(`lite-harness manager: reconciled ${interruptedBrowserSessions} interrupted browser session(s)\n`);
-  }
-  const browser = new ManagedBrowserBroker(() => new DockerBrowserDriver({
+  const { configureManagerBrowserCapability } = await import("./browser-capability.js");
+  return await configureManagerBrowserCapability({
+    runtime,
+    artifacts,
+    dataDir,
     image: browserImage,
-    quarantineRoot: browserQuarantineRoot,
-    installationId: dataDir,
-    ...(remoteCdpEndpoint ? { remoteCdpEndpoint } : {}),
-  }), {
+    allowedOrigins,
+    allowPrivateNetworks: configuration.browserPrivateNetworksAllowed,
     idleTtlMs: configuration.browserIdleMs,
-    durabilityStore: browserStore,
-    ...(profileKey ? { profileStore: new EncryptedBrowserProfileStore(join(dataDir, "browser-profiles"), profileKey) } : {}),
+    ...(remoteCdpEndpoint ? { remoteCdpEndpoint } : {}),
+    ...(profileId && profileKey ? { profileId, profileKey } : {}),
   });
-  runtime.register("browser_open", async (params) => {
-    const principal = requireToolPrincipal(params.runId, params.principal);
-    const owner: BrowserOwner = { ...principal, runId: params.runId as string };
-    const sessionId = browser.create(owner, {
-      ...(allowedOrigins.length ? { allowedOrigins } : {}),
-      allowPrivateNetworks: configuration.browserPrivateNetworksAllowed,
-    }, profileId);
-    return { callId: params.call.id, ok: true, content: JSON.stringify({ sessionId }), metadata: { sessionId } };
-  });
-  runtime.register("browser_action", async (params) => {
-    const principal = requireToolPrincipal(params.runId, params.principal);
-    const sessionId = toolString(params.call.arguments.sessionId, "sessionId");
-    let action = validateBrowserAction(params.call.arguments.command);
-    const owner: BrowserOwner = { ...principal, runId: params.runId as string };
-    let uploadArtifactId: string | undefined;
-    if (action.action === "upload") {
-      uploadArtifactId = toolString(action.artifactId, "browser upload artifactId");
-      const source = artifacts.describe(uploadArtifactId, principal);
-      if (!source || source.workspaceId !== params.workspaceId) throw new Error("Browser upload artifact is unavailable in this workspace");
-      const quarantineId = await browser.prepareUpload(sessionId, owner, basename(source.path), async (path) => {
-        await artifacts.materializeToFile(uploadArtifactId as string, principal, path);
-      });
-      action = { action: "upload", ref: action.ref, name: basename(source.path), quarantineId };
-    }
-    const result = await browser.execute(sessionId, owner, action, params.signal);
-    if (uploadArtifactId) browser.recordArtifact(sessionId, owner, uploadArtifactId, "UPLOAD");
-    if (result.artifact) {
-      const { localPath } = result.artifact;
-      if (!localPath) throw new Error("Browser artifact did not cross the quarantine boundary");
-      let record;
-      try {
-        record = await artifacts.publishFromFile({
-          runId: params.runId as string, workspaceId: params.workspaceId, principal,
-          path: `browser/${result.artifact.name}`, mediaType: result.artifact.mediaType, sourcePath: localPath,
-        });
-      } finally {
-        browser.releaseArtifact(sessionId, owner, localPath);
-      }
-      browser.recordArtifact(sessionId, owner, record.id, "DOWNLOAD");
-      return { callId: params.call.id, ok: true, content: JSON.stringify({ ...result, artifact: { ...record } }), metadata: { artifactId: record.id } };
-    }
-    return { callId: params.call.id, ok: true, content: JSON.stringify(result) };
-  });
-  runtime.register("browser_close", async (params) => {
-    const principal = requireToolPrincipal(params.runId, params.principal);
-    const sessionId = toolString(params.call.arguments.sessionId, "sessionId");
-    await browser.close(sessionId, { ...principal, runId: params.runId as string });
-    return { callId: params.call.id, ok: true, content: JSON.stringify({ sessionId, closed: true }) };
-  });
-  return { stop: async () => { await browser.closeAll(); browserStore.close(); } };
 }
 
 async function resolveStoredKey(environmentName: string, profileId: string): Promise<Buffer> {
@@ -374,15 +312,6 @@ async function resolveStoredKey(environmentName: string, profileId: string): Pro
   const key = Buffer.from(value, "base64");
   if (key.length !== 32) throw new Error(`${environmentName} must be a base64-encoded 32-byte key`);
   return key;
-}
-
-function validateBrowserAction(value: unknown): BrowserAction {
-  if (!value || typeof value !== "object") throw new Error("Browser command must be an object");
-  const record = value as Record<string, unknown>;
-  const allowed = new Set(["navigate", "snapshot", "click", "type", "select", "hover", "keyboard", "wait", "screenshot", "pdf", "upload",
-    "scroll", "drag", "tabs", "new_tab", "switch_tab", "close_tab", "inspect", "back", "forward", "reload"]);
-  if (typeof record.action !== "string" || !allowed.has(record.action)) throw new Error("Browser action is invalid");
-  return record as unknown as BrowserAction;
 }
 
 function requireToolPrincipal(runId: string | undefined, principal: InternalPrincipal | undefined): InternalPrincipal {

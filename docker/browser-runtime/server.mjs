@@ -15,10 +15,17 @@ let policy = {};
 let proxyServer;
 let consoleRecords = [];
 let networkRecords = [];
+let referenceStates = new WeakMap();
+let referenceEpochs = new WeakMap();
 const input = createInterface({ input: process.stdin });
 const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+let requestQueue = Promise.resolve();
 
-input.on("line", async (line) => {
+input.on("line", (line) => {
+  requestQueue = requestQueue.then(() => handleRequest(line), () => handleRequest(line));
+});
+
+async function handleRequest(line) {
   let request;
   try {
     request = JSON.parse(line);
@@ -27,7 +34,7 @@ input.on("line", async (line) => {
   } catch (error) {
     if (request?.id !== undefined) send({ id: request.id, error: { code: -32000, message: error instanceof Error ? error.message : String(error) } });
   }
-});
+}
 
 async function dispatch(method, params) {
   if (method === "initialize") {
@@ -73,6 +80,8 @@ async function dispatch(method, params) {
 
 async function createContext(storageState) {
     consoleRecords = []; networkRecords = [];
+    referenceStates = new WeakMap();
+    referenceEpochs = new WeakMap();
     context = await browser.newContext({ acceptDownloads: true, serviceWorkers: "block", ...(storageState ? { storageState } : {}) });
     // Legacy standalone execution retains the in-process policy route. The
     // managed path always supplies proxyServer and enforces policy outside the
@@ -87,6 +96,7 @@ async function createContext(storageState) {
       });
     }
     await context.routeWebSocket(/.*/, (socket) => socket.close({ code: 1008, reason: "WebSockets are disabled by the browser broker" }));
+    context.on("page", (target) => attachPageObservers(target));
     context.on("requestfinished", (request) => {
       networkRecords.push({ method: request.method(), url: request.url().slice(0, 2_048), resourceType: request.resourceType(), at: new Date().toISOString() });
       networkRecords = networkRecords.slice(-500);
@@ -98,21 +108,22 @@ async function createContext(storageState) {
 async function invoke(command) {
   if (command.action === "navigate") {
     await assertAllowed(command.url);
+    await resetReferences(page);
     await page.goto(command.url, { waitUntil: "domcontentloaded" });
     return metadata();
   }
-  if (command.action === "back") { await page.goBack(); return metadata(); }
-  if (command.action === "forward") { await page.goForward(); return metadata(); }
-  if (command.action === "reload") { await page.reload(); return metadata(); }
+  if (command.action === "back") { await resetReferences(page); await page.goBack(); return metadata(); }
+  if (command.action === "forward") { await resetReferences(page); await page.goForward(); return metadata(); }
+  if (command.action === "reload") { await resetReferences(page); await page.reload(); return metadata(); }
   if (command.action === "wait") {
     if (!Number.isInteger(command.milliseconds) || command.milliseconds < 0 || command.milliseconds > 30_000) throw new Error("Invalid browser wait");
     await page.waitForTimeout(command.milliseconds); return metadata();
   }
   if (command.action === "tabs") return { value: await tabList() };
   if (command.action === "new_tab") { page = await context.newPage(); attachPageObservers(page); return { ...await metadata(), value: await tabList() }; }
-  if (command.action === "switch_tab") { page = tabById(command.tabId); return metadata(); }
+  if (command.action === "switch_tab") { page = tabById(command.tabId); attachPageObservers(page); return metadata(); }
   if (command.action === "close_tab") {
-    const target = tabById(command.tabId); await target.close();
+    const target = tabById(command.tabId); await resetReferences(target); await target.close();
     page = context.pages()[0] ?? await context.newPage(); attachPageObservers(page);
     return { ...await metadata(), value: await tabList() };
   }
@@ -135,45 +146,151 @@ async function invoke(command) {
     });
   }
   if (command.action === "upload") {
-    assertRef(command.ref);
     assertQuarantineId(command.quarantineId);
     const path = join("/quarantine", command.quarantineId);
     const file = await stat(path);
     if (!file.isFile() || file.size > 16 * 1024 * 1024) throw new Error("Upload artifact is invalid");
-    try { await page.locator(`[data-lite-ref="${command.ref}"]`).setInputFiles(path); }
-    finally { await rm(path, { force: true }); }
+    const element = await resolveRef(command.ref);
+    // Chromium may read File contents after the input event returns. The
+    // per-session quarantine is removed by the driver at teardown, which is
+    // the first safe point to release upload staging.
+    await element.setInputFiles(path);
     return metadata();
   }
   if (["click", "type", "select", "hover"].includes(command.action)) {
-    assertRef(command.ref);
-    const locator = page.locator(`[data-lite-ref="${command.ref}"]`);
+    const element = await resolveRef(command.ref);
     if (command.action === "click" && command.expectDownload) {
-      const [download] = await Promise.all([page.waitForEvent("download"), locator.click()]);
+      const [download] = await Promise.all([page.waitForEvent("download"), element.click()]);
       return await quarantineArtifact(safeName(download.suggestedFilename()), "application/octet-stream", async (path) => {
         await download.saveAs(path);
       });
     }
-    if (command.action === "click") await locator.click();
-    if (command.action === "type") await locator.fill(command.text);
-    if (command.action === "select") await locator.selectOption(command.value);
-    if (command.action === "hover") await locator.hover();
+    if (command.action === "click") await element.click();
+    if (command.action === "type") await element.fill(command.text);
+    if (command.action === "select") await element.selectOption(command.value);
+    if (command.action === "hover") await element.hover();
     return metadata();
   }
   if (command.action === "drag") {
-    assertRef(command.sourceRef); assertRef(command.targetRef);
-    await page.locator(`[data-lite-ref="${command.sourceRef}"]`).dragTo(page.locator(`[data-lite-ref="${command.targetRef}"]`));
+    const source = await resolveRef(command.sourceRef);
+    const target = await resolveRef(command.targetRef);
+    await source.hover();
+    await page.mouse.down();
+    try {
+      await target.hover();
+      await page.mouse.up();
+    } catch (error) {
+      await page.mouse.up().catch(() => undefined);
+      throw error;
+    }
     return metadata();
   }
   throw new Error(`Unsupported browser action: ${command.action}`);
 }
 
 async function snapshot() {
-  const elements = await page.locator("a,button,input,textarea,select,[role],[tabindex]").evaluateAll((nodes) => nodes.slice(0, 500).map((node, index) => {
-    const ref = `e${index + 1}`;
-    node.setAttribute("data-lite-ref", ref);
-    return { ref, role: node.getAttribute("role") || node.tagName.toLowerCase(), name: node.getAttribute("aria-label") || node.textContent?.trim().slice(0, 200) || node.getAttribute("name") || "" };
-  }));
-  return { ...await metadata(), snapshot: { text: (await page.locator("body").innerText()).slice(0, 200_000), elements } };
+  const epoch = referenceEpochs.get(page) ?? 0;
+  const previous = referenceStates.get(page) ?? { next: 1, refs: new Map() };
+  const previousEntries = [...previous.refs.entries()];
+  const allHandles = await page.locator("a,button,input,textarea,select,[role],[tabindex]").elementHandles();
+  const currentHandles = allHandles.slice(0, 500);
+  await Promise.allSettled(allHandles.slice(500).map((handle) => handle.dispose()));
+  let captured;
+  try {
+    captured = await page.evaluate(({ current, prior }) => {
+      const descriptors = [];
+      for (let currentIndex = 0; currentIndex < current.length; currentIndex += 1) {
+        const node = current[currentIndex];
+        let priorIndex = -1;
+        for (let candidateIndex = 0; candidateIndex < prior.length; candidateIndex += 1) {
+          if (prior[candidateIndex] === node) {
+            priorIndex = candidateIndex;
+            break;
+          }
+        }
+        descriptors[descriptors.length] = {
+          priorIndex,
+          role: node.getAttribute("role") || node.tagName.toLowerCase(),
+          name: node.getAttribute("aria-label") || node.textContent?.trim().slice(0, 200) || node.getAttribute("name") || "",
+        };
+      }
+      return descriptors;
+    }, { current: currentHandles, prior: previousEntries.map(([, handle]) => handle) });
+  } catch (error) {
+    await Promise.allSettled(currentHandles.map((handle) => handle.dispose()));
+    if (previousEntries.length > 0) {
+      await resetReferences(page);
+      return await snapshot();
+    }
+    throw error;
+  }
+  if ((referenceEpochs.get(page) ?? 0) !== epoch) {
+    await Promise.allSettled(currentHandles.map((handle) => handle.dispose()));
+    return await snapshot();
+  }
+
+  const refs = new Map();
+  const retained = new Set();
+  const dispose = [];
+  const elements = [];
+  let next = previous.next;
+  const newReferenceCount = captured.filter((descriptor) => descriptor.priorIndex < 0).length;
+  if (next + newReferenceCount - 1 > 99_999) {
+    await Promise.allSettled(currentHandles.map((handle) => handle.dispose()));
+    throw new Error("Browser element reference limit reached");
+  }
+  for (let index = 0; index < captured.length; index += 1) {
+    const descriptor = captured[index];
+    const current = currentHandles[index];
+    const prior = previousEntries[descriptor.priorIndex];
+    let ref;
+    if (prior && !retained.has(descriptor.priorIndex)) {
+      [ref] = prior;
+      refs.set(ref, prior[1]);
+      retained.add(descriptor.priorIndex);
+      dispose.push(current);
+    } else {
+      ref = `e${next}`;
+      next += 1;
+      refs.set(ref, current);
+    }
+    elements.push({ ref, role: descriptor.role, name: descriptor.name });
+  }
+  for (let index = 0; index < previousEntries.length; index += 1) {
+    if (!retained.has(index)) dispose.push(previousEntries[index][1]);
+  }
+  referenceStates.set(page, { next, refs });
+  await Promise.allSettled(dispose.map((handle) => handle.dispose()));
+  return {
+    ...await metadata(),
+    snapshot: { text: (await page.locator("body").innerText()).slice(0, 200_000), elements },
+  };
+}
+
+async function resolveRef(ref) {
+  assertRef(ref);
+  const state = referenceStates.get(page);
+  const handle = state?.refs.get(ref);
+  if (!handle) throw new Error("Browser element reference is unavailable");
+  let connected = false;
+  try {
+    connected = await handle.evaluate((node) => node.isConnected && node.ownerDocument === document);
+  } catch {
+    connected = false;
+  }
+  if (!connected) {
+    state.refs.delete(ref);
+    await handle.dispose().catch(() => undefined);
+    throw new Error("Browser element reference is unavailable");
+  }
+  return handle;
+}
+
+async function resetReferences(target) {
+  referenceEpochs.set(target, (referenceEpochs.get(target) ?? 0) + 1);
+  const state = referenceStates.get(target);
+  referenceStates.delete(target);
+  if (state) await Promise.allSettled([...state.refs.values()].map((handle) => handle.dispose()));
 }
 
 async function metadata() { return { url: page.url(), title: await page.title() }; }
@@ -197,6 +314,9 @@ function safeName(name) { return String(name).replace(/[^A-Za-z0-9._-]/g, "_").s
 function attachPageObservers(target) {
   if (target.__liteObserved) return;
   target.__liteObserved = true;
+  target.on("framenavigated", (frame) => {
+    if (frame === target.mainFrame()) void resetReferences(target);
+  });
   target.on("console", (message) => {
     consoleRecords.push({ type: message.type(), text: message.text().slice(0, 2_000), at: new Date().toISOString() });
     consoleRecords = consoleRecords.slice(-200);

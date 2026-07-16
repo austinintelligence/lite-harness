@@ -31,6 +31,7 @@ const child = spawn(process.execPath, ["--import", "tsx", "apps/launcher/src/mai
 let stderr = "";
 child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-16_384); });
 
+let report;
 try {
   const ready = await pollJson(`http://127.0.0.1:${port}/readyz`, 20_000);
   const startupMs = performance.now() - startedAt;
@@ -61,7 +62,7 @@ try {
   }
   if (!terminal || terminal.status !== "SUCCEEDED") throw new Error(`Benchmark run did not succeed: ${terminal?.status ?? "unknown"}`);
 
-  const report = {
+  report = {
     schemaVersion: 1,
     measuredAt: new Date().toISOString(),
     environment: { platform: process.platform, architecture: process.arch, node: process.version },
@@ -75,20 +76,34 @@ try {
     terminalStatus: terminal.status,
     note: "This measures the process/kernel path only; credentialed inference uses the Hermes test wrapper.",
   };
-  await writeFile(join(root, "docs", "performance-baseline.json"), `${JSON.stringify(report, null, 2)}\n`);
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } catch (error) {
   throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr}`);
 } finally {
   await stopBenchmarkProcess(child);
   await removeBenchmarkDirectory(dataDir);
 }
+await writeFile(join(root, "docs", "performance-baseline.json"), `${JSON.stringify(report, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 async function stopBenchmarkProcess(processHandle) {
-  if (processHandle.exitCode === null && processHandle.signalCode === null) processHandle.kill("SIGTERM");
+  if (!processHandle.pid) return;
+  if (process.platform === "win32") {
+    const graceful = await taskkillProcessTree(processHandle.pid, false);
+    if (!graceful.ok) {
+      const forced = await taskkillProcessTree(processHandle.pid, true);
+      if (!forced.ok && !isExited(processHandle)) throw taskkillError(processHandle.pid, forced);
+    }
+    if (await waitForExit(processHandle, 15_000)) return;
+    const forced = await taskkillProcessTree(processHandle.pid, true);
+    if (!forced.ok && !isExited(processHandle)) throw taskkillError(processHandle.pid, forced);
+    if (!(await waitForExit(processHandle, 5_000))) throw new Error(`Benchmark launcher ${processHandle.pid} did not exit after taskkill`);
+    return;
+  }
+  if (isExited(processHandle)) return;
+  processHandle.kill("SIGTERM");
   if (await waitForExit(processHandle, 15_000)) return;
   await forceKillProcessTree(processHandle.pid);
-  await waitForExit(processHandle, 5_000);
+  if (!(await waitForExit(processHandle, 5_000))) throw new Error(`Benchmark launcher ${processHandle.pid} did not exit after SIGKILL`);
 }
 
 async function waitForExit(processHandle, timeoutMs) {
@@ -108,15 +123,31 @@ async function waitForExit(processHandle, timeoutMs) {
 
 async function forceKillProcessTree(pid) {
   if (!pid) return;
-  if (process.platform === "win32") {
-    await new Promise((resolveKill) => {
-      execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => resolveKill());
-    });
-    return;
-  }
   try { process.kill(-pid, "SIGKILL"); } catch (error) {
     if (error?.code !== "ESRCH") throw error;
   }
+}
+
+async function taskkillProcessTree(pid, force) {
+  const args = ["/PID", String(pid), "/T"];
+  if (force) args.push("/F");
+  return await new Promise((resolveKill, rejectKill) => {
+    execFile("taskkill.exe", args, { windowsHide: true }, (error, _stdout, stderr) => {
+      if (error && typeof error.code !== "number") {
+        rejectKill(error);
+        return;
+      }
+      resolveKill({ ok: !error, code: error?.code ?? 0, stderr: String(stderr ?? "").trim() });
+    });
+  });
+}
+
+function isExited(processHandle) {
+  return processHandle.exitCode !== null || processHandle.signalCode !== null;
+}
+
+function taskkillError(pid, result) {
+  return new Error(`taskkill failed for benchmark launcher ${pid} (exit ${result.code}): ${result.stderr || "unknown error"}`);
 }
 
 async function removeBenchmarkDirectory(path) {

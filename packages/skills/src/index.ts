@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  constants as fsConstants,
   chmodSync,
-  copyFileSync,
   lstatSync,
+  fstatSync,
   mkdirSync,
   openSync,
   closeSync,
@@ -11,6 +12,8 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  type Stats,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -109,8 +112,10 @@ export class ImmutableSkillCatalog {
     mkdirSync(generationRoot, { recursive: true, mode: 0o700 });
     this.#entries = Object.freeze(selectedValues.map((manifest) => {
       const snapshotPath = join(generationRoot, `${manifest.contentDigest}.md`);
+      let created = false;
       try {
-        copyFileSync(manifest.sourcePath, snapshotPath, 1 /* COPYFILE_EXCL */);
+        writeFileSync(snapshotPath, manifest.sourceBytes, { flag: "wx", mode: 0o400 });
+        created = true;
         chmodSync(snapshotPath, 0o400);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -118,6 +123,9 @@ export class ImmutableSkillCatalog {
       if (digestFile(snapshotPath, limits.maxBytes) !== manifest.contentDigest) {
         rmSync(snapshotPath, { force: true });
         throw new Error(`Skill changed while immutable snapshot was created: ${manifest.relativePath}`);
+      }
+      if (!created && (lstatSync(snapshotPath).mode & 0o222) !== 0) {
+        throw new Error(`Immutable skill snapshot is writable: ${manifest.relativePath}`);
       }
       return Object.freeze({ ...publicEntry(manifest), snapshotPath, generation: this.generation });
     }));
@@ -249,7 +257,7 @@ export function discoverSkills(
   });
 }
 
-interface ScannedSkill extends SkillCatalogEntry { sourcePath: string }
+interface ScannedSkill extends SkillCatalogEntry { sourceBytes: Buffer }
 interface InternalSkillEntry extends SkillCatalogEntry { snapshotPath: string; generation: string }
 
 function discoverSource(source: SkillSource, maxDepth: number, maxCandidates: number): Array<{ path: string; source: SkillSource }> {
@@ -278,40 +286,21 @@ function scanManifest(
   source: SkillSource,
   limits: { maxBytes: number; maxFrontmatterBytes: number; protocolVersion: string },
 ): ScannedSkill {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > limits.maxBytes) throw new Error(`Skill exceeds ${limits.maxBytes} bytes: ${path}`);
-  const descriptor = openSync(path, "r");
-  const digest = createHash("sha256");
-  const chunks: Buffer[] = [];
-  let captured = 0;
-  let total = 0;
-  try {
-    const buffer = Buffer.alloc(16 * 1024);
-    while (true) {
-      const read = readSync(descriptor, buffer, 0, buffer.length, null);
-      if (read === 0) break;
-      total += read;
-      if (total > limits.maxBytes) throw new Error(`Skill exceeds ${limits.maxBytes} bytes: ${path}`);
-      const chunk = Buffer.from(buffer.subarray(0, read));
-      digest.update(chunk);
-      if (captured < limits.maxFrontmatterBytes) {
-        const slice = chunk.subarray(0, Math.min(chunk.length, limits.maxFrontmatterBytes - captured));
-        chunks.push(slice); captured += slice.length;
-      }
-    }
-  } finally { closeSync(descriptor); }
-  const header = Buffer.concat(chunks).toString("utf8");
+  const root = realpathSync(source.root);
+  if (!isWithin(root, realpathSync(path))) throw new Error("Skill source resolved outside its configured root");
+  const sourceFile = readStableRegularFile(path, limits.maxBytes, "Skill");
+  if (!isWithin(root, realpathSync(path))) throw new Error("Skill source changed outside its configured root");
+  const header = sourceFile.bytes.subarray(0, limits.maxFrontmatterBytes).toString("utf8");
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(header);
   if (!match) throw new Error(`Skill frontmatter is missing, malformed, or exceeds ${limits.maxFrontmatterBytes} bytes: ${path}`);
   const metadata = parseFrontmatter(match[1] ?? "", path);
-  const root = realpathSync(source.root);
   const relativePath = relative(root, path).replaceAll("\\", "/");
   const name = bounded(metadata.name, "skill name", 128, path);
   const description = bounded(metadata.description, "skill description", 1_024, path);
   return {
     name,
     description,
-    contentDigest: digest.digest("hex"),
+    contentDigest: sourceFile.digest,
     source: source.source,
     sourceVersion: bounded(metadata.source_version || source.sourceVersion || "unversioned", "skill source version", 128, path),
     visibilityScope: bounded(source.visibilityScope || metadata.visibility || "private", "skill visibility", 128, path),
@@ -323,7 +312,7 @@ function scanManifest(
     contentProvenance: bounded(metadata.content_provenance || source.source, "skill content provenance", 256, path),
     executableProvenance: bounded(metadata.executable_provenance || "none", "skill executable provenance", 256, path),
     permissionRequests: frozenCsv(metadata.permissions),
-    sourcePath: path,
+    sourceBytes: sourceFile.bytes,
   };
 }
 
@@ -348,19 +337,58 @@ function parseBody(text: string, path: string): string {
 }
 
 function digestFile(path: string, maxBytes: number): string {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) throw new Error(`Immutable skill snapshot is invalid: ${path}`);
-  const descriptor = openSync(path, "r");
+  return readStableRegularFile(path, maxBytes, "Immutable skill snapshot").digest;
+}
+
+function readStableRegularFile(path: string, maxBytes: number, label: string): { bytes: Buffer; digest: string } {
+  const initial = lstatSync(path);
+  if (!initial.isFile() || initial.isSymbolicLink() || initial.nlink !== 1) {
+    throw new Error(`${label} is not a stable single-link regular file: ${path}`);
+  }
+  if (initial.size > maxBytes) throw new Error(`${label} exceeds ${maxBytes} bytes: ${path}`);
+  const descriptor = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  const opened = fstatSync(descriptor);
+  if (!opened.isFile() || opened.nlink !== 1 || !sameFileIdentity(initial, opened)) {
+    closeSync(descriptor);
+    throw new Error(`${label} changed before its immutable read: ${path}`);
+  }
   const digest = createHash("sha256");
+  const chunks: Buffer[] = [];
+  let total = 0;
   try {
     const buffer = Buffer.alloc(16 * 1024);
     while (true) {
       const read = readSync(descriptor, buffer, 0, buffer.length, null);
       if (!read) break;
-      digest.update(buffer.subarray(0, read));
+      total += read;
+      if (total > maxBytes) throw new Error(`${label} exceeds ${maxBytes} bytes: ${path}`);
+      const chunk = Buffer.from(buffer.subarray(0, read));
+      chunks.push(chunk);
+      digest.update(chunk);
     }
-  } finally { closeSync(descriptor); }
-  return digest.digest("hex");
+    const completed = fstatSync(descriptor);
+    if (!sameStableFileVersion(opened, completed) || completed.nlink !== 1 || total !== completed.size) {
+      throw new Error(`${label} changed during its immutable read: ${path}`);
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  let current;
+  try { current = lstatSync(path); } catch { throw new Error(`${label} path changed during its immutable read: ${path}`); }
+  if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || !sameFileIdentity(opened, current) ||
+      !sameStableFileVersion(opened, current)) {
+    throw new Error(`${label} path changed during its immutable read: ${path}`);
+  }
+  return { bytes: Buffer.concat(chunks, total), digest: digest.digest("hex") };
+}
+
+function sameFileIdentity(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function sameStableFileVersion(left: Stats, right: Stats): boolean {
+  return sameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs &&
+    left.ctimeMs === right.ctimeMs && left.mode === right.mode;
 }
 
 function eligible(entry: SkillCatalogEntry, eligibility: SkillEligibility): boolean {

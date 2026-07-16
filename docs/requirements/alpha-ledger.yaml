@@ -1825,13 +1825,31 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/skills/src/index.ts",
+        "apps/manager/src/optional-systems.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/control-plane/src/index.ts",
+        "packages/runtime/src/index.ts"
+      ],
+      "testIds": [
+        "A19-IMMUTABLE-SNAPSHOT",
+        "A19-PRECEDENCE-GATES",
+        "A19-FILESYSTEM-SAFETY",
+        "A19-LIMITS",
+        "A19-REAL-RUN-LAZY",
+        "A19-TEXT-CANNOT-GRANT"
+      ],
+      "ciJob": "optional-system-evidence",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m9/optional-composition.json",
+          "producer": "pnpm test:optional-systems"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

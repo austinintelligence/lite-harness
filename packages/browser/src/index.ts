@@ -368,7 +368,11 @@ export class ProcessBrowserDriver implements BrowserDriver {
   }
 }
 
-export type BrowserDockerRunner = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+export interface BrowserDockerCommandOptions { signal?: AbortSignal; timeoutMs?: number }
+export type BrowserDockerRunner = (
+  args: readonly string[],
+  options?: BrowserDockerCommandOptions,
+) => Promise<{ code: number; stdout: string; stderr: string }>;
 export type BrowserProcessFactory = (
   spec: ProcessSpec,
   options: { timeoutMs: number; initialization: Record<string, unknown> },
@@ -390,7 +394,13 @@ export class ExternalBrowserEgressBroker {
     runner?: BrowserDockerRunner;
     externalNetwork?: string;
     installationId?: string;
-  }) {}
+    readinessTimeoutMs?: number;
+  }) {
+    if (options.readinessTimeoutMs !== undefined &&
+        (!Number.isSafeInteger(options.readinessTimeoutMs) || options.readinessTimeoutMs < 100 || options.readinessTimeoutMs > 60_000)) {
+      throw new Error("Browser egress readiness timeout must be between 100 and 60000 milliseconds");
+    }
+  }
 
   get proxyUrl(): string { return `http://${this.containerName}:8080`; }
 
@@ -398,7 +408,7 @@ export class ExternalBrowserEgressBroker {
     if (this.#started) return;
     const encodedPolicy = Buffer.from(JSON.stringify(policy)).toString("base64url");
     if (encodedPolicy.length > 64 * 1024) throw new Error("Browser egress policy is too large");
-    const run = this.options.runner ?? ((args) => runDocker(this.options.dockerCommand ?? "docker", args));
+    const run = this.options.runner ?? ((args, options) => runDocker(this.options.dockerCommand ?? "docker", args, options));
     const installation = browserLabelDigest(this.options.installationId ?? process.cwd());
     const network = await run([
       "network", "create", "--internal", "--driver", "bridge",
@@ -422,11 +432,21 @@ export class ExternalBrowserEgressBroker {
       if (proxy.code !== 0) throw new Error(`Could not start external browser egress broker: ${proxy.stderr}`);
       const connected = await run(["network", "connect", this.options.externalNetwork ?? "bridge", this.containerName]);
       if (connected.code !== 0) throw new Error(`Could not connect browser egress broker externally: ${connected.stderr}`);
-      const ready = await run([
-        "exec", this.containerName, "node", "-e",
-        "fetch('http://127.0.0.1:8080').then(r=>process.exit(r.status===403?0:1)).catch(()=>process.exit(1))",
-      ]);
-      if (ready.code !== 0) throw new Error(`External browser egress broker did not become ready: ${ready.stderr}`);
+      const readinessTimeoutMs = this.options.readinessTimeoutMs ?? 10_000;
+      const readinessDeadline = Date.now() + readinessTimeoutMs;
+      let ready: Awaited<ReturnType<BrowserDockerRunner>>;
+      for (;;) {
+        ready = await runBrowserDockerBeforeDeadline(run, [
+            "exec", this.containerName, "node", "-e",
+            "fetch('http://127.0.0.1:8080',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.status===403?0:1)).catch(()=>process.exit(1))",
+          ], readinessDeadline,
+          `External browser egress broker readiness timed out after ${readinessTimeoutMs}ms`);
+        if (ready.code === 0) break;
+        if (Date.now() >= readinessDeadline) {
+          throw new Error(`External browser egress broker did not become ready: ${ready.stderr || ready.stdout || `probe exited ${ready.code}`}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.min(100, Math.max(1, readinessDeadline - Date.now()))));
+      }
       this.#started = true;
     } catch (error) {
       await run(["container", "rm", "--force", this.containerName]).catch(() => undefined);
@@ -436,7 +456,7 @@ export class ExternalBrowserEgressBroker {
   }
 
   async stop(): Promise<void> {
-    const run = this.options.runner ?? ((args) => runDocker(this.options.dockerCommand ?? "docker", args));
+    const run = this.options.runner ?? ((args, options) => runDocker(this.options.dockerCommand ?? "docker", args, options));
     await run(["container", "rm", "--force", this.containerName]).catch(() => undefined);
     await run(["network", "rm", this.networkName]).catch(() => undefined);
     this.#started = false;
@@ -657,29 +677,81 @@ function validateRemoteCdpEndpoint(value: string): string {
   return url.toString();
 }
 
-function runDocker(command: string, args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runBrowserDockerBeforeDeadline(
+  run: BrowserDockerRunner,
+  args: readonly string[],
+  deadline: number,
+  timeoutMessage: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) throw new Error(timeoutMessage);
+  const controller = new AbortController();
+  const timeoutError = new Error(timeoutMessage);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, remainingMs);
+  });
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => run(args, { signal: controller.signal, timeoutMs: remainingMs })),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+function runDocker(
+  command: string,
+  args: readonly string[],
+  options: BrowserDockerCommandOptions = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, [...args], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputBytes = 0;
+    let settled = false;
+    let failure: unknown;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+      callback();
+    };
+    const terminate = (error: unknown) => {
+      if (settled || failure) return;
+      failure = error;
+      child.kill("SIGKILL");
+    };
+    const abort = () => terminate(options.signal?.reason ?? new Error("Browser Docker command was aborted"));
     const append = (target: Buffer[], chunk: Buffer) => {
+      if (failure) return;
       outputBytes += chunk.length;
       if (outputBytes > 1024 * 1024) {
-        child.kill();
-        reject(new Error("Docker command output exceeded 1 MiB"));
+        terminate(new Error("Docker command output exceeded 1 MiB"));
         return;
       }
       target.push(chunk);
     };
     child.stdout.on("data", (chunk: Buffer) => append(stdout, chunk));
     child.stderr.on("data", (chunk: Buffer) => append(stderr, chunk));
-    child.once("error", reject);
-    child.once("close", (code) => resolve({
-      code: code ?? 1,
-      stdout: Buffer.concat(stdout).toString("utf8").trim(),
-      stderr: Buffer.concat(stderr).toString("utf8").trim(),
-    }));
+    child.once("error", (error) => finish(() => reject(failure ?? error)));
+    child.once("close", (code) => finish(() => failure ? reject(failure) : resolve({
+        code: code ?? 1,
+        stdout: Buffer.concat(stdout).toString("utf8").trim(),
+        stderr: Buffer.concat(stderr).toString("utf8").trim(),
+      })));
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    timer = setTimeout(() => terminate(new Error(`Browser Docker command timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer.unref?.();
+    if (options.signal?.aborted) abort();
+    else options.signal?.addEventListener("abort", abort, { once: true });
   });
 }
 

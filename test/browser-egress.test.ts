@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DockerBrowserDriver,
+  ExternalBrowserEgressBroker,
   type BrowserAction,
   type BrowserActionResult,
   type BrowserDriver,
@@ -57,6 +58,56 @@ describe("external browser egress boundary", () => {
       image: `sha256:${"b".repeat(64)}`,
       remoteCdpEndpoint: "https://browser.example",
     })).toThrow(/disabled until it can use the external browser egress broker/);
+  });
+
+  it("waits for a cold egress proxy to become ready before starting Chromium", async () => {
+    let readinessAttempts = 0;
+    const process = new FakeProcessDriver();
+    const driver = new DockerBrowserDriver({
+      image: `sha256:${"c".repeat(64)}`,
+      dockerRunner: async (args) => {
+        if (args[0] === "exec") {
+          readinessAttempts += 1;
+          if (readinessAttempts < 3) return { code: 1, stdout: "", stderr: "connection refused" };
+        }
+        return { code: 0, stdout: "ok", stderr: "" };
+      },
+      processFactory: () => process,
+    });
+
+    await driver.start({ allowedOrigins: ["https://example.com"] });
+    expect(readinessAttempts).toBe(3);
+    expect(process.starts).toHaveLength(1);
+    await driver.stop();
+    expect(process.stops).toBe(1);
+  });
+
+  it("bounds a hung readiness command and still attempts authoritative Docker cleanup", async () => {
+    const dockerCalls: string[][] = [];
+    let probeAborted = false;
+    const broker = new ExternalBrowserEgressBroker({
+      image: `sha256:${"d".repeat(64)}`,
+      readinessTimeoutMs: 100,
+      runner: async (args, options) => {
+        dockerCalls.push([...args]);
+        if (args[0] !== "exec") return { code: 0, stdout: "ok", stderr: "" };
+        return await new Promise((_resolve, reject) => {
+          const abort = () => {
+            probeAborted = true;
+            reject(options?.signal?.reason ?? new Error("probe aborted"));
+          };
+          if (options?.signal?.aborted) abort();
+          else options?.signal?.addEventListener("abort", abort, { once: true });
+        });
+      },
+    });
+
+    await expect(broker.start({ allowedOrigins: ["https://example.com"] })).rejects.toThrow(/readiness timed out after 100ms/);
+    expect(probeAborted).toBe(true);
+    expect(dockerCalls).toEqual(expect.arrayContaining([
+      ["container", "rm", "--force", broker.containerName],
+      ["network", "rm", broker.networkName],
+    ]));
   });
 });
 

@@ -26,6 +26,14 @@ try {
       suite: "m9-optional-composition",
       command: "pnpm test:optional-systems",
       report: evidenceReport,
+      requirementIds: [
+        "D18", "R12-0894", "R12-0895", "R12-0896", "R12-0897", "R12-0909", "R12-0921",
+        "R12-0928", "R12-0940", "R15-1408", "R15-1410", "R15-1411", "R15-1412", "R15-1413",
+        "R15-1414", "R16-1497", "R16-1500", "R23-2014", "R23-2020", "R23-2021", "R23-2022",
+        "R23-2024", "R23-2025", "R23-2026", "R23-2031", "R23-2032", "R23-2033", "R23-2035",
+        "R25-2099", "R27-2182", "R27-2207", "R34-2875", "R34-2903", "R34-2907", "R34-2941",
+        "R34-2951",
+      ],
       regressionIds: [
         "BD-038-REGRESSION", "BD-044-REGRESSION", "BD-045-REGRESSION",
         "BD-046-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION",

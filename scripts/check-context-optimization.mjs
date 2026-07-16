@@ -27,6 +27,12 @@ try {
       suite: "m10-context-optimization",
       command: "pnpm test:context",
       report: evidenceReport,
+      requirementIds: [
+        "D20", "P10", "R18-1660", "R18-1674", "R18-1675", "R18-1682",
+        "R18-1696", "R18-1697", "R18-1698", "R18-1699", "R18-1701", "R18-1702",
+        "R18-1708", "R18-1709", "R18-1710", "R18-1711", "R18-1719", "R18-1720",
+        "R18-1721", "R18-1722", "R18-1723", "R18-1730",
+      ],
       regressionIds: ["BD-050-REGRESSION"],
       claims: {
         boundaries: {

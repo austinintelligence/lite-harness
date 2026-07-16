@@ -24,6 +24,7 @@ try {
       suite: "m9-run-snapshot",
       command: "pnpm test:run-snapshot",
       report: evidenceReport,
+      requirementIds: ["R07-0518", "R07-0526", "R07-0527", "R07-0528", "R07-0529"],
       regressionIds: ["BD-039-REGRESSION", "BD-048-REGRESSION"],
       claims: {
         boundaries: {

@@ -35,7 +35,10 @@ try {
       suite: "m5-provider-conformance",
       command: "pnpm test:providers",
       report: evidenceReport,
-      requirementIds: ["R14-1251", "R27-2223", "R34-2883", "R14-1052", "R14-1281"],
+      requirementIds: [
+        "R07-0530", "R07-0531", "R14-1052", "R14-1242", "R14-1243",
+        "R14-1251", "R14-1281", "R27-2223", "R34-2883",
+      ],
       regressionIds: [
         "BD-030-REGRESSION", "BD-031-REGRESSION", "BD-032-REGRESSION",
         "BD-033-REGRESSION", "BD-039-REGRESSION",

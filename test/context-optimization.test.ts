@@ -27,9 +27,19 @@ describe("durable conservative optical context", () => {
     const compiler = new ConservativeContextCompiler(
       store, { render: async () => ["data:image/png;base64,AAAA"] }, new Set(["vision-model"]),
     );
+    expect((await compiler.compile("vision-model"))[0]).toMatchObject({ representation: "text", content: exactText });
+    expect((await compiler.compile("unknown-model", "conservative", {
+      appId: "app", tenantId: "tenant", modelCapabilities: ["text", "vision"],
+    }))[0]).toMatchObject({ representation: "text", content: exactText });
     expect((await compiler.compile("vision-model", "conservative", {
       appId: "app", tenantId: "tenant", modelCapabilities: ["text"],
     }))[0]?.representation).toBe("text");
+    const failedRender = new ConservativeContextCompiler(
+      store, { render: async () => { throw new Error("renderer unavailable"); } }, new Set(["vision-model"]),
+    );
+    expect((await failedRender.compile("vision-model", "conservative", {
+      appId: "app", tenantId: "tenant", modelCapabilities: ["text", "vision"],
+    }))[0]).toMatchObject({ representation: "text", content: exactText });
     const rendered = await compiler.compile("vision-model", "conservative", {
       appId: "app", tenantId: "tenant", modelCapabilities: ["text", "vision"],
     });
@@ -67,6 +77,15 @@ describe("durable conservative optical context", () => {
     })) events.push(event);
     expect(events).toContainEqual({ type: "usage", inputTokens: 12, outputTokens: 3, cachedInputTokens: 2 });
     expect(store.fetchExact(block.id)).toBe(exactText);
+    const sensitiveText = "Security policy remains native. ".repeat(50);
+    const sourceText = "const immutableSource = true;\n".repeat(50);
+    store.put({ id: "sensitive", kind: "memory", exactText: sensitiveText, lossyEligible: true, sensitive: true });
+    store.put({ id: "source", kind: "source", exactText: sourceText, lossyEligible: true, sensitive: false });
+    const guarded = await compiler.compile("vision-model", "conservative", {
+      appId: "app", tenantId: "tenant", modelCapabilities: ["text", "vision"],
+    });
+    expect(guarded.find((item) => item.id === "sensitive")).toMatchObject({ representation: "text", content: sensitiveText });
+    expect(guarded.find((item) => item.id === "source")).toMatchObject({ representation: "text", content: sourceText });
     store.close();
   });
 });

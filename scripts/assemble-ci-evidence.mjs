@@ -4,6 +4,7 @@ import { dirname, relative, resolve } from "node:path";
 export const candidateEvidenceCatalog = Object.freeze([
   entry("m1-packaged-artifacts/packaged-artifacts.json", "evidence/m1/packaged-artifacts.json", "packaged-python-parity", "pnpm check:artifacts --python-wheel", "policy-check", "m1-packaged-artifacts"),
   entry("m10-context-optimization/context-optimization.json", "evidence/m10/context-optimization.json", "context-optimization-evidence", "pnpm test:context", "test-suite", "m10-context-optimization"),
+  entry("m10-paired-context/paired-context-evaluation.json", "evidence/m10/paired-context-evaluation.json", "paired-context-evidence", "pnpm check:pxpipe-evidence", "policy-check", "m10-paired-context-evaluation"),
   entry("lite-harness-readiness-evidence/evidence/m11/doctor.json", "evidence/m11/doctor.json", "repository-readiness", "pnpm check:doctor", "policy-check", "production-doctor"),
   entry("m11-observability/observability.json", "evidence/m11/observability.json", "observability-evidence", "pnpm check:observability", "test-suite", "m11-observability"),
   entry("m11-status-truth/status-truth.json", "evidence/m11/status-truth.json", "status-truth-evidence", "pnpm check:status-truth", "test-suite", "m11-status-truth"),

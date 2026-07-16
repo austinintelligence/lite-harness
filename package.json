@@ -32,6 +32,7 @@
     "check:doctor": "node scripts/check-doctor.mjs",
     "check:observability": "node scripts/check-observability.mjs",
     "check:status-truth": "node scripts/check-status-truth.mjs",
+    "check:pxpipe-evidence": "node scripts/check-paired-context-evidence.mjs",
     "generate:requirements": "node scripts/generate-requirements.mjs",
     "check:requirements:structure": "node scripts/check-requirements.mjs --structure",
     "check:requirements": "node scripts/check-requirements.mjs",

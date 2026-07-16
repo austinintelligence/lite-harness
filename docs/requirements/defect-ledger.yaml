@@ -1901,10 +1901,10 @@
       },
       "regression": {
         "testId": "BD-050-REGRESSION",
-        "path": "test/context-optimization.test.ts",
+        "path": "scripts/check-paired-context-evidence.mjs",
         "result": "pass",
         "evidenceArtifact": {
-          "path": "docs/pxpipe-paired-evaluation.json"
+          "path": "evidence/m10/paired-context-evaluation.json"
         }
       },
       "fixCommits": [

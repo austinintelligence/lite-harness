@@ -1008,15 +1008,11 @@
       "testIds": [
         "BD-050-REGRESSION"
       ],
-      "ciJob": "context-optimization-evidence",
+      "ciJob": "paired-context-evidence",
       "evidenceArtifacts": [
         {
-          "path": "evidence/m10/context-optimization.json",
-          "producer": "pnpm test:context"
-        },
-        {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
+          "path": "evidence/m10/paired-context-evaluation.json",
+          "producer": "pnpm check:pxpipe-evidence"
         }
       ],
       "status": "blocked",
@@ -10312,11 +10308,11 @@
       "testIds": [
         "BD-050-REGRESSION"
       ],
-      "ciJob": "context-optimization-evidence",
+      "ciJob": "paired-context-evidence",
       "evidenceArtifacts": [
         {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
+          "path": "evidence/m10/paired-context-evaluation.json",
+          "producer": "pnpm check:pxpipe-evidence"
         }
       ],
       "status": "blocked",
@@ -10724,11 +10720,11 @@
       "testIds": [
         "BD-050-REGRESSION"
       ],
-      "ciJob": "context-optimization-evidence",
+      "ciJob": "paired-context-evidence",
       "evidenceArtifacts": [
         {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
+          "path": "evidence/m10/paired-context-evaluation.json",
+          "producer": "pnpm check:pxpipe-evidence"
         }
       ],
       "status": "blocked",
@@ -10863,10 +10859,6 @@
         {
           "path": "evidence/m10/context-optimization.json",
           "producer": "pnpm test:context"
-        },
-        {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
         }
       ],
       "status": "blocked",
@@ -10928,11 +10920,11 @@
       "testIds": [
         "BD-050-REGRESSION"
       ],
-      "ciJob": "context-optimization-evidence",
+      "ciJob": "paired-context-evidence",
       "evidenceArtifacts": [
         {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
+          "path": "evidence/m10/paired-context-evaluation.json",
+          "producer": "pnpm check:pxpipe-evidence"
         }
       ],
       "status": "blocked",
@@ -21553,11 +21545,11 @@
       "testIds": [
         "BD-050-REGRESSION"
       ],
-      "ciJob": "context-optimization-evidence",
+      "ciJob": "paired-context-evidence",
       "evidenceArtifacts": [
         {
-          "path": "docs/pxpipe-paired-evaluation.json",
-          "producer": "pnpm evaluate:pxpipe:hermes"
+          "path": "evidence/m10/paired-context-evaluation.json",
+          "producer": "pnpm check:pxpipe-evidence"
         }
       ],
       "status": "blocked",

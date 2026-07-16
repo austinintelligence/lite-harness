@@ -21,6 +21,30 @@ describe("production optional-system composition", () => {
     await systems.stop();
   });
 
+  it("BD-050-REGRESSION keeps context optimization off by default and retains native text", async () => {
+    const root = temporaryRoot();
+    const exact = `${"Default-off semantic reference line.\n".repeat(80)}Recovery token: DEFAULT-OFF-42`;
+    const contextPath = join(root, "default-off.md");
+    writeFileSync(contextPath, exact);
+    const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
+    const systems = await configureProductionOptionalSystems({
+      dataDir: root, modelId: "vision-model", runtime,
+      environment: {
+        LITE_HARNESS_CONTEXT_FILE: contextPath,
+        LITE_HARNESS_CONTEXT_KIND: "memory",
+        LITE_HARNESS_CONTEXT_ALLOWED_APPS: "app",
+        LITE_HARNESS_CONTEXT_ALLOWED_MODELS: "vision-model",
+      },
+    });
+    const messages = await systems.context?.compile({
+      input: "read the reference", workspaceId: "workspace", modelId: "vision-model",
+      modelCapabilities: ["text", "vision"],
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] },
+    });
+    expect(messages).toEqual([{ role: "system", content: exact }]);
+    await systems.stop();
+  });
+
   it("BD-038-REGRESSION freezes context and skills and composes lazy MCP and owner-scoped caches", async () => {
     const root = temporaryRoot();
     const contextPath = join(root, "operator.md");

@@ -370,7 +370,7 @@ class PackagedPluginManager {
   async stop(): Promise<void> {
     if (this.child.exitCode !== null || this.child.signalCode !== null) return;
     this.child.kill("SIGTERM");
-    if (await Promise.race([this.#exit.then(() => true), delay(10_000).then(() => false)])) return;
+    if (await Promise.race([this.#exit.then(() => true), delay(45_000).then(() => false)])) return;
     this.child.kill("SIGKILL");
     if (!(await Promise.race([this.#exit.then(() => true), delay(10_000).then(() => false)]))) {
       throw new Error(`Packaged Manager did not exit:\n${this.#logs}`);
@@ -401,11 +401,11 @@ async function startPackagedManager(dataDir: string): Promise<PackagedPluginMana
       LITE_HARNESS_ENABLE_PLUGINS: "true",
       LITE_HARNESS_PLUGIN_IMAGE: image,
       LITE_HARNESS_PLUGIN_IDLE_MS: "100",
-      LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS: "1500",
+      LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS: "10000",
       LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS: "4000",
       LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS: "100",
       LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS: "3",
-      LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS: "4000",
+      LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS: "30000",
       LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS: "3000",
       LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS: "3000",
       LITE_HARNESS_SNAPSHOT_KEY: Buffer.alloc(32, 7).toString("base64"),

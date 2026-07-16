@@ -84,22 +84,42 @@ describe("managed browser broker", () => {
   });
 
   it("runs the pinned Chromium sidecar and stops it", async () => {
-    const driver = new DockerBrowserDriver({ image: browserImage, timeoutMs: 60_000 });
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end("<!doctype html><title>Pinned Chromium Fixture</title><h1>Pinned Chromium Fixture</h1>");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve));
+    const origin = `http://host.docker.internal:${(server.address() as AddressInfo).port}`;
+    let driver: DockerBrowserDriver | undefined;
+    let testFailure: unknown;
     try {
-      await driver.start({ allowedOrigins: ["https://example.com"] });
-      await expect(driver.execute({ action: "navigate", url: "https://example.com" })).resolves.toMatchObject({
-        url: "https://example.com/", title: "Example Domain",
+      driver = new DockerBrowserDriver({ image: browserImage, timeoutMs: 60_000 });
+      await driver.start({ allowedOrigins: [origin], allowPrivateNetworks: true });
+      await expect(driver.execute({ action: "navigate", url: origin })).resolves.toMatchObject({
+        url: `${origin}/`, title: "Pinned Chromium Fixture",
       });
       await expect(driver.execute({ action: "snapshot" })).resolves.toMatchObject({
-        snapshot: { text: expect.stringContaining("Example Domain") },
+        snapshot: { text: expect.stringContaining("Pinned Chromium Fixture") },
       });
       const screenshot = await driver.execute({ action: "screenshot" });
       expect(screenshot.artifact).toMatchObject({ name: "screenshot.png", mediaType: "image/png" });
       expect(readFileSync(screenshot.artifact?.localPath as string).subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
       driver.releaseArtifact(screenshot.artifact?.localPath as string);
-    } finally {
-      await driver.stop();
+    } catch (error) {
+      testFailure = error;
     }
+    const cleanupFailures: unknown[] = [];
+    if (driver) {
+      try { await driver.stop(); } catch (error) { cleanupFailures.push(error); }
+    }
+    try {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    } catch (error) { cleanupFailures.push(error); }
+    if (testFailure && cleanupFailures.length) {
+      throw new AggregateError([testFailure, ...cleanupFailures], "Browser smoke and cleanup both failed");
+    }
+    if (testFailure) throw testFailure;
+    if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "Browser smoke cleanup failed");
   }, 90_000);
 
   it("serializes an overlapping navigation and snapshot against one observed page", async () => {

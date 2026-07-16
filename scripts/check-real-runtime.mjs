@@ -121,6 +121,8 @@ try {
           mcpContainersInstallationScopedForReconciliation: true,
           expiredLeaseReacquisitionIncrementsFence: true,
           pausedWriterMutationRejectedAndResumed: true,
+          cleanupMatrixReapsSuccessFailureCancelTimeoutAndOom: true,
+          managerDeathOrphansInstallationScopedForReconciliation: true,
           cleanPackedSdkThroughHttpGatewayManagerIpcDockerAndArtifact: true,
           workspaceSurvivesContainerLiteAndDockerRestart: true,
           coldWorkspaceRestore: true,

@@ -68,7 +68,7 @@ describe("managed Docker plugin lifecycle", () => {
     expect({ active: supervisor.active, containers: managedContainers(installationId) }).toEqual({ active: false, containers: [] });
   }, 90_000);
 
-  it("A22-REAL-PLUGIN-ORPHAN-RECONCILE removes only installation-owned manager-death orphans", async () => {
+  it("A08-MANAGER-DEATH-ORPHAN-RECONCILE A22-REAL-PLUGIN-ORPHAN-RECONCILE removes only installation-owned manager-death orphans", async () => {
     const ownedInstallation = uniqueInstallation("orphan-owned");
     const siblingInstallation = uniqueInstallation("orphan-sibling");
     const owned = managedSandbox(ownedInstallation);

@@ -1583,7 +1583,9 @@
         "packages/runtime-docker/src/index.ts"
       ],
       "testIds": [
-        "A08-MCP-ORPHAN-OWNERSHIP"
+        "A08-MCP-ORPHAN-OWNERSHIP",
+        "A08-REAL-CLEANUP-MATRIX",
+        "A08-MANAGER-DEATH-ORPHAN-RECONCILE"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [
@@ -1595,7 +1597,7 @@
       "status": "blocked",
       "blockers": [
         "current-evidence-stale",
-        "packaged-cleanup-matrix-gap"
+        "manager-death-process-inventory-gap"
       ]
     },
     {

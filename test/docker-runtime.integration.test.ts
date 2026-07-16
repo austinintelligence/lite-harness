@@ -124,6 +124,69 @@ describe("Docker runtime integration", () => {
     }
   }, 90_000);
 
+  it("A08-REAL-CLEANUP-MATRIX reaps tool containers after success, failure, cancel, timeout, and OOM", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const principal = { appId: "a08-app", tenantId: "a08-tenant", userId: "a08-user", scopes: [] as string[] };
+    const runScenario = async (
+      name: string,
+      call: { id: string; name: string; arguments: Record<string, unknown> },
+      options: { commandTimeoutMs?: number; memory?: string } = {},
+      cancelWhenContainerAppears = false,
+    ): Promise<void> => {
+      const workspaceId = `a08-workspace-${name}-${suffix}`;
+      const runId = `a08-run-${name}-${suffix}`;
+      const installationId = `a08-installation-${name}-${suffix}`;
+      const store = new SqliteRunStore(":memory:");
+      const runtime = new DockerToolRuntime({ image, installationId, containerStore: store, ...options });
+      const controller = new AbortController();
+      try {
+        store.createOrGetRun(runId, {
+          agent: "coder", workspace: workspaceId, input: `A08 ${name}`, idempotencyKey: `a08-request-${name}-${suffix}`, principal,
+        });
+        const attempt = store.createRunAttempt(runId, `a08-attempt-${name}-${suffix}`);
+        const execution = runtime.execute({ runId, attemptId: attempt.id, workspaceId, principal, call, signal: controller.signal });
+        if (cancelWhenContainerAppears) {
+          await waitForDockerContainers(installationId, 15_000);
+          controller.abort(new Error("A08 cancellation requested"));
+          await expect(execution).rejects.toThrow(/A08 cancellation requested|aborted/i);
+        } else if (name === "timeout") {
+          await expect(execution).rejects.toThrow(/timed out|aborted/i);
+        } else {
+          const result = await execution;
+          expect(result.ok).toBe(name === "success" ? true : false);
+        }
+        await waitForDockerContainers(installationId, 15_000, true);
+        expect(listManagedDockerContainers(installationId)).toEqual([]);
+        expect(store.listRuntimeContainers()).toEqual([]);
+      } finally {
+        controller.abort();
+        await runtime.removeWorkspace(workspaceId, principal).catch(() => undefined);
+        store.close();
+      }
+    };
+
+    await runScenario("success", { id: "a08-success", name: "shell_exec", arguments: { script: "printf 'success\\n'" } });
+    await runScenario("failure", { id: "a08-failure", name: "shell_exec", arguments: { script: "exit 17" } });
+    await runScenario(
+      "cancel",
+      { id: "a08-cancel", name: "shell_exec", arguments: { script: "sleep 30" } },
+      {},
+      true,
+    );
+    await runScenario(
+      "timeout",
+      { id: "a08-timeout", name: "shell_exec", arguments: { script: "sleep 30" } },
+      { commandTimeoutMs: 100 },
+    );
+    await runScenario(
+      "oom",
+      { id: "a08-oom", name: "process_exec", arguments: {
+        argv: ["node", "-e", "Buffer.allocUnsafe(256 * 1024 * 1024).fill(1); setTimeout(() => {}, 1000)"],
+      } },
+      { memory: "32m" },
+    );
+  }, 180_000);
+
   it("persists a named-volume workspace across containers and restores an archive", async () => {
     const workspaceId = `integration-${Date.now()}`;
     const runId = `run_${Date.now()}`;
@@ -201,4 +264,28 @@ function hasActiveFence(store: SqliteRunStore, params: ToolExecutionContext): bo
   const lease = store.getWorkspaceLease(run.workspaceId, run.id);
   return attempt?.id === params.attemptId && lease?.fencingToken === params.fencingToken &&
     store.validateWorkspaceLease(lease);
+}
+
+function listManagedDockerContainers(installationId: string): string[] {
+  const result = spawnSync("docker", [
+    "ps", "--all", "--quiet", "--filter", "label=lite-harness.managed=true",
+    "--filter", `label=lite-harness.installation=${digestLabel(installationId)}`,
+  ], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Could not inspect A08 Docker inventory: ${result.stderr || result.stdout}`);
+  return (result.stdout ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+async function waitForDockerContainers(installationId: string, timeoutMs: number, empty = false): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const count = listManagedDockerContainers(installationId).length;
+    if ((empty && count === 0) || (!empty && count > 0)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for A08 ${empty ? "empty" : "active"} Docker inventory`);
+}
+
+function digestLabel(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }

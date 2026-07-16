@@ -482,50 +482,59 @@ export class DockerToolRuntime implements ToolRuntime {
     const label = (name: string, value: string) => ["--label", `lite-harness.${name}=${labelDigest(value)}`];
     const deadline = AbortSignal.timeout(this.config.commandTimeoutMs ?? 300_000);
     const toolSignal = params.signal ? AbortSignal.any([params.signal, deadline]) : deadline;
-    const create = await this.#run(
-      [
-        "create",
-        "--pull=never",
-        "--name", containerName,
-        "--label", "lite-harness.managed=true",
-        ...label("installation", installationId),
-        ...label("app", params.principal.appId),
-        ...label("tenant", params.principal.tenantId),
-        ...label("user", params.principal.userId),
-        ...label("workspace", identity),
-        ...label("run", params.runId),
-        ...label("attempt", params.attemptId),
-        ...label("tool-call", params.call.id),
-        "--interactive",
-        "--network",
-        "none",
-        "--read-only",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--pids-limit",
-        String(this.config.pidsLimit ?? 64),
-        "--memory",
-        this.config.memory ?? "256m",
-        "--cpus",
-        this.config.cpus ?? "1",
-        "--user",
-        "1000:1000",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "--workdir",
-        workingDirectory === "." ? "/workspace" : `/workspace/${workingDirectory.replaceAll("\\", "/")}`,
-        ...mountArgs(mount, readOnly),
-        this.config.image,
-        ...command,
-      ],
-      { signal: toolSignal, maxOutputBytes },
-    );
-    if (create.code !== 0) throw new Error(`Could not create Docker tool container: ${create.stderr}`);
+    let create: DockerCommandResult;
+    try {
+      create = await this.#run(
+        [
+          "create",
+          "--pull=never",
+          "--name", containerName,
+          "--label", "lite-harness.managed=true",
+          ...label("installation", installationId),
+          ...label("app", params.principal.appId),
+          ...label("tenant", params.principal.tenantId),
+          ...label("user", params.principal.userId),
+          ...label("workspace", identity),
+          ...label("run", params.runId),
+          ...label("attempt", params.attemptId),
+          ...label("tool-call", params.call.id),
+          "--interactive",
+          "--network",
+          "none",
+          "--read-only",
+          "--cap-drop",
+          "ALL",
+          "--security-opt",
+          "no-new-privileges",
+          "--pids-limit",
+          String(this.config.pidsLimit ?? 64),
+          "--memory",
+          this.config.memory ?? "256m",
+          "--cpus",
+          this.config.cpus ?? "1",
+          "--user",
+          "1000:1000",
+          "--tmpfs",
+          "/tmp:rw,noexec,nosuid,nodev,size=64m",
+          "--workdir",
+          workingDirectory === "." ? "/workspace" : `/workspace/${workingDirectory.replaceAll("\\", "/")}`,
+          ...mountArgs(mount, readOnly),
+          this.config.image,
+          ...command,
+        ],
+        { signal: toolSignal, maxOutputBytes },
+      );
+    } catch (error) {
+      await killAndReapWithRetry((args, options) => this.#run(args, options), containerName).catch(() => undefined);
+      throw error;
+    }
+    if (create.code !== 0) {
+      await killAndReapWithRetry((args, options) => this.#run(args, options), containerName).catch(() => undefined);
+      throw new Error(`Could not create Docker tool container: ${create.stderr}`);
+    }
     const runtimeContainerId = create.stdout.trim();
     if (!/^[a-f0-9]{12,64}$/i.test(runtimeContainerId)) {
-      await killAndReapContainer((args, options) => this.#run(args, options), containerName).catch(() => undefined);
+      await killAndReapWithRetry((args, options) => this.#run(args, options), containerName).catch(() => undefined);
       throw new Error("Docker create returned an invalid container ID");
     }
 
@@ -682,6 +691,24 @@ export async function killAndReapContainer(
   if (verified.code === 0 || !isNoSuchContainer(verified)) {
     throw new Error("Docker tool container removal could not be verified");
   }
+}
+
+async function killAndReapWithRetry(
+  runner: DockerCommandRunner,
+  runtimeContainerId: string,
+  attempts = 6,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await killAndReapContainer(runner, runtimeContainerId);
+      lastError = undefined;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+  }
+  if (lastError) throw lastError;
 }
 
 function isNoSuchContainer(result: DockerCommandResult): boolean {

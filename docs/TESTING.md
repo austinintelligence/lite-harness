@@ -56,7 +56,10 @@ The required host matrix is produced only by the manual, pinned
 validates the declared OS, architecture, Docker mode, and Docker Desktop
 identity, then builds immutable runtime images before invoking the real suite.
 The restart opt-in is scoped to that CI child process; do not run this producer
-locally while preserving a Docker Desktop session.
+locally while preserving a Docker Desktop session. To attach a lane to the
+candidate release fan-in, manually dispatch `CI` with its
+`external_platform_gate` input; the reusable workflow artifact is reconstructed
+under `evidence/external/` before aggregation.
 
 GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from

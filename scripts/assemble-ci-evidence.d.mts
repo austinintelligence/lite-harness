@@ -1,4 +1,5 @@
 export const candidateEvidenceLayout: ReadonlyArray<readonly [source: string, target: string]>;
+export const externalEvidenceLayout: ReadonlyArray<readonly [source: string, target: string]>;
 export interface CandidateEvidenceCatalogEntry {
   source: string;
   target: string;
@@ -25,4 +26,4 @@ export function candidateEvidenceCatalogFailures(
   document: Record<string, any>,
   options?: { catalog?: ReadonlyArray<Readonly<CandidateEvidenceCatalogEntry>>; expectedCi?: Record<string, string | null | undefined> },
 ): string[];
-export function assembleCandidateEvidence(sourceRoot: string, targetRoot: string, options?: { allowIncomplete?: boolean }): string[];
+export function assembleCandidateEvidence(sourceRoot: string, targetRoot: string, options?: { allowIncomplete?: boolean; includeExternal?: boolean }): string[];

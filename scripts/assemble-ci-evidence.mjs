@@ -44,6 +44,8 @@ export const requiredExternalGateAuthorities = Object.freeze({
 });
 
 export const candidateEvidenceLayout = Object.freeze(candidateEvidenceCatalog.map(({ source, target }) => Object.freeze([source, target])));
+export const externalEvidenceLayout = Object.freeze(Object.entries(requiredExternalGateAuthorities)
+  .map(([name, authority]) => Object.freeze([`external-${name}/${authority.path}`, authority.path])));
 
 export function candidateEvidenceProducer(path) {
   return candidateEvidenceCatalog.find(({ target }) => target === path) ?? null;
@@ -65,15 +67,16 @@ export function candidateEvidenceCatalogFailures(path, document, { catalog = can
   return failures;
 }
 
-export function assembleCandidateEvidence(sourceRoot, targetRoot, { allowIncomplete = false } = {}) {
-  const missing = candidateEvidenceLayout
+export function assembleCandidateEvidence(sourceRoot, targetRoot, { allowIncomplete = false, includeExternal = false } = {}) {
+  const layouts = includeExternal ? [...candidateEvidenceLayout, ...externalEvidenceLayout] : candidateEvidenceLayout;
+  const missing = layouts
     .filter(([source]) => !existsSync(resolve(sourceRoot, source)))
     .map(([source]) => source);
   if (missing.length && !allowIncomplete) {
     throw new Error(`Missing candidate evidence artifacts:\n${missing.map((path) => `- ${path}`).join("\n")}`);
   }
 
-  for (const [source, target] of candidateEvidenceLayout) {
+  for (const [source, target] of layouts) {
     if (!existsSync(resolve(sourceRoot, source))) continue;
     const sourcePath = resolve(sourceRoot, source);
     const targetPath = resolve(targetRoot, target);
@@ -81,13 +84,16 @@ export function assembleCandidateEvidence(sourceRoot, targetRoot, { allowIncompl
     mkdirSync(dirname(targetPath), { recursive: true });
     copyFileSync(sourcePath, targetPath);
   }
-  return candidateEvidenceLayout.filter(([source]) => existsSync(resolve(sourceRoot, source))).map(([, target]) => target);
+  return layouts.filter(([source]) => existsSync(resolve(sourceRoot, source))).map(([, target]) => target);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const sourceRoot = option("--source") ?? ".candidate-evidence";
   const targetRoot = option("--target") ?? ".";
-  const copied = assembleCandidateEvidence(resolve(sourceRoot), resolve(targetRoot), { allowIncomplete: process.argv.includes("--allow-incomplete") });
+  const copied = assembleCandidateEvidence(resolve(sourceRoot), resolve(targetRoot), {
+    allowIncomplete: process.argv.includes("--allow-incomplete"),
+    includeExternal: process.argv.includes("--include-external"),
+  });
   process.stdout.write(`Reconstructed ${copied.length} candidate evidence paths under ${relative(process.cwd(), resolve(targetRoot)) || "."}.\n`);
 }
 

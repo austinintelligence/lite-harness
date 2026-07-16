@@ -32,11 +32,16 @@ describe("external platform evidence producer", () => {
   it("wires the producer into the package and pinned external workflow", () => {
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
     const workflow = readFileSync(".github/workflows/external-platform-evidence.yml", "utf8");
+    const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
     expect(manifest.scripts["evidence:external"]).toBe("node scripts/evidence-external.mjs");
     expect(workflow).toContain("rootless-product-evidence:");
     expect(workflow).toContain("pnpm evidence:external --gate");
     expect(workflow).toContain("linuxRootless");
     expect(workflow).toContain("windows11DockerDesktopWsl2");
+    expect(workflow).toContain("workflow_call:");
+    expect(ciWorkflow).toContain("external_platform_gate");
+    expect(ciWorkflow).toContain("uses: ./.github/workflows/external-platform-evidence.yml");
+    expect(ciWorkflow).toContain("--include-external");
   });
 
   it("refuses to run locally before touching Docker", () => {

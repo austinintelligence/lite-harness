@@ -104,7 +104,7 @@ for (const command of [
   if (!ciWorkflow.includes(command)) failures.push(`CI is missing required branch command: ${command}`);
 }
 if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("actions/download-artifact@") ||
-    !ciWorkflow.includes("pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete") ||
+    !ciWorkflow.includes("pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete --include-external") ||
     !ciWorkflow.includes("NEEDS_JSON: ${{ toJSON(needs) }}") || !ciWorkflow.includes("FANIN_CHECKS_JSON:") ||
     !ciWorkflow.includes("pnpm check:secrets -- --include evidence --evidence") ||
     !ciWorkflow.includes("pnpm aggregate:evidence") || !ciWorkflow.includes("lite-harness-candidate-evidence") ||
@@ -112,10 +112,13 @@ if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("a
     !ciWorkflow.includes("steps.aggregate_secret_scan.outcome == 'success'")) {
   failures.push("CI lacks a fail-closed candidate evidence fan-in");
 }
+for (const token of ["external-platform-evidence:", "external_platform_gate", "include-external"]) {
+  if (!ciWorkflow.includes(token)) failures.push(`CI lacks external evidence integration: ${token}`);
+}
 if (!ciWorkflow.includes("LITE_HARNESS_ALLOW_DOCKER_RESTART: \"1\"")) {
   failures.push("required real-runtime CI must explicitly opt in to the destructive Docker restart evidence");
 }
-for (const token of ["rootless-product-evidence:", "pnpm evidence:external --gate", "linuxRootless", "macosAppleSiliconDockerDesktop", "windows11DockerDesktopWsl2"]) {
+for (const token of ["rootless-product-evidence:", "workflow_call:", "pnpm evidence:external --gate", "linuxRootless", "macosAppleSiliconDockerDesktop", "windows11DockerDesktopWsl2"]) {
   if (!externalWorkflow.includes(token)) failures.push(`external platform evidence workflow is missing: ${token}`);
 }
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");

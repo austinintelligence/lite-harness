@@ -2,6 +2,12 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      external_platform_gate:
+        description: "Optional external platform lane to run on a declared self-hosted runner"
+        required: false
+        default: ""
+        type: string
   pull_request:
   push:
     branches: [lite-main]
@@ -563,6 +569,7 @@ jobs:
       - readiness-evidence
       - observability-evidence
       - status-truth-evidence
+      - external-platform-evidence
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -577,7 +584,7 @@ jobs:
         continue-on-error: true
         with:
           path: .candidate-evidence
-      - run: pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete
+      - run: pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete --include-external
         id: assemble_evidence
         if: ${{ always() }}
       - run: pnpm check:secrets -- --include evidence --evidence
@@ -623,3 +630,9 @@ jobs:
           path: evidence/candidate/manifest.json
           if-no-files-found: error
           retention-days: 30
+
+  external-platform-evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.external_platform_gate != '' }}
+    uses: ./.github/workflows/external-platform-evidence.yml
+    with:
+      gate: ${{ inputs.external_platform_gate }}

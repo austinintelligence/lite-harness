@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assembleCandidateEvidence, candidateEvidenceLayout, candidateEvidenceProducer } from "../scripts/assemble-ci-evidence.mjs";
+import { assembleCandidateEvidence, candidateEvidenceLayout, candidateEvidenceProducer, externalEvidenceLayout } from "../scripts/assemble-ci-evidence.mjs";
 import { createEvidenceDocument, embeddedAttachment, sanitizeDiagnosticText, validateEvidenceDocument, writeVitestEvidence } from "../scripts/evidence-lib.mjs";
 import { defectClosureFailures, evaluateReleaseTruth, requirementVerificationFailures } from "../scripts/release-truth-lib.mjs";
 
@@ -327,6 +327,20 @@ describe("release truth", () => {
 
     expect(assembleCandidateEvidence(sourceRoot, targetRoot)).toHaveLength(candidateEvidenceLayout.length);
     for (const [, target] of candidateEvidenceLayout) {
+      expect(JSON.parse(readFileSync(join(targetRoot, target), "utf8"))).toEqual({ target });
+    }
+  });
+
+  it("reconstructs downloaded external authority artifacts only when requested", () => {
+    const root = fixtureRoot();
+    const sourceRoot = join(root, "downloads");
+    const targetRoot = join(root, "checkout");
+    for (const [source, target] of externalEvidenceLayout) writeJson(join(sourceRoot, source), { target });
+
+    expect(assembleCandidateEvidence(sourceRoot, targetRoot, { allowIncomplete: true })).toHaveLength(0);
+    expect(assembleCandidateEvidence(sourceRoot, targetRoot, { allowIncomplete: true, includeExternal: true }))
+      .toHaveLength(externalEvidenceLayout.length);
+    for (const [, target] of externalEvidenceLayout) {
       expect(JSON.parse(readFileSync(join(targetRoot, target), "utf8"))).toEqual({ target });
     }
   });

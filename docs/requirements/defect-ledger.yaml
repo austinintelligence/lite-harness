@@ -2060,14 +2060,15 @@
       },
       "regression": {
         "testId": "BD-054-REGRESSION",
-        "path": "scripts/check-built-artifacts.mjs",
+        "path": "test/packaged-docker-vertical.integration.test.ts",
         "result": "pass",
         "evidenceArtifact": {
-          "path": "evidence/m1/packaged-artifacts.json"
+          "path": "evidence/m3/required-real-runtime.json"
         }
       },
       "fixCommits": [
-        "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
+        "1effd78c0358355e7ed933fe4d857fc5c150bdeb",
+        "6194c08124a59ad21e6642b226e5a7feb35654a8"
       ],
       "blockers": [
         "current-regression-evidence-missing"

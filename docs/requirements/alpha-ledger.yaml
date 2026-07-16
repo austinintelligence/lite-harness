@@ -1445,13 +1445,30 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/gateway/src/main.ts",
+        "apps/gateway/src/manager-client.ts",
+        "apps/manager/src/main.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/provider-openai-compatible/src/index.ts",
+        "packages/runtime/src/index.ts",
+        "packages/runtime-docker/src/index.ts",
+        "packages/sdk-typescript/src/index.ts",
+        "packages/workspace/src/index.ts"
+      ],
+      "testIds": [
+        "A04-PACKAGED-MODEL-DOCKER-ARTIFACT"
+      ],
+      "ciJob": "required-real-runtime",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m3/required-real-runtime.json",
+          "producer": "pnpm test:real-runtime"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

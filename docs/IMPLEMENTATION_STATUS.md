@@ -31,7 +31,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A01 Cross-platform profile | blocked | external-cross-platform-evidence-missing |
 | A02 Installable TypeScript SDK | blocked | current-evidence-stale |
 | A03 Reconnect and replay | blocked | current-evidence-stale |
-| A04 Real model-plus-Docker loop | blocked | traceability-not-yet-established |
+| A04 Real model-plus-Docker loop | blocked | current-evidence-stale |
 | A05 Zero permanent container secrets | blocked | traceability-not-yet-established |
 | A06 One writer with fencing | blocked | traceability-not-yet-established |
 | A07 Limits always | blocked | traceability-not-yet-established |

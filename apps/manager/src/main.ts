@@ -71,7 +71,21 @@ if (baseRuntime instanceof DockerToolRuntime) {
   }
 }
 const brokeredRuntime = new BrokeredToolRuntime(baseRuntime);
-const runtime = new ArtifactPublishingRuntime(brokeredRuntime, artifactStore);
+const runtime = new ArtifactPublishingRuntime(
+  brokeredRuntime,
+  artifactStore,
+  16 * 1024 * 1024,
+  (params) => {
+    if (!params.runId || !params.attemptId || !params.principal || params.fencingToken === undefined) return false;
+    const run = store.getRun(params.runId);
+    if (!run || run.workspaceId !== params.workspaceId || run.appId !== params.principal.appId ||
+        run.tenantId !== params.principal.tenantId || run.userId !== params.principal.userId) return false;
+    const attempt = store.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
+    const lease = store.getWorkspaceLease(run.workspaceId, run.id);
+    return attempt?.id === params.attemptId && lease?.fencingToken === params.fencingToken &&
+      (lease ? store.validateWorkspaceLease(lease) : false);
+  },
+);
 const modelGateway = resolveModelGateway(
   configuration.provider,
   createDelegatedWorkspaceResolver(store),
@@ -146,10 +160,10 @@ if (reconciled > 0) {
 }
 const app = buildManagerServer({
   runService: service, internalToken, instanceId: instanceLock.owner.instanceId, artifactStore,
-  readWorkspaceArtifact: ({ runId, workspaceId, attemptId, principal, path, maxBytes }) => {
+  readWorkspaceArtifact: ({ runId, workspaceId, attemptId, fencingToken, principal, path, maxBytes }) => {
     if (!brokeredRuntime.readWorkspaceArtifact) throw new Error("The configured runtime cannot read workspace artifacts");
     return brokeredRuntime.readWorkspaceArtifact({
-      runId, workspaceId, attemptId, principal, allowedTools: ["artifact_publish"],
+      runId, workspaceId, attemptId, fencingToken, principal, allowedTools: ["artifact_publish"],
       call: { id: `artifact-read-${randomUUID()}`, name: "artifact_read", arguments: { path } },
       signal: AbortSignal.timeout(30_000), path, maxBytes,
     });

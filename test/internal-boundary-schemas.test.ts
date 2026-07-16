@@ -85,4 +85,39 @@ describe("authoritative boundary schemas", () => {
     expect(forged.statusCode).toBe(400);
     rmSync(directory, { recursive: true, force: true });
   });
+
+  it("BD-035-REGRESSION rejects promotion when the workspace fence changes during the read", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-artifact-fence-"));
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["artifacts:publish"] };
+    const run = { id: "run-artifact-fence", workspaceId: "workspace-artifact-fence", appId: principal.appId, tenantId: principal.tenantId, userId: principal.userId };
+    let lease = { workspaceId: run.workspaceId, ownerRunId: run.id, fencingToken: 7, expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    const reader = vi.fn(async () => {
+      lease = { ...lease, fencingToken: 8 };
+      return Buffer.from("read after lease replacement");
+    });
+    const runService = {
+      getRun: () => run,
+      listRunAttempts: () => [{ id: "attempt-artifact-fence", status: "RUNNING" }],
+      getWorkspaceLease: () => lease,
+      validateWorkspaceLease: (candidate: typeof lease) => candidate.fencingToken === lease.fencingToken,
+    } as unknown as RunService;
+    const artifactStore = new LocalArtifactStore(join(directory, "artifacts"), Buffer.alloc(32, 8));
+    const server = buildManagerServer({
+      runService,
+      internalToken: "internal-artifact-fence-token",
+      artifactStore,
+      readWorkspaceArtifact: reader,
+      productionReadinessChecks: async () => ({}),
+    });
+    servers.push(server);
+    const response = await server.inject({
+      method: "POST", url: `/internal/runs/${run.id}/artifacts`,
+      headers: { "x-lite-internal-token": "internal-artifact-fence-token", "x-lite-ipc-version": "1" },
+      payload: { path: "reports/result.txt", mediaType: "text/plain", principal },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: "artifact_publish_requires_active_lease" } });
+    expect(reader).toHaveBeenCalledOnce();
+    rmSync(directory, { recursive: true, force: true });
+  });
 });

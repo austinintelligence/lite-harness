@@ -190,6 +190,7 @@ export class AgentRunner {
           workspaceId: params.workspaceId,
           ...(params.runId ? { runId: params.runId } : {}),
           ...(params.attemptId ? { attemptId: params.attemptId } : {}),
+          ...(params.fencingToken !== undefined ? { fencingToken: params.fencingToken } : {}),
           allowedTools: Object.freeze([...allowed]),
           ...(params.principal ? { principal: params.principal } : {}),
           call,

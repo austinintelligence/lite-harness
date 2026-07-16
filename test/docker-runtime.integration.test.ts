@@ -33,6 +33,34 @@ describe("Docker runtime integration", () => {
       store.close();
     }
   }, 60_000);
+
+  it("rejects artifact reads through final and intermediate symlinks outside the workspace", async () => {
+    const workspaceId = `artifact-links-${Date.now()}`;
+    const runId = `run-links-${Date.now()}`;
+    const principal = { appId: "integration", tenantId: "local", userId: "link-tester", scopes: [] };
+    const store = new SqliteRunStore(":memory:");
+    store.createOrGetRun(runId, { agent: "coder", workspace: workspaceId, input: "artifact links", idempotencyKey: runId, principal });
+    const attempt = store.createRunAttempt(runId, `att-${Date.now()}`);
+    const runtime = new DockerToolRuntime({ image, installationId: "docker-artifact-links", containerStore: store });
+    const execute = (id: string, script: string) => runtime.execute({
+      runId, attemptId: attempt.id, workspaceId, principal,
+      call: { id, name: "shell_exec", arguments: { script } },
+    });
+    const read = (path: string) => runtime.readWorkspaceArtifact({
+      runId, attemptId: attempt.id, workspaceId, principal, fencingToken: 1,
+      call: { id: `read-${path}`, name: "artifact_read", arguments: { path } },
+      path, maxBytes: 16 * 1024,
+    });
+    try {
+      await expect(execute("link-final", "ln -s /etc/passwd escape.txt")).resolves.toMatchObject({ ok: true });
+      await expect(read("escape.txt")).rejects.toThrow(/escapes workspace/i);
+      await expect(execute("link-directory", "ln -s /etc linked")).resolves.toMatchObject({ ok: true });
+      await expect(read("linked/passwd")).rejects.toThrow(/escapes workspace/i);
+    } finally {
+      await runtime.removeWorkspace(workspaceId, principal).catch(() => undefined);
+      store.close();
+    }
+  }, 60_000);
 });
 
 function requiredImage(name: string): string {

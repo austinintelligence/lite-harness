@@ -4,6 +4,8 @@ export interface ToolExecutionContext {
   workspaceId: string;
   runId?: string;
   attemptId?: string;
+  /** Fencing token for mutations/readers bound to the active workspace lease. */
+  fencingToken?: number;
   /** Exact immutable tool names advertised to the model for this run. */
   allowedTools?: readonly string[];
   principal?: InternalPrincipal;
@@ -135,6 +137,7 @@ export class ArtifactPublishingRuntime implements ToolRuntime {
     private readonly inner: ToolRuntime,
     private readonly artifacts: ArtifactPublisher,
     private readonly maxBytes = 16 * 1024 * 1024,
+    private readonly validateFence?: (params: ToolExecutionContext) => boolean,
   ) {}
 
   listTools(): readonly ToolDefinition[] {
@@ -151,7 +154,9 @@ export class ArtifactPublishingRuntime implements ToolRuntime {
       throw new Error("artifact_publish accepts an authorized workspace path, never caller-supplied bytes");
     }
     if (!this.inner.readWorkspaceArtifact) throw new Error("The configured runtime cannot publish workspace artifacts");
+    if (this.validateFence && !this.validateFence(params)) throw new Error("Workspace fence is not active");
     const data = await this.inner.readWorkspaceArtifact({ ...params, path, maxBytes: this.maxBytes });
+    if (this.validateFence && !this.validateFence(params)) throw new Error("Workspace fence changed while reading artifact");
     const record = await this.artifacts.publish({
       runId: params.runId,
       workspaceId: params.workspaceId,

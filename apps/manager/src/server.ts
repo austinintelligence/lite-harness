@@ -301,13 +301,28 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       }
       const attempt = options.runService.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
       const lease = options.runService.getWorkspaceLease(run.workspaceId, run.id);
-      if (!attempt || !lease || !options.runService.validateWorkspaceLease(lease)) {
+      const hasActiveFence = () => {
+        const currentRun = options.runService.getRun(run.id);
+        const currentAttempt = currentRun
+          ? options.runService.listRunAttempts(currentRun.id).findLast((item) => item.status === "RUNNING")
+          : undefined;
+        const currentLease = currentRun
+          ? options.runService.getWorkspaceLease(currentRun.workspaceId, currentRun.id)
+          : undefined;
+        return Boolean(currentRun && samePrincipal(currentRun, request.body.principal) && attempt && lease &&
+          currentAttempt?.id === attempt.id && currentLease?.fencingToken === lease.fencingToken &&
+          options.runService.validateWorkspaceLease(currentLease));
+      };
+      if (!attempt || !lease || !hasActiveFence()) {
         return reply.code(409).send({ error: { code: "artifact_publish_requires_active_lease", message: "Artifacts can only be promoted from the actively fenced workspace" } });
       }
       const data = await options.readWorkspaceArtifact({
         runId: run.id, workspaceId: run.workspaceId, attemptId: attempt.id, fencingToken: lease.fencingToken,
         principal: request.body.principal, path: request.body.path, maxBytes: 16 * 1024 * 1024,
       });
+      if (!hasActiveFence()) {
+        return reply.code(409).send({ error: { code: "artifact_publish_requires_active_lease", message: "Artifacts can only be promoted from the actively fenced workspace" } });
+      }
       const record = options.artifactStore.publish({
         runId: run.id,
         workspaceId: run.workspaceId,

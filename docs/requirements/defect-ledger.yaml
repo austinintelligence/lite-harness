@@ -2095,7 +2095,7 @@
       },
       "regression": {
         "testId": "BD-055-REGRESSION",
-        "path": "scripts/check-real-runtime.mjs",
+        "path": "test/required-real-runtime.test.ts",
         "result": "pass",
         "evidenceArtifact": {
           "path": "evidence/m3/required-real-runtime.json"
@@ -2366,7 +2366,7 @@
       },
       "regression": {
         "testId": "BD-062-REGRESSION",
-        "path": "scripts/check-observability.mjs",
+        "path": "test/observability-regression.test.ts",
         "result": "pass",
         "evidenceArtifact": {
           "path": "evidence/m11/observability.json"

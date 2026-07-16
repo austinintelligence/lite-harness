@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { baselineDefects } from "./defects-lib.mjs";
 import { currentCommit, currentTree, defectClosureFailures } from "./release-truth-lib.mjs";
@@ -24,6 +24,17 @@ for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
     if (!(field in defect)) failures.push(`${defect.id} lacks ${field}`);
   }
   if (defect.severity !== (index < 8 ? "critical" : "high")) failures.push(`${defect.id} severity drifted`);
+  if (defect.regression?.result === "pass") {
+    const regressionPath = defect.regression.path ? resolve(root, defect.regression.path) : undefined;
+    if (!regressionPath || !existsSync(regressionPath)) {
+      failures.push(`${defect.id} passing regression path is missing`);
+    } else if (!readFileSync(regressionPath, "utf8").includes(defect.regression.testId)) {
+      failures.push(`${defect.id} passing regression path does not bind ${defect.regression.testId}`);
+    }
+    if (!Array.isArray(defect.fixCommits) || defect.fixCommits.length === 0) {
+      failures.push(`${defect.id} passing regression has no fix commit`);
+    }
+  }
   if (defect.status === "closed") {
     failures.push(...defectClosureFailures(defect, { root, head, tree, checkFreshness: !structureOnly })
       .map((failure) => `${defect.id} ${failure}`));

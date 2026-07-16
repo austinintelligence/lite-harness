@@ -75,7 +75,7 @@ describe("direct provider adapters", () => {
     },
   );
 
-  it("uses native OpenAI Responses input, tool, output, and usage contracts", async () => {
+  it("BD-032-REGRESSION uses native OpenAI Responses input, tool, output, and usage contracts", async () => {
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toBe("https://api.openai.com/v1/responses");
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -200,7 +200,7 @@ describe("direct provider adapters", () => {
     expect(events.at(-1)).toEqual({ type: "completed", finishReason: "stop" });
   });
 
-  it("rejects non-loopback plaintext Anthropic endpoints before credential-bearing I/O", async () => {
+  it("BD-033-REGRESSION rejects non-loopback plaintext Anthropic endpoints before credential-bearing I/O", async () => {
     const fetch = vi.fn();
     expect(() => new AnthropicProvider({
       baseUrl: "http://anthropic.example/v1/",

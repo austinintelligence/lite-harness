@@ -6,7 +6,7 @@ import {
   type McpTransport,
 } from "@lite-harness/mcp";
 
-describe("brokered MCP isolation", () => {
+describe("brokered MCP isolation BD-045-REGRESSION", () => {
   it("builds stdio MCP only as a hardened no-network Docker process", () => {
     const spec = createDockerMcpProcessSpec({
       image: `sha256:${"a".repeat(64)}`,

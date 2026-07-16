@@ -7,7 +7,7 @@ import { DurableSkillRunSnapshotStore, ImmutableSkillCatalog } from "@lite-harne
 const cleanup: string[] = [];
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
-describe("immutable lazy skill lifecycle", () => {
+describe("immutable lazy skill lifecycle BD-044-REGRESSION", () => {
   it("lists only manifests and loads an exact content-addressed body on demand", () => {
     const root = temporary("source");
     const snapshots = temporary("snapshots");

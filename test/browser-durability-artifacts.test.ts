@@ -20,7 +20,7 @@ afterEach(() => {
   for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
-describe("durable browser sessions and artifact quarantine", () => {
+describe("durable browser sessions and artifact quarantine BD-043-REGRESSION", () => {
   it("persists owner-scoped actions and reconciles interrupted sessions", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-browser-durable-")); cleanup.push(directory);
     const databasePath = join(directory, "browser.sqlite");

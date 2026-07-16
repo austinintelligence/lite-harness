@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 describe("Gateway to Manager vertical slice", () => {
-  it("creates an idempotent durable run through local IPC and streams its events", async () => {
+  it("BD-036-REGRESSION creates an idempotent durable run through local IPC, verifies exact webhook bytes, and streams events", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-harness-test-"));
     const internalToken = "internal-test-token";
     const appToken = "app-test-token-primary";

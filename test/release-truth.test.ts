@@ -130,7 +130,7 @@ describe("release truth", () => {
     expect(summary.defectEvaluations[0]?.closed).toBe(false);
   });
 
-  it("labels architecture and blocker documents as unverified", () => {
+  it("BD-063-REGRESSION labels architecture and blocker documents as unverified", () => {
     expect(readFileSync(join(process.cwd(), "docs", "ARCHITECTURE.md"), "utf8"))
       .toContain("NOT YET A VERIFIED ALPHA");
     expect(readFileSync(join(process.cwd(), "BLOCKERS.md"), "utf8"))

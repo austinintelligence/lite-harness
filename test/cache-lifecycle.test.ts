@@ -7,7 +7,7 @@ import { LocalCacheCatalog, type CacheDescriptor, type CachePublisher } from "@l
 const cleanup: string[] = [];
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
-describe("verified cache lifecycle", () => {
+describe("verified cache lifecycle BD-046-REGRESSION", () => {
   it("keys every compatibility and owner boundary deterministically", () => {
     const catalog = createCatalog();
     const descriptor = cache("workspace-private", "pnpm/store");

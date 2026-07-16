@@ -21,7 +21,7 @@ describe("production optional-system composition", () => {
     await systems.stop();
   });
 
-  it("freezes context and skills and composes lazy MCP and owner-scoped caches", async () => {
+  it("BD-038-REGRESSION freezes context and skills and composes lazy MCP and owner-scoped caches", async () => {
     const root = temporaryRoot();
     const contextPath = join(root, "operator.md");
     writeFileSync(contextPath, "Keep responses exact.\n");

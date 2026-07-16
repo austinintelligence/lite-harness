@@ -9,7 +9,7 @@ import {
 } from "@lite-harness/browser";
 
 describe("external browser egress boundary", () => {
-  it("keeps Chromium internal and connects only the policy proxy externally", async () => {
+  it("BD-042-REGRESSION keeps Chromium internal and connects only the policy proxy externally", async () => {
     const dockerCalls: string[][] = [];
     let processSpec: { command: string; args?: readonly string[] } | undefined;
     let processOptions: { initialization: Record<string, unknown> } | undefined;

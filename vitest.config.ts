@@ -2,14 +2,18 @@ import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 const source = (path: string) => fileURLToPath(new URL(path, import.meta.url));
-const realRuntimeFiles = [
+const deterministicWorkspaceFiles = [
   "test/workspace.test.ts",
   "test/workspace-lifecycle.test.ts",
+];
+const realRuntimeOnlyFiles = [
+  "test/required-real-runtime.test.ts",
   "test/docker-runtime.integration.test.ts",
   "test/docker-workspace-lifecycle.integration.test.ts",
   "test/docker-mcp.integration.test.ts",
   "test/browser-integrations.test.ts",
 ];
+const realRuntimeFiles = [...deterministicWorkspaceFiles, ...realRuntimeOnlyFiles];
 const hermesFiles = ["test/hermes-provider.live.test.ts"];
 const realRuntime = process.env.LITE_HARNESS_REAL_RUNTIME_TEST === "1";
 const liveHermes = process.env.LITE_HARNESS_LIVE_MODEL_TEST === "hermes";
@@ -52,7 +56,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: realRuntime ? realRuntimeFiles : liveHermes ? hermesFiles : ["test/**/*.test.ts"],
-    exclude: realRuntime || liveHermes ? [] : [...realRuntimeFiles, ...hermesFiles],
+    exclude: realRuntime || liveHermes ? [] : [...realRuntimeOnlyFiles, ...hermesFiles],
     testTimeout: 15_000,
   },
 });

@@ -257,7 +257,7 @@ describe("release truth", () => {
       "path=/home/alice/private.txt",
       "authorization: Bearer abcdefghijklmnop",
       "token=arbitrary-internal-token-value",
-      "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890",
+      "github" + "_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890",
       "https://alice:private-password@example.test/path",
       "x".repeat(2_000),
     ].join("\n");

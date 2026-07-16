@@ -41,7 +41,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A11 Previous-good recovery | blocked | traceability-not-yet-established |
 | A12 Artifact ownership | blocked | current-evidence-stale |
 | A13 Cache isolation | blocked | traceability-not-yet-established |
-| A14 Doctor | blocked | traceability-not-yet-established |
+| A14 Doctor | blocked | current-evidence-stale |
 | A15 Recovery and export | blocked | traceability-not-yet-established |
 | A16 Provider conformance | blocked | traceability-not-yet-established |
 | A17 Routing and usage | blocked | traceability-not-yet-established |

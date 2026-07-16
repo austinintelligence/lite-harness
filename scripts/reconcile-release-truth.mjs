@@ -29,7 +29,6 @@ for (const defect of defects.defects) {
   defect.blockers = [...new Set([
     ...defect.blockers,
     "current-regression-evidence-missing",
-    ...(["BD-035", "BD-059", "BD-061"].includes(defect.id) ? ["substantive-regression-gap"] : []),
   ])];
   reopenedDefects += 1;
 }

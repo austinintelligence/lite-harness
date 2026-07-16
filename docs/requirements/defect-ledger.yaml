@@ -2252,11 +2252,11 @@
       },
       "fixCommits": [
         "66908ac99f5817d217dcc15bd670d73d3cd9afb6",
-        "e9000d07b25adbab3112d7f194bb7f6f5ebcce36"
+        "e9000d07b25adbab3112d7f194bb7f6f5ebcce36",
+        "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
       "blockers": [
-        "current-regression-evidence-missing",
-        "substantive-regression-gap"
+        "current-regression-evidence-missing"
       ]
     },
     {
@@ -2322,7 +2322,7 @@
       },
       "regression": {
         "testId": "BD-061-REGRESSION",
-        "path": "test/openapi-sdk-contracts.test.ts",
+        "path": "scripts/check-release.mjs",
         "result": "pass",
         "evidenceArtifact": {
           "path": "evidence/m11/release-validation.json"
@@ -2334,11 +2334,11 @@
         "123d7a50d3fe11a44623a291b3ceef8d4a5b3604",
         "c3e9d6ea8b919f1a7c520a2637cd5a2a4ac50c90",
         "a208fa3d17fae3882f4c41d6b55c89430bc5810f",
-        "62717d5097f791fccfd58ba5ec03276349de159c"
+        "62717d5097f791fccfd58ba5ec03276349de159c",
+        "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
       "blockers": [
-        "current-regression-evidence-missing",
-        "substantive-regression-gap"
+        "current-regression-evidence-missing"
       ]
     },
     {
@@ -2366,7 +2366,7 @@
       },
       "regression": {
         "testId": "BD-062-REGRESSION",
-        "path": "test/observability.test.ts",
+        "path": "scripts/check-observability.mjs",
         "result": "pass",
         "evidenceArtifact": {
           "path": "evidence/m11/observability.json"
@@ -2377,10 +2377,11 @@
         "89bb25c14bc15aac3e1f9f3169c36b444fb49e09",
         "4cf6e56d6206327a269c797f2c8aa8ab4393eae5",
         "841842af8d7e26557fce7321d8e68fc14402dd28",
-        "b7957a30db881e4ce880fda7808ebc8c98c730cc"
+        "b7957a30db881e4ce880fda7808ebc8c98c730cc",
+        "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
       "blockers": [
-        "substantive-regression-gap"
+        "current-regression-evidence-missing"
       ]
     },
     {

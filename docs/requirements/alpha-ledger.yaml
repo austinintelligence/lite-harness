@@ -1404,13 +1404,24 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "apps/cli/src/main.ts",
+        "packages/contracts/src/index.ts",
+        "scripts/check-doctor.mjs"
+      ],
+      "testIds": [
+        "A14"
+      ],
+      "ciJob": "repository-readiness",
+      "evidenceArtifacts": [
+        {
+          "path": "evidence/m11/doctor.json",
+          "producer": "pnpm check:doctor"
+        }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

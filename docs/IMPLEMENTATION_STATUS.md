@@ -39,7 +39,7 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A09 Workspace durability | blocked | traceability-not-yet-established |
 | A10 Automatic encrypted cold restore | blocked | traceability-not-yet-established |
 | A11 Previous-good recovery | blocked | traceability-not-yet-established |
-| A12 Artifact ownership | blocked | traceability-not-yet-established |
+| A12 Artifact ownership | blocked | current-evidence-stale |
 | A13 Cache isolation | blocked | traceability-not-yet-established |
 | A14 Doctor | blocked | traceability-not-yet-established |
 | A15 Recovery and export | blocked | traceability-not-yet-established |

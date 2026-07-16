@@ -33,7 +33,7 @@
           },
           "additionalProperties": false
         },
-        "scope": { "enum": ["source-tree", "candidate-artifact", "external-platform"] },
+        "scope": { "enum": ["source-tree", "candidate-artifact", "external-platform", "external-provider"] },
         "packages": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } },
         "images": { "type": "array", "items": { "$ref": "#/$defs/digestedArtifact" } }
       },

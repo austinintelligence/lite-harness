@@ -1357,10 +1357,23 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "scripts/evidence-external.mjs",
+        ".github/workflows/external-platform-evidence.yml",
+        "scripts/assemble-ci-evidence.mjs"
+      ],
+      "testIds": [
+        "A01-EXTERNAL-PLATFORM-EVIDENCE"
+      ],
+      "ciJob": "rootless-product-evidence",
+      "evidenceArtifacts": [
+        { "path": "evidence/external/linux-rootful.json", "producer": "pnpm evidence:external --gate linuxRootful" },
+        { "path": "evidence/external/linux-rootless.json", "producer": "pnpm evidence:external --gate linuxRootless" },
+        { "path": "evidence/external/linux-arm64.json", "producer": "pnpm evidence:external --gate linuxArm64" },
+        { "path": "evidence/external/macos-intel.json", "producer": "pnpm evidence:external --gate macosIntelDockerDesktop" },
+        { "path": "evidence/external/macos-apple-silicon.json", "producer": "pnpm evidence:external --gate macosAppleSiliconDockerDesktop" },
+        { "path": "evidence/external/windows-wsl2.json", "producer": "pnpm evidence:external --gate windows11DockerDesktopWsl2" }
+      ],
       "status": "blocked",
       "blockers": [
         "external-cross-platform-evidence-missing"
@@ -1847,13 +1860,31 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "scripts/evidence-provider.ts",
+        ".github/workflows/external-provider-evidence.yml",
+        "scripts/check-providers.mjs",
+        "packages/provider-openai-compatible/src/index.ts",
+        "packages/provider-anthropic/src/index.ts",
+        "packages/delegated-runtime/src/index.ts"
+      ],
+      "testIds": [
+        "A16-SHARED-PROVIDER-CONFORMANCE",
+        "A16-LIVE-TEXT-STREAM",
+        "A16-LIVE-TOOL-CALL",
+        "A16-LIVE-CANCELLATION",
+        "A16-LIVE-AUTH-ERROR",
+        "A16-LIVE-USAGE-COST"
+      ],
+      "ciJob": "provider-live-evidence",
+      "evidenceArtifacts": [
+        { "path": "evidence/external/openai-live.json", "producer": "pnpm evidence:provider --gate openaiLive" },
+        { "path": "evidence/external/anthropic-live.json", "producer": "pnpm evidence:provider --gate anthropicLive" },
+        { "path": "evidence/external/codex-live.json", "producer": "pnpm evidence:provider --gate codexLive" }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "external-provider-credentials-and-live-evidence-missing"
       ]
     },
     {
@@ -1869,13 +1900,24 @@
         "lineStart": 2992,
         "lineEnd": 2992
       },
-      "implementationPaths": [],
-      "testIds": [],
-      "ciJob": null,
-      "evidenceArtifacts": [],
+      "implementationPaths": [
+        "packages/provider-core/src/index.ts",
+        "packages/storage-sqlite/src/index.ts",
+        "test/model-routing-persistence.test.ts",
+        "test/provider-cost-accounting.test.ts"
+      ],
+      "testIds": [
+        "D29",
+        "D30",
+        "BD-039-REGRESSION"
+      ],
+      "ciJob": "provider-evidence",
+      "evidenceArtifacts": [
+        { "path": "evidence/m5/provider-conformance.json", "producer": "pnpm test:providers" }
+      ],
       "status": "blocked",
       "blockers": [
-        "traceability-not-yet-established"
+        "current-evidence-stale"
       ]
     },
     {

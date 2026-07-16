@@ -8,6 +8,11 @@ on:
         required: false
         default: ""
         type: string
+      external_provider_gate:
+        description: "Optional protected provider lane to run with owner-supplied credentials"
+        required: false
+        default: ""
+        type: string
   pull_request:
   push:
     branches: [lite-main]
@@ -570,6 +575,7 @@ jobs:
       - observability-evidence
       - status-truth-evidence
       - external-platform-evidence
+      - external-provider-evidence
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -636,3 +642,10 @@ jobs:
     uses: ./.github/workflows/external-platform-evidence.yml
     with:
       gate: ${{ inputs.external_platform_gate }}
+
+  external-provider-evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.external_provider_gate != '' }}
+    uses: ./.github/workflows/external-provider-evidence.yml
+    with:
+      gate: ${{ inputs.external_provider_gate }}
+    secrets: inherit

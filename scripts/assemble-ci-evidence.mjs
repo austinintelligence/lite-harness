@@ -35,9 +35,9 @@ export const requiredExternalGateAuthorities = Object.freeze({
   macosIntelDockerDesktop: gate("macosIntelDockerDesktop", "evidence/external/macos-intel.json", "rootless-product-evidence", "darwin", "x64"),
   macosAppleSiliconDockerDesktop: gate("macosAppleSiliconDockerDesktop", "evidence/external/macos-apple-silicon.json", "rootless-product-evidence", "darwin", "arm64"),
   windows11DockerDesktopWsl2: gate("windows11DockerDesktopWsl2", "evidence/external/windows-wsl2.json", "rootless-product-evidence", "win32", "x64"),
-  openaiLive: gate("openaiLive", "evidence/external/openai-live.json", "external-openai-live", null, null),
-  anthropicLive: gate("anthropicLive", "evidence/external/anthropic-live.json", "external-anthropic-live", null, null),
-  codexLive: gate("codexLive", "evidence/external/codex-live.json", "external-codex-live", null, null),
+  openaiLive: gate("openaiLive", "evidence/external/openai-live.json", "provider-live-evidence", null, null, "external-provider", "pnpm evidence:provider --gate openaiLive"),
+  anthropicLive: gate("anthropicLive", "evidence/external/anthropic-live.json", "provider-live-evidence", null, null, "external-provider", "pnpm evidence:provider --gate anthropicLive"),
+  codexLive: gate("codexLive", "evidence/external/codex-live.json", "provider-live-evidence", null, null, "external-provider", "pnpm evidence:provider --gate codexLive"),
   namingApproval: gate("namingApproval", "evidence/external/naming-approval.json", "external-naming-approval", null, null),
   signingAuthority: gate("signingAuthority", "evidence/external/signing-authority.json", "external-signing-authority", null, null),
   registryPromotion: gate("registryPromotion", "evidence/external/registry-promotion.json", "external-registry-promotion", null, null),
@@ -48,7 +48,18 @@ export const externalEvidenceLayout = Object.freeze(Object.entries(requiredExter
   .map(([name, authority]) => Object.freeze([`external-${name}/${authority.path}`, authority.path])));
 
 export function candidateEvidenceProducer(path) {
-  return candidateEvidenceCatalog.find(({ target }) => target === path) ?? null;
+  const candidate = candidateEvidenceCatalog.find(({ target }) => target === path);
+  if (candidate) return candidate;
+  const authority = Object.values(requiredExternalGateAuthorities).find(({ path: target }) => target === path);
+  if (!authority) return null;
+  return {
+    source: path,
+    target: path,
+    ciJob: authority.ciJob,
+    producer: authority.producer,
+    kind: authority.kind,
+    suite: authority.suite,
+  };
 }
 
 export function candidateEvidenceCatalogFailures(path, document, { catalog = candidateEvidenceCatalog, expectedCi } = {}) {
@@ -101,16 +112,16 @@ function entry(source, target, ciJob, producer, kind, suite) {
   return Object.freeze({ source, target, ciJob, producer, kind, suite });
 }
 
-function gate(name, path, ciJob, os, architecture) {
+function gate(name, path, ciJob, os, architecture, scope = "external-platform", producer = `pnpm evidence:external --gate ${name}`) {
   return Object.freeze({
     path,
     ciJob,
     os,
     architecture,
     kind: "policy-check",
-    scope: "external-platform",
+    scope,
     suite: `external-${name}`,
-    producer: `pnpm evidence:external --gate ${name}`,
+    producer,
   });
 }
 

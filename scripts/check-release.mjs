@@ -22,6 +22,7 @@ const required = [
   "docker/tool-runtime/Dockerfile", "docker/tool-runtime/.dockerignore",
   "docker/browser-runtime/Dockerfile", "docker/browser-runtime/.dockerignore", "sdks/python/pyproject.toml",
   ".github/workflows/external-platform-evidence.yml", "scripts/evidence-external.mjs",
+  ".github/workflows/external-provider-evidence.yml", "scripts/evidence-provider.ts",
 ];
 const failures = required.filter((file) => !existsSync(resolve(root, file))).map((file) => `missing ${file}`);
 
@@ -96,6 +97,7 @@ try {
 }
 const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 const externalWorkflow = readFileSync(resolve(root, ".github/workflows/external-platform-evidence.yml"), "utf8");
+const providerWorkflow = readFileSync(resolve(root, ".github/workflows/external-provider-evidence.yml"), "utf8");
 for (const command of [
   "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
   "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure", "pnpm check:evidence",
@@ -115,11 +117,18 @@ if (!ciWorkflow.includes("candidate-evidence-truth:") || !ciWorkflow.includes("a
 for (const token of ["external-platform-evidence:", "external_platform_gate", "include-external"]) {
   if (!ciWorkflow.includes(token)) failures.push(`CI lacks external evidence integration: ${token}`);
 }
+for (const token of ["external-provider-evidence:", "external_provider_gate", "secrets: inherit"]) {
+  if (!ciWorkflow.includes(token)) failures.push(`CI lacks provider evidence integration: ${token}`);
+}
+if (!providerWorkflow.includes("evidence:provider")) failures.push("provider workflow lacks the external evidence producer command");
 if (!ciWorkflow.includes("LITE_HARNESS_ALLOW_DOCKER_RESTART: \"1\"")) {
   failures.push("required real-runtime CI must explicitly opt in to the destructive Docker restart evidence");
 }
 for (const token of ["rootless-product-evidence:", "workflow_call:", "pnpm evidence:external --gate", "linuxRootless", "macosAppleSiliconDockerDesktop", "windows11DockerDesktopWsl2"]) {
   if (!externalWorkflow.includes(token)) failures.push(`external platform evidence workflow is missing: ${token}`);
+}
+for (const token of ["provider-live-evidence:", "workflow_call:", "pnpm evidence:provider --gate", "provider-live", "LITE_HARNESS_OPENAI_API_KEY", "LITE_HARNESS_ANTHROPIC_API_KEY"]) {
+  if (!providerWorkflow.includes(token)) failures.push(`external provider evidence workflow is missing: ${token}`);
 }
 const imageWorkflow = readFileSync(resolve(root, ".github/workflows/images.yml"), "utf8");
 for (const command of ["pnpm audit --prod --audit-level high", "pnpm generate:sbom", "pnpm release:check"]) {
@@ -129,7 +138,7 @@ if (!/publish:\s*[\s\S]*?needs:\s*\[[^\]]*release-gate[^\]]*candidate[^\]]*\]/.t
   failures.push("container publishing must depend on the strict release gate and tested candidates");
 }
 if (/lite-harness-\$\{\{ matrix\.name \}\}:latest/.test(imageWorkflow)) failures.push("prerelease tags must not promote mutable latest images");
-for (const workflowName of ["ci.yml", "images.yml", "external-platform-evidence.yml"]) {
+for (const workflowName of ["ci.yml", "images.yml", "external-platform-evidence.yml", "external-provider-evidence.yml"]) {
   const workflow = readFileSync(resolve(root, ".github/workflows", workflowName), "utf8");
   for (const match of workflow.matchAll(/uses:\s*[^@\s]+@([^\s#]+)/g)) {
     if (!/^[a-f0-9]{40}$/.test(match[1])) failures.push(`${workflowName} contains an unpinned action reference: ${match[0]}`);

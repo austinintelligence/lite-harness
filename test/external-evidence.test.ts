@@ -40,6 +40,8 @@ describe("external platform evidence producer", () => {
     expect(workflow).toContain("pnpm evidence:external --gate");
     expect(workflow).toContain("linuxRootless");
     expect(workflow).toContain("windows11DockerDesktopWsl2");
+    expect(workflow).toContain("evidencePath: evidence/external/linux-rootful.json");
+    expect(workflow).toContain("--evidence ${{ matrix.evidencePath }}");
     expect(workflow).toContain("workflow_call:");
     expect(ciWorkflow).toContain("external_platform_gate");
     expect(ciWorkflow).toContain("uses: ./.github/workflows/external-platform-evidence.yml");

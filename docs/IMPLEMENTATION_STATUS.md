@@ -43,8 +43,8 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A13 Cache isolation | blocked | current-evidence-stale |
 | A14 Doctor | blocked | current-evidence-stale |
 | A15 Recovery and export | blocked | traceability-not-yet-established |
-| A16 Provider conformance | blocked | traceability-not-yet-established |
-| A17 Routing and usage | blocked | traceability-not-yet-established |
+| A16 Provider conformance | blocked | external-provider-credentials-and-live-evidence-missing |
+| A17 Routing and usage | blocked | current-evidence-stale |
 | A18 Plugin lifecycle | blocked | current-evidence-stale |
 | A19 Skills | blocked | current-evidence-stale |
 | A20 Managed browser | blocked | current-evidence-stale |

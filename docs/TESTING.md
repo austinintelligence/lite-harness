@@ -61,6 +61,20 @@ candidate release fan-in, manually dispatch `CI` with its
 `external_platform_gate` input; the reusable workflow artifact is reconstructed
 under `evidence/external/` before aggregation.
 
+Provider acceptance is a separate protected lane. The pinned
+`.github/workflows/external-provider-evidence.yml` workflow runs only on the
+owner-managed `provider-live` runner label and protected `provider-live`
+environment. Its `pnpm evidence:provider --gate <openaiLive|anthropicLive|codexLive>`
+producer runs the deterministic provider conformance suite plus live text,
+tool, cancellation, invalid-credential, and usage/cost cases. It stores only
+boolean results, model identifiers, bounded error codes, and redacted policy
+evidence; credentials, prompts, responses, and runner paths are never written.
+The provider workflow is CI-only and intentionally fails when its model,
+credential, pricing, or delegated-runtime prerequisites are absent. Manually
+dispatch `CI` with `external_provider_gate` to attach one protected provider
+lane to the candidate fan-in. This does not make a provider or the release
+alpha until all three required lanes have current pass evidence.
+
 GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from
 hosted CI and must be run locally with `pnpm test:hermes`; their evidence belongs

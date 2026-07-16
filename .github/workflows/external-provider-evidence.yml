@@ -1,0 +1,69 @@
+name: External provider evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "Declared provider lane to qualify with owner-supplied credentials"
+        required: true
+        type: choice
+        options:
+          - openaiLive
+          - anthropicLive
+          - codexLive
+  workflow_call:
+    inputs:
+      gate:
+        description: "Declared provider lane to qualify with owner-supplied credentials"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  provider-live-evidence:
+    name: ${{ matrix.gate }}
+    if: ${{ inputs.gate == matrix.gate }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: openaiLive
+            evidencePath: evidence/external/openai-live.json
+          - gate: anthropicLive
+            evidencePath: evidence/external/anthropic-live.json
+          - gate: codexLive
+            evidencePath: evidence/external/codex-live.json
+    runs-on: [self-hosted, provider-live]
+    environment: provider-live
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.7.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Run protected provider conformance
+        run: pnpm evidence:provider --gate ${{ matrix.gate }} --evidence ${{ matrix.evidencePath }}
+        env:
+          LITE_HARNESS_OPENAI_API_KEY: ${{ secrets.LITE_HARNESS_OPENAI_API_KEY }}
+          LITE_HARNESS_ANTHROPIC_API_KEY: ${{ secrets.LITE_HARNESS_ANTHROPIC_API_KEY }}
+          LITE_HARNESS_OPENAI_MODEL: ${{ vars.LITE_HARNESS_OPENAI_MODEL }}
+          LITE_HARNESS_ANTHROPIC_MODEL: ${{ vars.LITE_HARNESS_ANTHROPIC_MODEL }}
+          LITE_HARNESS_CODEX_MODEL: ${{ vars.LITE_HARNESS_CODEX_MODEL }}
+          LITE_HARNESS_CODEX_HOME: ${{ vars.LITE_HARNESS_CODEX_HOME }}
+          LITE_HARNESS_CODEX_COMMAND: ${{ vars.LITE_HARNESS_CODEX_COMMAND }}
+          LITE_HARNESS_PROVIDER_INPUT_USD_PER_MILLION: ${{ vars.LITE_HARNESS_PROVIDER_INPUT_USD_PER_MILLION }}
+          LITE_HARNESS_PROVIDER_OUTPUT_USD_PER_MILLION: ${{ vars.LITE_HARNESS_PROVIDER_OUTPUT_USD_PER_MILLION }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: external-${{ matrix.gate }}
+          path: ${{ matrix.evidencePath }}
+          if-no-files-found: error
+          retention-days: 30

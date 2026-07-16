@@ -30,6 +30,15 @@ export const externalPlatformGates = Object.freeze({
 
 export const externalPlatformGateNames = Object.freeze(Object.keys(externalPlatformGates));
 
+export const externalPlatformEvidencePaths = Object.freeze({
+  linuxRootful: "evidence/external/linux-rootful.json",
+  linuxRootless: "evidence/external/linux-rootless.json",
+  linuxArm64: "evidence/external/linux-arm64.json",
+  macosIntelDockerDesktop: "evidence/external/macos-intel.json",
+  macosAppleSiliconDockerDesktop: "evidence/external/macos-apple-silicon.json",
+  windows11DockerDesktopWsl2: "evidence/external/windows-wsl2.json",
+});
+
 export function validateExternalPlatform(gate, facts, dockerInfo) {
   const spec = externalPlatformGates[gate];
   if (!spec) return [`unsupported external platform gate: ${gate}`];
@@ -69,7 +78,7 @@ function runExternalEvidence() {
     throw new Error("External platform evidence is CI-only; run the pinned external-platform-evidence workflow on its declared self-hosted lane");
   }
 
-  const output = option("--evidence") ?? `evidence/external/${gate}.json`;
+  const output = option("--evidence") ?? externalPlatformEvidencePaths[gate];
   const startedAt = Date.now();
   const initialFacts = captureFacts(root);
   const dockerInfo = readDockerInfo();
@@ -94,7 +103,7 @@ function runExternalEvidence() {
     requiredRealRuntimePassedWithZeroSkips: runtimePassed,
   };
   const result = Object.values(assertions).every(Boolean) ? "pass" : "fail";
-  const caseName = `external-${gate}`;
+  const caseName = `A01-EXTERNAL-PLATFORM-EVIDENCE ${gate}`;
   const caseStatus = result === "pass" ? "passed" : "failed";
   const externalGates = { ...missingExternalGates, [gate]: result === "pass" ? "pass" : "fail" };
   const caseBindings = { [caseName]: Object.keys(assertions) };

@@ -14,7 +14,7 @@ export interface ExternalGateAuthority {
   os: string | null;
   architecture: string | null;
   kind: "policy-check";
-  scope: "external-platform";
+  scope: "external-platform" | "external-provider";
   suite: string;
   producer: string;
 }

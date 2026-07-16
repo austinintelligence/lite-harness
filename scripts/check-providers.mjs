@@ -37,7 +37,7 @@ try {
       command: "pnpm test:providers",
       report: evidenceReport,
       requirementIds: [
-        "D26", "D28", "D29", "D30", "R07-0530", "R07-0531", "R14-1052", "R14-1242", "R14-1243",
+        "A17", "D26", "D28", "D29", "D30", "R07-0530", "R07-0531", "R14-1052", "R14-1242", "R14-1243",
         "R14-1251", "R14-1281", "R27-2223", "R34-2883",
       ],
       regressionIds: [

@@ -334,12 +334,38 @@ function proofCases(proof) {
 }
 
 function sanitizeCaseName(value) {
-  return String(value)
-    .replace(/(?:file:\/\/\/)?[A-Za-z]:[\\/][^\s"'<>)]*/gi, "<redacted-path>")
+  return sanitizeDiagnosticText(value, { maxBytes: 512 });
+}
+
+export function sanitizeDiagnosticText(value, { maxBytes = 4 * 1024 } = {}) {
+  const limit = Number.isSafeInteger(maxBytes) ? Math.min(Math.max(maxBytes, 128), 64 * 1024) : 4 * 1024;
+  const sanitized = String(value)
+    .replace(/-----BEGIN (?:(?:RSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:(?:RSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----|$)/g, "<redacted-private-key>")
+    .replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^@\s/:]*:[^@\s/]+@/g, "$1<redacted-credentials>@")
+    .replace(/file:\/\/\/[^\s"'<>)]*/gi, "<redacted-path>")
+    .replace(/(^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/][^\s"'<>)]*/gi, "$1<redacted-path>")
     .replace(/\\\\(?:[?.]\\)?[^\\/\s]+[\\/][^\s"'<>)]*/g, "<redacted-path>")
-    .replace(/(^|[^A-Za-z0-9_])\/(?!\/)[A-Za-z0-9._~-]+(?:[\\/][^\s"'<>)]*)?/g, "$1<redacted-path>")
+    .replace(/(^|[^A-Za-z0-9_/])\/(?!\/)[A-Za-z0-9._~-]+(?:[\\/][^\s"'<>)]*)?/g, "$1<redacted-path>")
     .replace(/\b(?:gh[opusr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9_-]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{32,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\b/g, "<redacted-secret>")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{20,}\b/gi, "Bearer <redacted-secret>");
+    .replace(/\b(?:sk-|xox[baprs]-)[A-Za-z0-9_-]{8,}\b/g, "<redacted-secret>")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{8,}\b/gi, "Bearer <redacted-secret>")
+    .replace(/\bBasic\s+[A-Za-z0-9+/=]{8,}\b/gi, "Basic <redacted-secret>")
+    .replace(/(["']?authorization["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,}\r\n]*)/gi, "$1<redacted-secret>")
+    .replace(/(["']?(?:set[_-]?)?cookie["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,}\r\n]*)/gi, "$1<redacted-secret>")
+    .replace(/(["']?(?:api[_-]?key|token|secret|credential|password)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^,\s}\r\n]+)/gi, "$1<redacted-secret>")
+    .replace(/\r\n?/g, "\n");
+  if (Buffer.byteLength(sanitized, "utf8") <= limit) return sanitized;
+  const suffix = "\n<diagnostic-truncated>";
+  const budget = limit - Buffer.byteLength(suffix, "utf8");
+  const prefix = [];
+  let bytes = 0;
+  for (const character of sanitized) {
+    const size = Buffer.byteLength(character, "utf8");
+    if (bytes + size > budget) break;
+    prefix.push(character);
+    bytes += size;
+  }
+  return `${prefix.join("")}${suffix}`;
 }
 
 function policyCases(assertions, caseBindings, sourcePath) {

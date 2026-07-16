@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { assembleCandidateEvidence, candidateEvidenceLayout, candidateEvidenceProducer } from "../scripts/assemble-ci-evidence.mjs";
-import { createEvidenceDocument, embeddedAttachment, validateEvidenceDocument, writeVitestEvidence } from "../scripts/evidence-lib.mjs";
+import { createEvidenceDocument, embeddedAttachment, sanitizeDiagnosticText, validateEvidenceDocument, writeVitestEvidence } from "../scripts/evidence-lib.mjs";
 import { defectClosureFailures, evaluateReleaseTruth, requirementVerificationFailures } from "../scripts/release-truth-lib.mjs";
 
 const roots: string[] = [];
@@ -249,6 +249,39 @@ describe("release truth", () => {
     expect(serialized).toContain("<redacted-path>");
     expect(serialized).toContain("<redacted-secret>");
     expect(validateEvidenceDocument(document)).toEqual([]);
+  });
+
+  it("redacts and bounds failure diagnostics before they can reach CI logs", () => {
+    const diagnostic = [
+      "at fixture (C:\\Users\\alice\\private\\fixture.test.ts:10:2)",
+      "path=/home/alice/private.txt",
+      "authorization: Bearer abcdefghijklmnop",
+      "token=arbitrary-internal-token-value",
+      "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890",
+      "https://alice:private-password@example.test/path",
+      "x".repeat(2_000),
+    ].join("\n");
+    const sanitized = sanitizeDiagnosticText(diagnostic, { maxBytes: 512 });
+    expect(Buffer.byteLength(sanitized, "utf8")).toBeLessThanOrEqual(512);
+    expect(sanitized).toContain("<redacted-path>");
+    expect(sanitized).toContain("<redacted-secret>");
+    expect(sanitized).toContain("<redacted-credentials>");
+    expect(sanitized).toContain("<diagnostic-truncated>");
+    expect(sanitized).not.toMatch(/alice[\\/]private|Bearer abcdef|arbitrary-internal|github_pat_|private-password/);
+
+    const truncatedPem = sanitizeDiagnosticText("failure payload:\n-----BEGIN ENCRYPTED PRIVATE KEY-----\nunterminated-key-material");
+    expect(truncatedPem).toBe("failure payload:\n<redacted-private-key>");
+    expect(truncatedPem).not.toContain("unterminated-key-material");
+
+    const safeUrl = "request failed: https://api.example.test/v1/models";
+    expect(sanitizeDiagnosticText(safeUrl)).toBe(safeUrl);
+
+    const credentialUrls = "postgres://alice:database-password@example.test/db redis://:cache-password@example.test/0";
+    const sanitizedUrls = sanitizeDiagnosticText(credentialUrls);
+    expect(sanitizedUrls).toBe("postgres://<redacted-credentials>@example.test/db redis://<redacted-credentials>@example.test/0");
+    expect(sanitizedUrls).not.toMatch(/database-password|cache-password/);
+
+    expect(sanitizeDiagnosticText("Error:/home/alice/private.txt")).toBe("Error:<redacted-path>");
   });
 
   it("makes the explicit CI evidence scan reject embedded paths and current token formats", () => {

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
-import { writeVitestEvidence } from "./evidence-lib.mjs";
+import { sanitizeDiagnosticText, writeVitestEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const toolImage = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
@@ -125,6 +125,20 @@ try {
     });
   }
   if (!passed) {
+    const diagnostics = (report.testResults ?? []).flatMap((result) =>
+      (result.assertionResults ?? [])
+        .filter((test) => test.status === "failed")
+        .map((test) => {
+          const messages = (test.failureMessages ?? []).join("\n").trim() || "No assertion failure message was reported";
+          return sanitizeDiagnosticText(
+            `${relative(root, result.name).replaceAll("\\", "/")} :: ${test.fullName ?? test.title ?? "unnamed test"}\n${messages}`,
+            { maxBytes: 4 * 1024 },
+          );
+        }));
+    if (diagnostics.length) {
+      const output = sanitizeDiagnosticText(diagnostics.join("\n\n"), { maxBytes: 16 * 1024 });
+      process.stderr.write(`Real runtime failure diagnostics (redacted and bounded):\n${output}\n`);
+    }
     throw new Error(`Real runtime suite must pass every required file with at least 10 tests and zero skips (tests=${report.numTotalTests}, failures=${report.numFailedTests}, skips=${skips}, invalidFiles=${invalidRequiredFiles.join(",") || "none"})`);
   }
   process.stdout.write(`Real Docker and browser runtime checks passed (${report.numPassedTests}/${report.numTotalTests}, zero skips).\n`);

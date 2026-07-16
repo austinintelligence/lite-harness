@@ -28,6 +28,7 @@ export interface EvidenceDocument {
 }
 export const missingExternalGates: Readonly<Record<string, "missing">>;
 export const requiredExternalGateNames: readonly string[];
+export function sanitizeDiagnosticText(value: unknown, options?: { maxBytes?: number }): string;
 export function writeVitestEvidence(options: Record<string, unknown>): EvidenceDocument;
 export function writePolicyEvidence(options: Record<string, unknown>): EvidenceDocument;
 export function createEvidenceDocument(options: Record<string, unknown>): EvidenceDocument;

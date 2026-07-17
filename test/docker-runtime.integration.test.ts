@@ -245,6 +245,12 @@ describe("Docker runtime integration", () => {
     try {
       const write = await execute("write-1", "write_file", { path: "hello.txt", content: "hello docker" });
       expect(write.ok).toBe(true);
+      const artifactBytes = await runtime.readWorkspaceArtifact({
+        runId, attemptId: attempt.id, workspaceId, principal, fencingToken: 1,
+        call: { id: "artifact-read", name: "artifact_read", arguments: { path: "hello.txt" } },
+        path: "hello.txt", maxBytes: 16 * 1024,
+      });
+      expect(artifactBytes.toString("utf8")).toBe("hello docker");
       const shell = await execute("shell-1", "shell_exec", { script: "node --version && git --version && rg --version" });
       expect(shell).toMatchObject({ ok: true, content: expect.stringContaining("v24.") });
       const search = await execute("search-1", "search_text", { pattern: "hello docker", paths: ["hello.txt"], fixedStrings: true });

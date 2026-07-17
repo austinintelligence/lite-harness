@@ -22,7 +22,9 @@ const appToken = `hermes-app-token-${suffix}`;
 const internalToken = `hermes-internal-token-${suffix}`;
 const providerKey = process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim() || "sk-hermes-local";
 const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() || "http://127.0.0.1:8645/v1";
+const provider = process.env.LITE_HARNESS_PROVIDER?.trim() || "openai-compatible";
 const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "gpt-5.6-luna";
+const offline = process.env.LITE_HARNESS_OFFLINE?.trim() || (provider === "openai-compatible" && /^http:\/\/127\.0\.0\.1(?::\d+)?(?:\/|$)/i.test(providerBaseUrl) ? "true" : "false");
 const expectedContent = `Hermes real Docker artifact ${suffix}\n`;
 const runtimeImage = resolveRuntimeImage(process.env.LITE_HARNESS_RUNTIME_IMAGE);
 const volume = dockerWorkspaceVolumeName(workspaceId, { ...owner, scopes: [] });
@@ -50,7 +52,7 @@ try {
     LITE_HARNESS_USER_ID: owner.userId,
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
-    LITE_HARNESS_PROVIDER: "openai-compatible",
+    LITE_HARNESS_PROVIDER: provider,
     LITE_HARNESS_PROVIDER_BASE_URL: providerBaseUrl,
     LITE_HARNESS_PROVIDER_API_KEY: providerKey,
     LITE_HARNESS_MODEL: modelId,
@@ -59,7 +61,7 @@ try {
     LITE_HARNESS_RUNTIME: "docker",
     LITE_HARNESS_RUNTIME_IMAGE: runtimeImage,
     LITE_HARNESS_MODE: "production",
-    LITE_HARNESS_OFFLINE: "true",
+    LITE_HARNESS_OFFLINE: offline,
     LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT: "false",
     LITE_HARNESS_SNAPSHOT_KEY: Buffer.alloc(32, 7).toString("base64"),
     LITE_HARNESS_ENABLE_PLUGINS: "false",
@@ -124,10 +126,10 @@ try {
   if (volumeContent !== expectedContent) throw new Error("The Docker workspace volume did not contain the published artifact bytes");
   report = {
     schemaVersion: 1,
-    kind: "hermes-docker-vertical",
+    kind: "model-docker-vertical",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
-    provider: { route: "local-hermes-openai-compatible", baseUrl: providerBaseUrl, model: modelId, credential: "non-empty-placeholder-only" },
+    provider: { route: provider === "openai-compatible" && offline === "true" ? "local-hermes-openai-compatible" : provider, baseUrl: providerBaseUrl, model: modelId, credential: "non-empty-placeholder-only" },
     runtime: { kind: "docker", image: runtimeImage, imagePinned: true, managedContainersObserved: [...managedSeen] },
     run: { id: runId, status: run.status, toolRequests, toolResults, artifactId, eventTypes: events.map((event) => event.type) },
     artifact: { bytes: Buffer.byteLength(artifactContent), sha256: createHash("sha256").update(artifactContent).digest("hex"), contentVerified: true },
@@ -136,7 +138,7 @@ try {
 } catch (error) {
   report = {
     schemaVersion: 1,
-    kind: "hermes-docker-vertical",
+    kind: "model-docker-vertical",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
     result: "failed",

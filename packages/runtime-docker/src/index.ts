@@ -257,7 +257,7 @@ export class DockerToolRuntime implements ToolRuntime {
     const mount = await this.#workspaceMount(params.workspaceId, params.signal, params.principal);
     const result = await this.#runTool(
       mount,
-      ["sh", "-c", 'set -eu; target="/workspace/$1"; resolved=$(realpath -e -- "$target"); case "$resolved" in /workspace/*) ;; *) echo "Artifact path escapes workspace" >&2; exit 1 ;; esac; test -f "$resolved"; size=$(wc -c < "$resolved"); test "$size" -le "$2"; base64 "$resolved"', "lite-artifact", params.path, String(params.maxBytes)],
+      ["sh", "-c", 'set -eu; target="/workspace/$1"; resolved=$(realpath "$target"); case "$resolved" in /workspace/*) ;; *) echo "Artifact path escapes workspace" >&2; exit 1 ;; esac; test -f "$resolved"; size=$(wc -c < "$resolved"); test "$size" -le "$2"; base64 "$resolved"', "lite-artifact", params.path, String(params.maxBytes)],
       undefined,
       params,
       "artifact-read",

@@ -37,6 +37,24 @@ removes only its own labeled containers and volume. A run that returns prose
 without tool calls is recorded as a failed qualification; it is not converted
 into a successful Docker result.
 
+For an explicitly selected direct provider, use the same public-path probe
+without the Hermes wrapper. The provider, base URL, model, and key are
+process-scoped; the key is never written to the repository or evidence:
+
+```powershell
+$env:LITE_HARNESS_PROVIDER = 'openrouter'
+$env:LITE_HARNESS_PROVIDER_BASE_URL = 'https://openrouter.ai/api/v1/'
+$env:LITE_HARNESS_MODEL = 'openrouter/free'
+$env:LITE_HARNESS_PROVIDER_API_KEY = '<operator-supplied-key>'
+$env:LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION = '0'
+$env:LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION = '0'
+pnpm evaluate:provider:docker
+```
+
+`openrouter/free` is a variable upstream router, not a fixed model. Record the
+route as `openrouter/free` and treat any upstream model name as an observation;
+do not compare one sampled free model as if it were a fixed GPT benchmark.
+
 ## CI and release automation
 
 The branch workflow is safe to run for every pull request and `lite-main` push:

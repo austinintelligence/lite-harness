@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { assembleCandidateEvidence, candidateEvidenceLayout, candidateEvidenceProducer, externalEvidenceLayout } from "../scripts/assemble-ci-evidence.mjs";
 import { createEvidenceDocument, embeddedAttachment, sanitizeDiagnosticText, validateEvidenceDocument, writeVitestEvidence } from "../scripts/evidence-lib.mjs";
-import { defectClosureFailures, evaluateReleaseTruth, requirementVerificationFailures } from "../scripts/release-truth-lib.mjs";
+import { defectClosureFailures, evaluateReleaseTruth, isExternalOnlyDefect, isExternalOnlyRequirement, requirementVerificationFailures } from "../scripts/release-truth-lib.mjs";
 
 const roots: string[] = [];
 const candidateCommit = "a".repeat(40);
@@ -16,6 +16,15 @@ afterEach(() => {
 });
 
 describe("release truth", () => {
+  it("keeps explicitly external-only requirements and defects outside local qualification", () => {
+    const requirement = { id: "A01", status: "blocked-external", blockers: ["external-cross-platform-evidence-missing"] };
+    const defect = { id: "BD-058", status: "blocked-external", blockers: ["external-cross-platform-evidence-missing"] };
+    expect(isExternalOnlyRequirement(requirement)).toBe(true);
+    expect(isExternalOnlyDefect(defect)).toBe(true);
+    expect(isExternalOnlyRequirement({ ...requirement, blockers: ["traceability-not-yet-established"] })).toBe(false);
+    expect(isExternalOnlyDefect({ ...defect, blockers: ["regression-fix-required"] })).toBe(false);
+  });
+
   it("A09-RESTART-GUARD fails the real-runtime wrapper closed without explicit Docker restart opt-in", () => {
     const env = { ...process.env };
     delete env.LITE_HARNESS_ALLOW_DOCKER_RESTART;
@@ -140,11 +149,14 @@ describe("release truth", () => {
     expect(summary.defectEvaluations[0]?.closed).toBe(false);
   });
 
-  it("BD-063-REGRESSION labels architecture and blocker documents as unverified", () => {
+  it("BD-063-REGRESSION keeps architecture and blocker documents aligned with generated truth", () => {
+    const status = readFileSync(join(process.cwd(), "docs", "IMPLEMENTATION_STATUS.md"), "utf8");
+    const verdict = status.match(/^## Verdict: (.+)$/m)?.[1];
+    expect(verdict).toBeTruthy();
     expect(readFileSync(join(process.cwd(), "docs", "ARCHITECTURE.md"), "utf8"))
-      .toContain("NOT YET A VERIFIED ALPHA");
+      .toContain(verdict!);
     expect(readFileSync(join(process.cwd(), "BLOCKERS.md"), "utf8"))
-      .toContain("NOT YET A VERIFIED ALPHA");
+      .toContain(verdict!);
   });
 
   it("rejects dirty, empty, skipped, and tampered pass evidence", () => {

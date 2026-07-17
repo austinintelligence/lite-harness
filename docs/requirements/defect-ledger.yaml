@@ -14,7 +14,7 @@
         "section": "Known baseline defects / 1",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-001-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -37,9 +37,7 @@
       "fixCommits": [
         "d77d3d47ce06907882df145fb6a8da01833d9b1e"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-002",
@@ -52,7 +50,7 @@
         "section": "Known baseline defects / 2",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-002-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -76,9 +74,7 @@
         "a9ed59688fd87b796c7c5468ba94631569947ab7",
         "966fe8638bbd2c4be341db886fde7b5e7c1b0e8d"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-003",
@@ -91,7 +87,7 @@
         "section": "Known baseline defects / 3",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-003-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -114,9 +110,7 @@
       "fixCommits": [
         "f9771e6bfa8d49657dfa651acff313f0bf335cbc"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-004",
@@ -129,7 +123,7 @@
         "section": "Known baseline defects / 4",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-004-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -154,9 +148,7 @@
         "295801c844726ed8e19074dc0e702af9382c96c1",
         "f96c344428cb191b0448ac682897e4abb0d1bd53"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-005",
@@ -169,7 +161,7 @@
         "section": "Known baseline defects / 5",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-005-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -192,9 +184,7 @@
       "fixCommits": [
         "a9ed59688fd87b796c7c5468ba94631569947ab7"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-006",
@@ -207,7 +197,7 @@
         "section": "Known baseline defects / 6",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-006-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -230,9 +220,7 @@
       "fixCommits": [
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-007",
@@ -245,7 +233,7 @@
         "section": "Known baseline defects / 7",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-007-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -268,9 +256,7 @@
       "fixCommits": [
         "ebe99586f044e064dc13cd773848c6ba50f72a7f"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-008",
@@ -283,7 +269,7 @@
         "section": "Known baseline defects / 8",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-008-REPRO",
         "path": "test/reproduction/critical.repro.ts",
@@ -306,9 +292,7 @@
       "fixCommits": [
         "ebe99586f044e064dc13cd773848c6ba50f72a7f"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-009",
@@ -321,7 +305,7 @@
         "section": "Known baseline defects / 9",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-009-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -344,9 +328,7 @@
       "fixCommits": [
         "4c8f79a5b26e494a20245f4dbfe330ecfb6b0468"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-010",
@@ -359,7 +341,7 @@
         "section": "Known baseline defects / 10",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-010-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -382,9 +364,7 @@
       "fixCommits": [
         "a2cc36978598823280324730d183f1a582a7881d"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-011",
@@ -397,7 +377,7 @@
         "section": "Known baseline defects / 11",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-011-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -420,9 +400,7 @@
       "fixCommits": [
         "a2cc36978598823280324730d183f1a582a7881d"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-012",
@@ -435,7 +413,7 @@
         "section": "Known baseline defects / 12",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-012-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -458,9 +436,7 @@
       "fixCommits": [
         "024555451ddcdfea8c6eb5540499a336a8c92210"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-013",
@@ -473,7 +449,7 @@
         "section": "Known baseline defects / 13",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-013-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -496,9 +472,7 @@
       "fixCommits": [
         "e07979726c14a5c67f0106da102c60809f51a58e"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-014",
@@ -511,7 +485,7 @@
         "section": "Known baseline defects / 14",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-014-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -534,9 +508,7 @@
       "fixCommits": [
         "fa1e820f1fc6750c94b187e410d579aea16f1699"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-015",
@@ -549,7 +521,7 @@
         "section": "Known baseline defects / 15",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-015-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -572,9 +544,7 @@
       "fixCommits": [
         "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-016",
@@ -587,7 +557,7 @@
         "section": "Known baseline defects / 16",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-016-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -610,9 +580,7 @@
       "fixCommits": [
         "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-017",
@@ -625,7 +593,7 @@
         "section": "Known baseline defects / 17",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-017-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -648,9 +616,7 @@
       "fixCommits": [
         "05c0f26221577d23edf4a7e4835f3cc1df21fd14"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-018",
@@ -663,7 +629,7 @@
         "section": "Known baseline defects / 18",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-018-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -686,9 +652,7 @@
       "fixCommits": [
         "c3e4031990a6ae3f69c84a59f117ec0f1da88e7c"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-019",
@@ -701,7 +665,7 @@
         "section": "Known baseline defects / 19",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-019-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -724,9 +688,7 @@
       "fixCommits": [
         "c21c7ed8cc0407e927b8e3b818b96876f7a9491a"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-020",
@@ -739,7 +701,7 @@
         "section": "Known baseline defects / 20",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-020-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -762,9 +724,7 @@
       "fixCommits": [
         "c21c7ed8cc0407e927b8e3b818b96876f7a9491a"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-021",
@@ -777,7 +737,7 @@
         "section": "Known baseline defects / 21",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-021-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -803,9 +763,7 @@
         "295801c844726ed8e19074dc0e702af9382c96c1",
         "f96c344428cb191b0448ac682897e4abb0d1bd53"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-022",
@@ -818,7 +776,7 @@
         "section": "Known baseline defects / 22",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-022-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -841,9 +799,7 @@
       "fixCommits": [
         "3069ebd333083d222afcfbc8a582921f0bcc7856"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-023",
@@ -856,7 +812,7 @@
         "section": "Known baseline defects / 23",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-023-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -879,9 +835,7 @@
       "fixCommits": [
         "bd775f45b6569c5a46503216b198b8d26bcb769f"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-024",
@@ -894,7 +848,7 @@
         "section": "Known baseline defects / 24",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-024-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -917,9 +871,7 @@
       "fixCommits": [
         "1ba7a3ec50d527471a9eca505bcdc62a4085e646"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-025",
@@ -932,7 +884,7 @@
         "section": "Known baseline defects / 25",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-025-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -955,9 +907,7 @@
       "fixCommits": [
         "6cef2b4063927351ed62b727f834a5c2dc5670d9"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-026",
@@ -970,7 +920,7 @@
         "section": "Known baseline defects / 26",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-026-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -993,9 +943,7 @@
       "fixCommits": [
         "6cef2b4063927351ed62b727f834a5c2dc5670d9"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-027",
@@ -1008,7 +956,7 @@
         "section": "Known baseline defects / 27",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-027-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1031,9 +979,7 @@
       "fixCommits": [
         "a77ccce544ba618669c4c66acd5494b5e6887454"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-028",
@@ -1046,7 +992,7 @@
         "section": "Known baseline defects / 28",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-028-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1070,9 +1016,7 @@
         "fcf99256554cb95b3a0a87a28557452d210c7621",
         "966fe8638bbd2c4be341db886fde7b5e7c1b0e8d"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-029",
@@ -1085,7 +1029,7 @@
         "section": "Known baseline defects / 29",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-029-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1108,9 +1052,7 @@
       "fixCommits": [
         "ebc532456f8d1401b37f40e160868bcf05f51838"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-030",
@@ -1123,7 +1065,7 @@
         "section": "Known baseline defects / 30",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-030-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1146,9 +1088,7 @@
       "fixCommits": [
         "795cf1eecf5566d7a69a521162cab4a85da31d56"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-031",
@@ -1161,7 +1101,7 @@
         "section": "Known baseline defects / 31",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-031-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1184,9 +1124,7 @@
       "fixCommits": [
         "a80c9975cd32f054276d803c6f9cafbb01201551"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-032",
@@ -1199,7 +1137,7 @@
         "section": "Known baseline defects / 32",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-032-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1222,9 +1160,7 @@
       "fixCommits": [
         "262e7aed164643a5f64252f1c7d9d79300c0fd4d"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-033",
@@ -1237,7 +1173,7 @@
         "section": "Known baseline defects / 33",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-033-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1260,9 +1196,7 @@
       "fixCommits": [
         "d81b8ea5ccd74a25189b2f5ac63f58a2e9eff824"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-034",
@@ -1275,7 +1209,7 @@
         "section": "Known baseline defects / 34",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-034-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1298,9 +1232,7 @@
       "fixCommits": [
         "0c682dbb22250df3852cb60ed35dd2654c7df85b"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-035",
@@ -1313,7 +1245,7 @@
         "section": "Known baseline defects / 35",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-035-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1339,9 +1271,7 @@
         "f3c9465ff72d86c90cde9f34bb46648b35dc4951",
         "1f3a009f6a702c8462e2ff9c8bb38366391d563f"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-036",
@@ -1354,7 +1284,7 @@
         "section": "Known baseline defects / 36",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-036-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1377,9 +1307,7 @@
       "fixCommits": [
         "43c6a9822eed9103a6abb9a0cfe4cfef045e6e05"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-037",
@@ -1392,7 +1320,7 @@
         "section": "Known baseline defects / 37",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-037-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1415,9 +1343,7 @@
       "fixCommits": [
         "52e650f5454f9dd41d3ba722b05cf7ebdbc0ddd0"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-038",
@@ -1430,7 +1356,7 @@
         "section": "Known baseline defects / 38",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-038-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1453,9 +1379,7 @@
       "fixCommits": [
         "03fa231fb9481414d61e71901d4c184a6472c093"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-039",
@@ -1468,7 +1392,7 @@
         "section": "Known baseline defects / 39",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-039-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1492,9 +1416,7 @@
         "2a4c733a670aa1b114d54ffee1e01bf18e8fee69",
         "46e066010ee76a9ca032449c55bf4f44dc91a278"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-040",
@@ -1507,7 +1429,7 @@
         "section": "Known baseline defects / 40",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-040-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1530,9 +1452,7 @@
       "fixCommits": [
         "22c0768179de48224c8bcedf01cee4680968ae02"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-041",
@@ -1545,7 +1465,7 @@
         "section": "Known baseline defects / 41",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-041-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1568,9 +1488,7 @@
       "fixCommits": [
         "22c0768179de48224c8bcedf01cee4680968ae02"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-042",
@@ -1583,7 +1501,7 @@
         "section": "Known baseline defects / 42",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-042-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1606,9 +1524,7 @@
       "fixCommits": [
         "10c23eeb214d5e6f683f4f45bd806164af1ac72b"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-043",
@@ -1621,7 +1537,7 @@
         "section": "Known baseline defects / 43",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-043-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1644,9 +1560,7 @@
       "fixCommits": [
         "b6695c1cca41be0bb2e9244c1bc5ddb643345e08"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-044",
@@ -1659,7 +1573,7 @@
         "section": "Known baseline defects / 44",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-044-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1682,9 +1596,7 @@
       "fixCommits": [
         "36ac5c33d7559ad5813c781072fb66b7915ce684"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-045",
@@ -1697,7 +1609,7 @@
         "section": "Known baseline defects / 45",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-045-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1721,9 +1633,7 @@
         "1730dbabc913ff2b3e64cc5e60c2c5bbdea4b5bf",
         "e2c32dacd1ba56ab2de2d47f168b882a1a3cedaf"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-046",
@@ -1736,7 +1646,7 @@
         "section": "Known baseline defects / 46",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-046-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1759,9 +1669,7 @@
       "fixCommits": [
         "2cffd8f6941667dfb7667b671214d393a96c4fc2"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-047",
@@ -1774,7 +1682,7 @@
         "section": "Known baseline defects / 47",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-047-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1797,9 +1705,7 @@
       "fixCommits": [
         "56f4db21e7abc6be5e928d3c730aee3d0cec088c"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-048",
@@ -1812,7 +1718,7 @@
         "section": "Known baseline defects / 48",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-048-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1835,9 +1741,7 @@
       "fixCommits": [
         "615d4379121998961c9e9dae4ac2e0de4ac92d96"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-049",
@@ -1850,7 +1754,7 @@
         "section": "Known baseline defects / 49",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-049-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1874,9 +1778,7 @@
         "c2e74838e125e581eb54aca0d276a034de13331d",
         "81c8a499f2ec11b7e5dc8b824c4948eaf1c2e0e3"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-050",
@@ -1889,7 +1791,7 @@
         "section": "Known baseline defects / 50",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-050-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1917,9 +1819,7 @@
         "9c49e80b66ccf11e90cb9e17e6fd4cf6fe69cfce",
         "3747397b6738fe2777820e9c7e2e399033b11ace"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-051",
@@ -1932,7 +1832,7 @@
         "section": "Known baseline defects / 51",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-051-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1955,9 +1855,7 @@
       "fixCommits": [
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-052",
@@ -1970,7 +1868,7 @@
         "section": "Known baseline defects / 52",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-052-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -1993,9 +1891,7 @@
       "fixCommits": [
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-053",
@@ -2008,7 +1904,7 @@
         "section": "Known baseline defects / 53",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-053-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2031,9 +1927,7 @@
       "fixCommits": [
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-054",
@@ -2046,7 +1940,7 @@
         "section": "Known baseline defects / 54",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-054-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2070,9 +1964,7 @@
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb",
         "6194c08124a59ad21e6642b226e5a7feb35654a8"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-055",
@@ -2085,7 +1977,7 @@
         "section": "Known baseline defects / 55",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-055-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2108,9 +2000,7 @@
       "fixCommits": [
         "40d84a15bd83f647b4cb305acdd260a729f568c9"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-056",
@@ -2123,7 +2013,7 @@
         "section": "Known baseline defects / 56",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-056-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2147,9 +2037,7 @@
         "679fe9c9486e4cea66ebbe9bedcb33972ce6b714",
         "2e087c696c346a07263881ba89146d372e20217a"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-057",
@@ -2162,7 +2050,7 @@
         "section": "Known baseline defects / 57",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-057-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2185,9 +2073,7 @@
       "fixCommits": [
         "9742b52f43bdecf86d895bfd854416412048c9df"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-058",
@@ -2200,7 +2086,7 @@
         "section": "Known baseline defects / 58",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "blocked-external",
       "reproduction": {
         "testId": "BD-058-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2220,7 +2106,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "regression-fix-required"
+        "external-cross-platform-evidence-missing"
       ]
     },
     {
@@ -2234,7 +2120,7 @@
         "section": "Known baseline defects / 59",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-059-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2259,9 +2145,7 @@
         "e9000d07b25adbab3112d7f194bb7f6f5ebcce36",
         "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-060",
@@ -2274,7 +2158,7 @@
         "section": "Known baseline defects / 60",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-060-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2297,9 +2181,7 @@
       "fixCommits": [
         "1effd78c0358355e7ed933fe4d857fc5c150bdeb"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-061",
@@ -2312,7 +2194,7 @@
         "section": "Known baseline defects / 61",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-061-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2341,9 +2223,7 @@
         "62717d5097f791fccfd58ba5ec03276349de159c",
         "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-062",
@@ -2356,7 +2236,7 @@
         "section": "Known baseline defects / 62",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-062-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2384,9 +2264,7 @@
         "b7957a30db881e4ce880fda7808ebc8c98c730cc",
         "b7cc42c8c43cffaf94cb1cb3cb90809224b194f4"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-063",
@@ -2399,7 +2277,7 @@
         "section": "Known baseline defects / 63",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "fix-in-progress",
+      "status": "closed",
       "reproduction": {
         "testId": "BD-063-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2423,9 +2301,7 @@
         "2136a0dbf2d5a82037905c8d8c728949bcc839c9",
         "3e5b81cc159e1c311a502f83dad439070434dddd"
       ],
-      "blockers": [
-        "current-regression-evidence-missing"
-      ]
+      "blockers": []
     },
     {
       "id": "BD-064",
@@ -2438,7 +2314,7 @@
         "section": "Known baseline defects / 64",
         "baselineCommit": "f9d522289b500174e4e387b6078f907ea4ac56fa"
       },
-      "status": "reproduced",
+      "status": "blocked-external",
       "reproduction": {
         "testId": "BD-064-REPRO",
         "path": "test/reproduction/high.repro.ts",
@@ -2458,7 +2334,7 @@
       },
       "fixCommits": [],
       "blockers": [
-        "regression-fix-required"
+        "external-naming-approval-missing"
       ]
     }
   ]

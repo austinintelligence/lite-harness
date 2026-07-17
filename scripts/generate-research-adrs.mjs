@@ -278,7 +278,7 @@ const records = [
     security: "Immutable baseline plus explicit amendments prevents silent erosion of trust boundaries and release gates.",
     compatibility: "Contributors can distinguish baseline intent, accepted amendments, implementation status, and external blockers.",
     migration: "Link each requirement to ADR/code/test/CI/evidence, add an amendment index, and reject status changes lacking current production-path proof.",
-    release: "The only valid verdict remains NOT YET A VERIFIED ALPHA until all required rows and blockers are resolved.",
+    release: "The generated verdict may report a VERIFIED LOCAL ALPHA CANDIDATE when all locally actionable rows and defects have current evidence; unavailable platform, provider, naming, signing, and registry authorities remain explicitly blocked-external until their own evidence exists.",
   },
   {
     number: 52, slug: "alpha-scope-and-preview-boundaries", title: "Alpha scope, networking, services, and preview boundaries", status: "accepted", items: "Plan contradictions: networking, breadth, service managers, WebSocket, provider/integration tiers",

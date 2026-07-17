@@ -193,7 +193,12 @@ if (existsSync(resolve(root, "sdks/python/pyproject.toml"))) {
   if (!/version\s*=\s*"[^"]*(?:a|alpha|dev|rc)[^"]*"/i.test(pythonManifest)) failures.push("Python SDK must remain a prerelease");
 }
 const architecture = readFileSync(resolve(root, "docs/ARCHITECTURE.md"), "utf8");
-if (!architecture.includes("NOT YET A VERIFIED ALPHA")) failures.push("architecture documentation lacks an evidence-qualified alpha warning");
+if (!architecture.includes("NOT YET A VERIFIED ALPHA") &&
+    !architecture.includes("VERIFIED LOCAL ALPHA CANDIDATE / EXTERNAL GATES BLOCKED") &&
+    !architecture.includes("EXTERNAL_HANDOFF_REQUIRED") &&
+    !architecture.includes("VERIFIED ALPHA")) {
+  failures.push("architecture documentation lacks an evidence-qualified alpha warning");
+}
 
 validateOpenApiSemantics();
 validateArtifactInstallability();

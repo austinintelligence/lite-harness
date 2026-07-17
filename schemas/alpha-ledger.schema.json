@@ -67,7 +67,7 @@
               "additionalProperties": false
             }
           },
-          "status": { "enum": ["blocked", "in-progress", "verified"] },
+          "status": { "enum": ["blocked", "in-progress", "verified", "blocked-external"] },
           "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
         },
         "additionalProperties": false

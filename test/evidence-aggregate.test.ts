@@ -126,6 +126,36 @@ describe("candidate evidence aggregation", () => {
     expect(aggregate.claims).toMatchObject({ releaseQualification: { externalGates: missingExternalGates } });
   });
 
+  it("keeps explicit external-only ledger rows out of local failures", () => {
+    const root = fixtureRoot();
+    const path = "evidence/a.json";
+    writeJson(join(root, path), envelope("suite-a", "pass", ["A02"]));
+
+    const aggregate = aggregateCandidateEvidence({
+      root,
+      paths: [path],
+      facts,
+      catalog: fixtureCatalog,
+      ledgerQualification: {
+        available: true,
+        requirements: { total: 2, unverifiedIds: [], externalOnlyIds: ["A01"] },
+        defects: { total: 2, openIds: [], externalOnlyIds: ["BD-058"] },
+      },
+    });
+
+    expect(aggregate.test.result).toBe("blocked");
+    expect(aggregate.claims).toMatchObject({
+      releaseQualification: {
+        ledger: {
+          requirements: { unverifiedIds: [], externalOnlyIds: ["A01"] },
+          defects: { openIds: [], externalOnlyIds: ["BD-058"] },
+        },
+      },
+    });
+    expect(aggregate.test.cases.find((item) => item.name === "all required requirements verified")?.status).toBe("passed");
+    expect(aggregate.test.cases.find((item) => item.name === "all critical and high defects closed")?.status).toBe("passed");
+  });
+
   it("treats an ordinary suite self-asserting external gates as an unauthorized failure", () => {
     const root = fixtureRoot();
     const path = "evidence/a.json";

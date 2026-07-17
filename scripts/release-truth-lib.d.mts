@@ -23,6 +23,8 @@ export interface DefectTraceRow {
 
 export function currentCommit(root: string): string;
 export function currentTree(root: string, revision?: string): string;
+export function isExternalOnlyRequirement(row: RequirementTraceRow): boolean;
+export function isExternalOnlyDefect(defect: DefectTraceRow): boolean;
 export function requirementVerificationFailures(
   row: RequirementTraceRow,
   options: { root: string; head: string; tree?: string },
@@ -35,6 +37,6 @@ export function evaluateReleaseTruth(
   ledgers: { requirements: RequirementTraceRow[]; defects: DefectTraceRow[] },
   options: { root: string; head: string; tree?: string },
 ): {
-  requirementEvaluations: Array<{ row: RequirementTraceRow; failures: string[]; verified: boolean }>;
-  defectEvaluations: Array<{ defect: DefectTraceRow; failures: string[]; closed: boolean }>;
+  requirementEvaluations: Array<{ row: RequirementTraceRow; failures: string[]; verified: boolean; externalOnly: boolean }>;
+  defectEvaluations: Array<{ defect: DefectTraceRow; failures: string[]; closed: boolean; externalOnly: boolean }>;
 };

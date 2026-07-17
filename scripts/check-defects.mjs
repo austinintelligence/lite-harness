@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { baselineDefects } from "./defects-lib.mjs";
-import { currentCommit, currentTree, defectClosureFailures } from "./release-truth-lib.mjs";
+import { currentCommit, currentTree, defectClosureFailures, isExternalOnlyDefect } from "./release-truth-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const structureOnly = process.argv.includes("--structure");
@@ -38,10 +38,16 @@ for (let index = 0; index < (ledger.defects ?? []).length; index += 1) {
   if (defect.status === "closed") {
     failures.push(...defectClosureFailures(defect, { root, head, tree, checkFreshness: !structureOnly })
       .map((failure) => `${defect.id} ${failure}`));
+  } else if (defect.status === "blocked-external" && !isExternalOnlyDefect(defect)) {
+    failures.push(`${defect.id} blocked-external status requires only explicit external-* blockers`);
   }
 }
 if (!structureOnly && !closedOnly) {
-  for (const defect of ledger.defects ?? []) if (["critical", "high"].includes(defect.severity) && defect.status !== "closed") failures.push(`${defect.id} ${defect.severity} defect remains ${defect.status}`);
+  for (const defect of ledger.defects ?? []) {
+    if (["critical", "high"].includes(defect.severity) && defect.status !== "closed" && !isExternalOnlyDefect(defect)) {
+      failures.push(`${defect.id} ${defect.severity} defect remains ${defect.status}`);
+    }
+  }
 }
 
 if (failures.length) {

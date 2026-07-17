@@ -31,4 +31,4 @@ Link each requirement to ADR/code/test/CI/evidence, add an amendment index, and 
 
 ## Release impact
 
-The only valid verdict remains NOT YET A VERIFIED ALPHA until all required rows and blockers are resolved.
+The generated verdict may report a VERIFIED LOCAL ALPHA CANDIDATE when all locally actionable rows and defects have current evidence; unavailable platform, provider, naming, signing, and registry authorities remain explicitly blocked-external until their own evidence exists.

@@ -13,6 +13,32 @@ different tool-call, JSON-argument, coding, latency, and reasoning behavior.
 The observed qualification runs therefore record the route, not a single
 model score.
 
+## Observed free-route roster
+
+The operator-supplied OpenRouter catalog for this experiment exposed the
+following eligible pool at capture time. The pool is dynamic and this list is
+not a promise that every request will use every entry:
+
+| Provider | Observed models |
+| --- | --- |
+| Cohere | `north-mini-code-20260617` |
+| Google | `Gemma 4 26B A4B`; `Gemma 4 31B` |
+| Meta Llama | `Llama 3.2 3B Instruct`; `Llama 3.3 70B Instruct` |
+| Nous Research | `Hermes 3 405B Instruct` |
+| Nvidia | `llama-nemotron-embed-vl-1b-v2-20260224`; `llama-nemotron-rerank-vl-1b-v2`; `Nemotron 3 Nano 30B A3B`; `nemotron-3-nano-omni-30b-a3b-reasoning-20260428`; `Nemotron 3 Super`; `Nemotron 3 Ultra`; `nemotron-3.5-content-safety-20260604`; `nemotron-nano-12b-v2-vl`; `nemotron-nano-9b-v2` |
+| OpenAI | `gpt-oss-20b` |
+| Poolside | `Laguna M.1`; `Laguna XS 2.1` |
+| Qwen | `Qwen3 Coder 480B A35B`; `Qwen3 Next 80B A3B Instruct` |
+| Tencent | `Hy3` |
+| Venice | `Uncensored` |
+
+The local Hermes proxy was also exercised with `gpt-5.6-luna`. Its text-only
+smoke passed, but its OpenAI-compatible chat endpoint returned `finish_reason:
+stop` with no `tool_calls` even when `tool_choice: required` was sent. The
+Hermes tool-dependent vertical and corpus runs therefore fail closed and are
+not used as OpenRouter results; the OpenRouter route is the intentional
+tool-capable model qualification lane for this experiment.
+
 ## Current local evidence
 
 - The public SDK -> Gateway -> Manager -> Docker model loop passed: real

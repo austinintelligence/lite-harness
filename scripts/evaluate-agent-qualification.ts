@@ -14,10 +14,14 @@ const evidenceIndex = process.argv.indexOf("--evidence");
 const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
 const provider = process.env.LITE_HARNESS_PROVIDER?.trim();
 const model = process.env.LITE_HARNESS_MODEL?.trim();
-if (provider !== "openrouter" || model !== "openrouter/free") {
-  throw new Error("This qualification runner requires LITE_HARNESS_PROVIDER=openrouter and LITE_HARNESS_MODEL=openrouter/free");
+const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "https://openrouter.ai/api/v1/";
+const isOpenRouter = provider === "openrouter" && model === "openrouter/free" && /^https:\/\/openrouter\.ai\/api\/v1\/?$/i.test(providerBaseUrl);
+const isHermes = provider === "openai-compatible" && model === "gpt-5.6-luna" && providerBaseUrl === "http://127.0.0.1:8645/v1";
+if (!isOpenRouter && !isHermes) {
+  throw new Error("Qualification requires either OpenRouter openrouter/free or the exact local Hermes gpt-5.6-luna route");
 }
 if (!process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()) throw new Error("LITE_HARNESS_PROVIDER_API_KEY must be supplied in the process environment");
+const evaluationRoute = isHermes ? "local-hermes-openai-compatible" : "openrouter";
 
 const runtimeImage = immutableImage(process.env.LITE_HARNESS_RUNTIME_IMAGE, "lite-harness/tool-runtime:dev");
 const browserImage = process.env.LITE_HARNESS_TEST_BROWSER_IMAGE?.trim()
@@ -66,9 +70,9 @@ try {
     LITE_HARNESS_USER_ID: owner.userId,
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(gatewayPort),
-    LITE_HARNESS_PROVIDER: "openrouter",
-    LITE_HARNESS_PROVIDER_BASE_URL: process.env.LITE_HARNESS_PROVIDER_BASE_URL ?? "https://openrouter.ai/api/v1/",
-    LITE_HARNESS_MODEL: "openrouter/free",
+    LITE_HARNESS_PROVIDER: provider!,
+    LITE_HARNESS_PROVIDER_BASE_URL: providerBaseUrl,
+    LITE_HARNESS_MODEL: model!,
     LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION: "0",
     LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION: "0",
     LITE_HARNESS_RUNTIME: "docker",
@@ -175,7 +179,7 @@ try {
     result: passed ? "pass" : "fail",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
-    provider: { route: "openrouter", baseUrl: environment.LITE_HARNESS_PROVIDER_BASE_URL, model: "openrouter/free", credential: "non-empty-placeholder-only" },
+    provider: { route: evaluationRoute, baseUrl: environment.LITE_HARNESS_PROVIDER_BASE_URL, model: model!, credential: "non-empty-placeholder-only" },
     publicClient: "@lite-harness/sdk LiteHarnessClient",
     taskCount: tasks.length,
     passedTasks: taskResults.filter((item) => item.passed === true).length,
@@ -192,7 +196,7 @@ try {
     result: "fail",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
-    provider: { route: "openrouter", model: "openrouter/free", credential: "non-empty-placeholder-only" },
+    provider: { route: evaluationRoute, model: model!, credential: "non-empty-placeholder-only" },
     error: error instanceof Error ? error.message : String(error),
     managerLogs,
     gatewayLogs,

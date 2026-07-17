@@ -1,10 +1,11 @@
 # Architecture
 
-> **NOT YET A VERIFIED ALPHA.** This document describes the contracted target
-> architecture and partially integrated call paths. It is not evidence that a
-> capability or platform is release-supported. Current proof and blockers are
-> generated in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and
-> [../BLOCKERS.md](../BLOCKERS.md).
+> **NOT YET A VERIFIED ALPHA.** The architecture contract remains evidence-qualified;
+> current local and external proof is generated in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)
+> and [../BLOCKERS.md](../BLOCKERS.md). When every locally actionable row has
+> current clean evidence, the generated verdict may move to
+> `EXTERNAL_HANDOFF_REQUIRED` while unavailable platform, direct-provider,
+> naming, signing, or registry gates remain explicitly external.
 
 Lite-Harness keeps five durable concepts separate: Agent, Session, Workspace,
 Run, and Runtime. A container is never the owner of conversation or workspace

@@ -22,7 +22,7 @@
           "severity": { "enum": ["critical", "high", "medium", "low"] },
           "category": { "type": "string", "minLength": 1 },
           "source": { "type": "object" },
-          "status": { "enum": ["open", "reproduced", "fix-in-progress", "closed"] },
+          "status": { "enum": ["open", "reproduced", "fix-in-progress", "closed", "blocked-external"] },
           "reproduction": { "$ref": "#/$defs/testTrace" },
           "regression": { "$ref": "#/$defs/testTrace" },
           "fixCommits": { "type": "array", "items": { "type": "string", "pattern": "^[a-f0-9]{40}$" } },

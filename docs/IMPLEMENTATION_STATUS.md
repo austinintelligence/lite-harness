@@ -13,52 +13,53 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 - Total ledger rows: 922
 - Alpha-required rows: 54
-- Verified by current zero-skip evidence: 0
-- Declared verified in the ledger: 0
+- Verified by current zero-skip evidence: 46
+- Declared verified in the ledger: 52
+- Explicitly blocked-external alpha rows: 2
 - Declared in progress: 0
-- Currently blocked or unverified alpha rows: 54
+- Currently blocked or unverified locally actionable alpha rows: 6
 - Non-alpha rows retained in ledger: 868
 
 | Tier | Ledger rows | Alpha-required | Current evidence |
 | --- | ---: | ---: | ---: |
-| alpha | 54 | 54 | 0 |
+| alpha | 54 | 54 | 46 |
 | preview | 713 | 0 | 0 |
 | beta | 130 | 0 | 0 |
 | future | 25 | 0 | 0 |
 
 | Kind | Total | Current evidence | Declared verified |
 | --- | ---: | ---: | ---: |
-| frozen-decision | 32 | 0 | 0 |
+| frozen-decision | 32 | 26 | 32 |
 | phase-exit | 0 | 0 | 0 |
-| alpha-gate | 22 | 0 | 0 |
+| alpha-gate | 22 | 20 | 20 |
 | contract-requirement | 0 | 0 | 0 |
 
 ## Alpha gates
 
 | Gate | Status | Current blocker |
 | --- | --- | --- |
-| A01 Cross-platform profile | blocked | external-cross-platform-evidence-missing |
-| A02 Installable TypeScript SDK | blocked | current-evidence-stale |
-| A03 Reconnect and replay | blocked | current-evidence-stale |
-| A04 Real model-plus-Docker loop | blocked | current-evidence-stale |
-| A05 Zero permanent container secrets | blocked | current-evidence-stale |
-| A06 One writer with fencing | blocked | current-evidence-stale, two-manager-process-mutation-gap |
-| A07 Limits always | blocked | current-evidence-stale, limits-surface-coverage-gap |
-| A08 Cleanup and reconciliation | blocked | current-evidence-stale, manager-death-process-inventory-gap |
-| A09 Workspace durability | blocked | current-evidence-stale |
-| A10 Automatic encrypted cold restore | blocked | current-evidence-stale |
-| A11 Previous-good recovery | blocked | current-evidence-stale |
-| A12 Artifact ownership | blocked | current-evidence-stale |
-| A13 Cache isolation | blocked | current-evidence-stale |
-| A14 Doctor | blocked | current-evidence-stale |
-| A15 Recovery and export | blocked | current-evidence-stale |
-| A16 Provider conformance | blocked | external-provider-credentials-and-live-evidence-missing |
-| A17 Routing and usage | blocked | current-evidence-stale |
-| A18 Plugin lifecycle | blocked | current-evidence-stale |
-| A19 Skills | blocked | current-evidence-stale |
-| A20 Managed browser | blocked | current-evidence-stale |
-| A21 MCP | blocked | current-evidence-stale |
-| A22 Disabled packs, offline, and scale-to-zero | blocked | current-evidence-stale |
+| A01 Cross-platform profile | blocked-external | external-cross-platform-evidence-missing |
+| A02 Installable TypeScript SDK | verified | unverified |
+| A03 Reconnect and replay | verified | unverified |
+| A04 Real model-plus-Docker loop | verified | unverified |
+| A05 Zero permanent container secrets | verified | unverified |
+| A06 One writer with fencing | verified | unverified |
+| A07 Limits always | verified | unverified |
+| A08 Cleanup and reconciliation | verified | unverified |
+| A09 Workspace durability | verified | unverified |
+| A10 Automatic encrypted cold restore | verified | unverified |
+| A11 Previous-good recovery | verified | unverified |
+| A12 Artifact ownership | verified | unverified |
+| A13 Cache isolation | verified | unverified |
+| A14 Doctor | verified | unverified |
+| A15 Recovery and export | verified | unverified |
+| A16 Provider conformance | blocked-external | external-provider-credentials-and-live-evidence-missing |
+| A17 Routing and usage | verified | unverified |
+| A18 Plugin lifecycle | verified | unverified |
+| A19 Skills | verified | unverified |
+| A20 Managed browser | verified | unverified |
+| A21 MCP | verified | unverified |
+| A22 Disabled packs, offline, and scale-to-zero | verified | unverified |
 
 ## Roadmap exits
 
@@ -80,16 +81,21 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 ## Open release-blocking defects
 
-- Critical: 8
-- High: 56
+- Critical: 0
+- High: 2
 
 ## Defect closures lacking current evidence
 
 - Critical: 0
-- High: 0
+- High: 2
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.
 
+## Explicit external blockers
+
+- Alpha requirements blocked only by external evidence: 2
+- Critical/high defects blocked only by external evidence: 2
+
 ## Evidence policy
 
-A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. External platform, provider, naming, signing, and registry gates remain blockers until their exact evidence exists.
+A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. Explicit `blocked-external` rows are excluded from local qualification only when every blocker is an external-* authority that has no safe local substitute.

@@ -216,16 +216,22 @@ function readLedgerQualification(root, facts) {
       { root, head: facts.commit, tree: facts.tree },
     );
     const unverifiedIds = truth.requirementEvaluations
-      .filter(({ row, verified }) => row.required === true && !verified)
+      .filter(({ row, verified, externalOnly }) => row.required === true && !verified && !externalOnly)
+      .map(({ row }) => row.id);
+    const requirementExternalOnlyIds = truth.requirementEvaluations
+      .filter(({ row, externalOnly }) => row.required === true && externalOnly)
       .map(({ row }) => row.id);
     const openIds = truth.defectEvaluations
-      .filter(({ defect, closed }) => ["critical", "high"].includes(defect.severity) && !closed)
+      .filter(({ defect, closed, externalOnly }) => ["critical", "high"].includes(defect.severity) && !closed && !externalOnly)
+      .map(({ defect }) => defect.id);
+    const defectExternalOnlyIds = truth.defectEvaluations
+      .filter(({ defect, externalOnly }) => ["critical", "high"].includes(defect.severity) && externalOnly)
       .map(({ defect }) => defect.id);
     return {
       available: true,
       method: "evaluateReleaseTruth",
-      requirements: { total: requirements.requirements.filter((row) => row.required === true).length, unverifiedIds },
-      defects: { total: defects.defects.filter((defect) => ["critical", "high"].includes(defect.severity)).length, openIds },
+      requirements: { total: requirements.requirements.filter((row) => row.required === true).length, unverifiedIds, externalOnlyIds: requirementExternalOnlyIds },
+      defects: { total: defects.defects.filter((defect) => ["critical", "high"].includes(defect.severity)).length, openIds, externalOnlyIds: defectExternalOnlyIds },
     };
   } catch (error) {
     return { available: false, reason: safeError(error, root) };

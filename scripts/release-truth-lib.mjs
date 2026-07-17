@@ -12,6 +12,14 @@ export function currentTree(root, revision = "HEAD") {
   return execFileSync("git", ["rev-parse", `${revision}^{tree}`], { cwd: root, encoding: "utf8" }).trim();
 }
 
+export function isExternalOnlyRequirement(row) {
+  return row?.status === "blocked-external" && hasOnlyExternalBlockers(row.blockers);
+}
+
+export function isExternalOnlyDefect(defect) {
+  return defect?.status === "blocked-external" && hasOnlyExternalBlockers(defect.blockers);
+}
+
 export function requirementVerificationFailures(row, { root, head, tree = currentTree(root, head) }) {
   const failures = [];
   const implementationPaths = Array.isArray(row.implementationPaths) ? row.implementationPaths : [];
@@ -112,15 +120,20 @@ export function defectClosureFailures(defect, { root, head, tree = currentTree(r
 export function evaluateReleaseTruth({ requirements, defects }, { root, head, tree = currentTree(root, head) }) {
   const requirementEvaluations = requirements.map((row) => {
     const failures = requirementVerificationFailures(row, { root, head, tree });
-    return { row, failures, verified: failures.length === 0 };
+    return { row, failures, verified: failures.length === 0, externalOnly: isExternalOnlyRequirement(row) };
   });
   const defectEvaluations = defects.map((defect) => {
     const failures = defect.status === "closed"
       ? defectClosureFailures(defect, { root, head, tree })
       : [`is ${defect.status ?? "missing"}, not closed`];
-    return { defect, failures, closed: failures.length === 0 };
+    return { defect, failures, closed: failures.length === 0, externalOnly: isExternalOnlyDefect(defect) };
   });
   return { requirementEvaluations, defectEvaluations };
+}
+
+function hasOnlyExternalBlockers(blockers) {
+  return Array.isArray(blockers) && blockers.length > 0 && blockers.every((blocker) =>
+    typeof blocker === "string" && blocker.startsWith("external-"));
 }
 
 function canonicalProducer(producer) {

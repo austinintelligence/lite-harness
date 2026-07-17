@@ -11,10 +11,16 @@ import { dockerWorkspaceVolumeName } from "@lite-harness/runtime-docker";
 const root = resolve(import.meta.dirname, "..");
 const evidenceIndex = process.argv.indexOf("--evidence");
 const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
-if (process.env.LITE_HARNESS_PROVIDER !== "openrouter" || process.env.LITE_HARNESS_MODEL !== "openrouter/free") {
-  throw new Error("Concurrency qualification requires LITE_HARNESS_PROVIDER=openrouter and LITE_HARNESS_MODEL=openrouter/free");
+const provider = process.env.LITE_HARNESS_PROVIDER?.trim();
+const model = process.env.LITE_HARNESS_MODEL?.trim();
+const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "https://openrouter.ai/api/v1/";
+const isOpenRouter = provider === "openrouter" && model === "openrouter/free" && /^https:\/\/openrouter\.ai\/api\/v1\/?$/i.test(providerBaseUrl);
+const isHermes = provider === "openai-compatible" && model === "gpt-5.6-luna" && providerBaseUrl === "http://127.0.0.1:8645/v1";
+if (!isOpenRouter && !isHermes) {
+  throw new Error("Concurrency qualification requires either OpenRouter openrouter/free or the exact local Hermes gpt-5.6-luna route");
 }
 if (!process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()) throw new Error("LITE_HARNESS_PROVIDER_API_KEY must be supplied in the process environment");
+const evaluationRoute = isHermes ? "local-hermes-openai-compatible" : "openrouter";
 
 const runtimeImage = immutableImage(process.env.LITE_HARNESS_RUNTIME_IMAGE, "lite-harness/tool-runtime:dev");
 const browserImage = immutableImage(process.env.LITE_HARNESS_TEST_BROWSER_IMAGE, "lite-harness/browser-runtime:dev");
@@ -86,7 +92,7 @@ try {
       result: rounds.every((round) => round.result === "pass") && isolation.passed ? "pass" : "fail",
       sourceCommit: gitOutput(["rev-parse", "HEAD"]),
       sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
-      provider: { route: "openrouter", baseUrl: process.env.LITE_HARNESS_PROVIDER_BASE_URL ?? "https://openrouter.ai/api/v1/", model: "openrouter/free", credential: "non-empty-placeholder-only" },
+      provider: { route: evaluationRoute, baseUrl: providerBaseUrl, model: model!, credential: "non-empty-placeholder-only" },
       publicClient: "@lite-harness/sdk LiteHarnessClient",
       users: users.map((user) => ({ label: user.label, appId: user.principal.appId, tenantId: user.principal.tenantId, userId: user.principal.userId })),
       rounds,
@@ -102,7 +108,7 @@ try {
     result: "fail",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
-    provider: { route: "openrouter", model: "openrouter/free", credential: "non-empty-placeholder-only" },
+    provider: { route: evaluationRoute, model: model!, credential: "non-empty-placeholder-only" },
     error: error instanceof Error ? error.message : String(error),
     users: users.map((user) => ({ label: user.label, managerLogs: user.managerLogs, gatewayLogs: user.gatewayLogs })),
   };
@@ -145,8 +151,8 @@ async function startUser(label: "user-a" | "user-b", short: string): Promise<Use
     LITE_HARNESS_INTERNAL_TOKEN: user.internalToken, LITE_HARNESS_APP_TOKEN: user.appToken,
     LITE_HARNESS_APP_ID: principal.appId, LITE_HARNESS_TENANT_ID: principal.tenantId, LITE_HARNESS_USER_ID: principal.userId,
     LITE_HARNESS_HOST: "127.0.0.1", LITE_HARNESS_PORT: String(gatewayPort),
-    LITE_HARNESS_PROVIDER: "openrouter", LITE_HARNESS_PROVIDER_BASE_URL: process.env.LITE_HARNESS_PROVIDER_BASE_URL ?? "https://openrouter.ai/api/v1/",
-    LITE_HARNESS_MODEL: "openrouter/free", LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION: "0", LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION: "0",
+    LITE_HARNESS_PROVIDER: provider!, LITE_HARNESS_PROVIDER_BASE_URL: providerBaseUrl,
+    LITE_HARNESS_MODEL: model!, LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION: "0", LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION: "0",
     LITE_HARNESS_RUNTIME: "docker", LITE_HARNESS_RUNTIME_IMAGE: runtimeImage, LITE_HARNESS_MODE: "production", LITE_HARNESS_OFFLINE: "false",
     LITE_HARNESS_ENABLE_MEMORY: "false", LITE_HARNESS_REQUIRE_APPROVALS: "false", LITE_HARNESS_CONTEXT_OPTIMIZATION: "false",
     LITE_HARNESS_ENABLE_PLUGINS: "false", LITE_HARNESS_ENABLE_CACHE_CATALOG: "false", LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT: "false",

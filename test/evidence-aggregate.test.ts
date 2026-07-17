@@ -120,7 +120,15 @@ describe("candidate evidence aggregation", () => {
     writeJson(join(root, path), document);
 
     const aggregate = aggregateCandidateEvidence({
-      root, paths: [path], facts, ledgerQualification: completeLedgerQualification, catalog: fixtureCatalog,
+      root,
+      paths: [path],
+      facts,
+      ledgerQualification: completeLedgerQualification,
+      catalog: fixtureCatalog,
+      producerResults: {
+        "external-platform-evidence": { result: "skipped" },
+        "external-provider-evidence": { result: "skipped" },
+      },
     });
     expect(aggregate.test.result).toBe("blocked");
     expect(isExternalHandoffOnlyAggregate(aggregate)).toBe(true);

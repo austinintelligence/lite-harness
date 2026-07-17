@@ -180,7 +180,10 @@ export function isExternalHandoffOnlyAggregate(document) {
   return blockedCases.length > 0 && failedCases.length === 0 &&
     (ledger?.requirements?.unverifiedIds ?? []).length === 0 &&
     (ledger?.defects?.openIds ?? []).length === 0 &&
-    blockedCases.every(({ path }) => typeof path === "string" && path.startsWith("evidence/external/"));
+    blockedCases.every(({ path, name }) =>
+      (typeof path === "string" && path.startsWith("evidence/external/")) ||
+      (path === "ci/jobs" && ["external-platform-evidence", "external-provider-evidence"].includes(name))
+    );
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {

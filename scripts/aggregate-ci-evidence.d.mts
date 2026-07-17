@@ -13,3 +13,4 @@ export function aggregateCandidateEvidence(options: {
   catalog?: ReadonlyArray<Readonly<CandidateEvidenceCatalogEntry>>;
   gateAuthorities?: Readonly<Record<string, Readonly<ExternalGateAuthority>>>;
 }): EvidenceDocument;
+export function isExternalHandoffOnlyAggregate(document: EvidenceDocument): boolean;

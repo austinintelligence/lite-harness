@@ -74,9 +74,9 @@ jobs:
       - run: pnpm check:secrets
       - run: pnpm check:provenance
       - run: pnpm check:release
+      - run: pnpm check:truth-structure
       - run: pnpm check:images -- --evidence evidence/m3/image-promotion.json
       - run: pnpm check:doctor
-      - run: pnpm check:truth-structure
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
@@ -599,6 +599,12 @@ jobs:
       - run: pnpm assemble:ci-evidence -- --source .candidate-evidence --allow-incomplete --include-external
         id: assemble_evidence
         if: ${{ always() }}
+      - run: pnpm generate:status
+        id: generate_status
+        if: ${{ always() }}
+      - run: pnpm generate:blockers
+        id: generate_blockers
+        if: ${{ always() }}
       - run: pnpm check:secrets -- --include evidence --evidence
         id: evidence_secret_scan
         if: ${{ always() }}
@@ -631,7 +637,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           FANIN_CHECKS_JSON: >-
-            {"assemble":"${{ steps.assemble_evidence.outcome }}","evidenceSecretScan":"${{ steps.evidence_secret_scan.outcome }}","schemas":"${{ steps.schema_check.outcome }}","evidence":"${{ steps.evidence_check.outcome }}","verifiedRequirements":"${{ steps.verified_requirement_check.outcome }}","closedDefects":"${{ steps.closed_defect_check.outcome }}","completeRequirements":"${{ steps.complete_requirement_check.outcome }}","completeDefects":"${{ steps.complete_defect_check.outcome }}","status":"${{ steps.status_check.outcome }}","blockers":"${{ steps.blocker_check.outcome }}"}
+            {"assemble":"${{ steps.assemble_evidence.outcome }}","generateStatus":"${{ steps.generate_status.outcome }}","generateBlockers":"${{ steps.generate_blockers.outcome }}","evidenceSecretScan":"${{ steps.evidence_secret_scan.outcome }}","schemas":"${{ steps.schema_check.outcome }}","evidence":"${{ steps.evidence_check.outcome }}","verifiedRequirements":"${{ steps.verified_requirement_check.outcome }}","closedDefects":"${{ steps.closed_defect_check.outcome }}","completeRequirements":"${{ steps.complete_requirement_check.outcome }}","completeDefects":"${{ steps.complete_defect_check.outcome }}","status":"${{ steps.status_check.outcome }}","blockers":"${{ steps.blocker_check.outcome }}"}
       - run: pnpm check:secrets -- --include evidence/candidate --evidence
         id: aggregate_secret_scan
         if: ${{ always() }}

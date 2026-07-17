@@ -29,7 +29,7 @@ try {
       regressionIds: ["BD-063-REGRESSION"],
       claims: {
         documentation: {
-          architectureAndBlockerDocsDeclareExternalHandoffRequired: true,
+          architectureAndBlockerDocsMatchGeneratedVerdict: true,
           staleEvidenceAndUnprovenClosuresRemainBlocked: true,
         },
       },

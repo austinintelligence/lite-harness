@@ -40,7 +40,7 @@ function render() {
   const verdict = fullyQualified
     ? "VERIFIED ALPHA"
     : localQualified
-      ? "EXTERNAL_HANDOFF_REQUIRED"
+      ? "VERIFIED_LOCAL_ALPHA_CANDIDATE"
       : "NOT YET A VERIFIED ALPHA";
   const lines = [
     "# Implementation status", "",

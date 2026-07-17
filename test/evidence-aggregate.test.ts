@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { aggregateCandidateEvidence } from "../scripts/aggregate-ci-evidence.mjs";
+import { aggregateCandidateEvidence, isExternalHandoffOnlyAggregate } from "../scripts/aggregate-ci-evidence.mjs";
 import { createEvidenceDocument, missingExternalGates, validateEvidenceDocument } from "../scripts/evidence-lib.mjs";
 
 const roots: string[] = [];
@@ -123,6 +123,7 @@ describe("candidate evidence aggregation", () => {
       root, paths: [path], facts, ledgerQualification: completeLedgerQualification, catalog: fixtureCatalog,
     });
     expect(aggregate.test.result).toBe("blocked");
+    expect(isExternalHandoffOnlyAggregate(aggregate)).toBe(true);
     expect(aggregate.claims).toMatchObject({ releaseQualification: { externalGates: missingExternalGates } });
   });
 

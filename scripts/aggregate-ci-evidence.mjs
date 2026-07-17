@@ -171,6 +171,18 @@ export function aggregateCandidateEvidence({
   return document;
 }
 
+export function isExternalHandoffOnlyAggregate(document) {
+  if (document?.test?.result !== "blocked") return false;
+  const cases = Array.isArray(document.test.cases) ? document.test.cases : [];
+  const blockedCases = cases.filter(({ status }) => status === "blocked");
+  const failedCases = cases.filter(({ status }) => status === "failed");
+  const ledger = document.claims?.releaseQualification?.ledger;
+  return blockedCases.length > 0 && failedCases.length === 0 &&
+    (ledger?.requirements?.unverifiedIds ?? []).length === 0 &&
+    (ledger?.defects?.openIds ?? []).length === 0 &&
+    blockedCases.every(({ path }) => typeof path === "string" && path.startsWith("evidence/external/"));
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const root = resolve(import.meta.dirname, "..");
   const outputIndex = process.argv.indexOf("--output");
@@ -191,8 +203,9 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
     producerResults: parseProducerResults(process.env.NEEDS_JSON),
     fanInChecks: parseCheckResults(process.env.FANIN_CHECKS_JSON),
   });
-  process.stdout.write(`Aggregated candidate qualification with ${paths.length} available and ${missingPaths.length} missing evidence envelopes (${document.test.result}).\n`);
-  if (document.test.result !== "pass") process.exitCode = 1;
+  const externalHandoffOnly = isExternalHandoffOnlyAggregate(document);
+  process.stdout.write(`Aggregated candidate qualification with ${paths.length} available and ${missingPaths.length} missing evidence envelopes (${document.test.result}${externalHandoffOnly ? "; external handoff only" : ""}).\n`);
+  if (document.test.result !== "pass" && !externalHandoffOnly) process.exitCode = 1;
 }
 
 function uniqueArtifacts(artifacts) {

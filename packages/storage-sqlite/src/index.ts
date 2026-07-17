@@ -28,7 +28,7 @@ import type {
   ProviderConnectionRecord,
 } from "@lite-harness/contracts";
 
-export const SQLITE_SCHEMA_VERSION = 15;
+export const SQLITE_SCHEMA_VERSION = 16;
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { isTerminalRunStatus } from "@lite-harness/contracts";
 import type { AppendRunEvent, ResourceOwner, RunStore } from "@lite-harness/domain";
@@ -56,6 +56,9 @@ interface RunRow {
   usage_output_tokens: number;
   usage_cost_usd: number;
   usage_tool_calls: number;
+  usage_input_tokens_reported: number;
+  usage_output_tokens_reported: number;
+  usage_cost_reported: number;
   status: RunStatus;
   last_sequence: number;
   error_code: string | null;
@@ -240,9 +243,9 @@ function toRunRecord(row: RunRow): RunRecord {
     input: row.input,
     budget: normalizeBudget(JSON.parse(row.budget_json || "{}") as Partial<RunBudget>),
     usage: {
-      inputTokens: row.usage_input_tokens ?? 0,
-      outputTokens: row.usage_output_tokens ?? 0,
-      costUsd: row.usage_cost_usd ?? 0,
+      inputTokens: row.usage_input_tokens_reported === 1 ? row.usage_input_tokens : null,
+      outputTokens: row.usage_output_tokens_reported === 1 ? row.usage_output_tokens : null,
+      costUsd: row.usage_cost_reported === 1 ? row.usage_cost_usd : null,
       toolCalls: row.usage_tool_calls ?? 0,
     },
     status: row.status,
@@ -816,6 +819,17 @@ export class SqliteRunStore implements RunStore {
           ON provider_connections(app_id, tenant_id, user_id, created_at);
       `),
       () => this.#ensureColumn("runs", "provider_connection_id", "TEXT"),
+      () => {
+        this.#ensureColumn("runs", "usage_input_tokens_reported", "INTEGER NOT NULL DEFAULT 0 CHECK(usage_input_tokens_reported IN (0, 1))");
+        this.#ensureColumn("runs", "usage_output_tokens_reported", "INTEGER NOT NULL DEFAULT 0 CHECK(usage_output_tokens_reported IN (0, 1))");
+        this.#ensureColumn("runs", "usage_cost_reported", "INTEGER NOT NULL DEFAULT 0 CHECK(usage_cost_reported IN (0, 1))");
+        this.#database.exec(`
+          UPDATE runs SET
+            usage_input_tokens_reported = CASE WHEN usage_input_tokens <> 0 THEN 1 ELSE usage_input_tokens_reported END,
+            usage_output_tokens_reported = CASE WHEN usage_output_tokens <> 0 THEN 1 ELSE usage_output_tokens_reported END,
+            usage_cost_reported = CASE WHEN usage_cost_usd <> 0 THEN 1 ELSE usage_cost_reported END;
+        `);
+      },
     ];
     if (migrations.length !== SQLITE_SCHEMA_VERSION) {
       throw new Error(`Storage migration registry has ${migrations.length} entries; expected ${SQLITE_SCHEMA_VERSION}`);
@@ -1113,9 +1127,12 @@ export class SqliteRunStore implements RunStore {
            last_sequence = ?,
            error_code = COALESCE(?, error_code),
            error_message = COALESCE(?, error_message),
-           usage_input_tokens = usage_input_tokens + ?,
-           usage_output_tokens = usage_output_tokens + ?,
-           usage_cost_usd = usage_cost_usd + ?,
+           usage_input_tokens = CASE WHEN ? IS NULL THEN usage_input_tokens ELSE usage_input_tokens + ? END,
+           usage_input_tokens_reported = CASE WHEN ? IS NULL THEN usage_input_tokens_reported ELSE 1 END,
+           usage_output_tokens = CASE WHEN ? IS NULL THEN usage_output_tokens ELSE usage_output_tokens + ? END,
+           usage_output_tokens_reported = CASE WHEN ? IS NULL THEN usage_output_tokens_reported ELSE 1 END,
+           usage_cost_usd = CASE WHEN ? IS NULL THEN usage_cost_usd ELSE usage_cost_usd + ? END,
+           usage_cost_reported = CASE WHEN ? IS NULL THEN usage_cost_reported ELSE 1 END,
            usage_tool_calls = usage_tool_calls + ?,
            updated_at = ?
          WHERE id = ?`,
@@ -1125,9 +1142,9 @@ export class SqliteRunStore implements RunStore {
         sequence,
         params.errorCode ?? null,
         params.errorMessage ?? null,
-        params.usage?.inputTokens ?? 0,
-        params.usage?.outputTokens ?? 0,
-        params.usage?.costUsd ?? 0,
+        params.usage?.inputTokens ?? null, params.usage?.inputTokens ?? 0, params.usage?.inputTokens ?? null,
+        params.usage?.outputTokens ?? null, params.usage?.outputTokens ?? 0, params.usage?.outputTokens ?? null,
+        params.usage?.costUsd ?? null, params.usage?.costUsd ?? 0, params.usage?.costUsd ?? null,
         params.usage?.toolCalls ?? 0,
         createdAt,
         params.runId,
@@ -1665,12 +1682,19 @@ export class SqliteRunStore implements RunStore {
         throw new Error(`Run ${runId} is terminal; cannot record usage`);
       }
       this.#database.prepare(
-        `UPDATE runs SET usage_input_tokens = usage_input_tokens + ?,
-          usage_output_tokens = usage_output_tokens + ?, usage_cost_usd = usage_cost_usd + ?,
+        `UPDATE runs SET
+          usage_input_tokens = CASE WHEN ? IS NULL THEN usage_input_tokens ELSE usage_input_tokens + ? END,
+          usage_input_tokens_reported = CASE WHEN ? IS NULL THEN usage_input_tokens_reported ELSE 1 END,
+          usage_output_tokens = CASE WHEN ? IS NULL THEN usage_output_tokens ELSE usage_output_tokens + ? END,
+          usage_output_tokens_reported = CASE WHEN ? IS NULL THEN usage_output_tokens_reported ELSE 1 END,
+          usage_cost_usd = CASE WHEN ? IS NULL THEN usage_cost_usd ELSE usage_cost_usd + ? END,
+          usage_cost_reported = CASE WHEN ? IS NULL THEN usage_cost_reported ELSE 1 END,
           usage_tool_calls = usage_tool_calls + ?, updated_at = ? WHERE id = ?`,
       ).run(
-        delta.inputTokens ?? 0, delta.outputTokens ?? 0, delta.costUsd ?? 0, delta.toolCalls ?? 0,
-        new Date().toISOString(), runId,
+        delta.inputTokens ?? null, delta.inputTokens ?? 0, delta.inputTokens ?? null,
+        delta.outputTokens ?? null, delta.outputTokens ?? 0, delta.outputTokens ?? null,
+        delta.costUsd ?? null, delta.costUsd ?? 0, delta.costUsd ?? null,
+        delta.toolCalls ?? 0, new Date().toISOString(), runId,
       );
       const run = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRow | undefined;
       if (!run) throw new Error(`Run not found: ${runId}`);

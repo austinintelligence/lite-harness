@@ -1037,11 +1037,14 @@ export class RunService {
   #appendAgentEvent(run: RunRecord, event: AgentRuntimeEvent, attemptId?: string): void {
     const current = this.getRun(run.id);
     if (!current || isTerminalRunStatus(current.status)) return;
+    const inputTokens = event.type === "usage.updated" ? numberValue(event.payload.inputTokens) : undefined;
+    const outputTokens = event.type === "usage.updated" ? numberValue(event.payload.outputTokens) : undefined;
+    const costUsd = event.type === "usage.updated" ? numberValue(event.payload.costUsd) : undefined;
     const usage = event.type === "usage.updated"
       ? {
-          inputTokens: numberValue(event.payload.inputTokens),
-          outputTokens: numberValue(event.payload.outputTokens),
-          costUsd: numberValue(event.payload.costUsd),
+          ...(inputTokens === undefined ? {} : { inputTokens }),
+          ...(outputTokens === undefined ? {} : { outputTokens }),
+          ...(costUsd === undefined ? {} : { costUsd }),
         }
       : event.type === "tool.call.requested"
         ? { toolCalls: 1 }
@@ -1064,13 +1067,13 @@ export class RunService {
       }
     }
     if (event.type === "usage.updated") {
-      const inputTokens = numberValue(event.payload.inputTokens);
-      const outputTokens = numberValue(event.payload.outputTokens);
-      if (Number.isSafeInteger(inputTokens)) this.#safeCounter("model.input_tokens.total", inputTokens, telemetryAttributes);
-      if (Number.isSafeInteger(outputTokens)) this.#safeCounter("model.output_tokens.total", outputTokens, telemetryAttributes);
-      if (typeof event.payload.costUsd === "number" && Number.isFinite(event.payload.costUsd) && event.payload.costUsd >= 0) {
-        this.#safeObserve("model.cost_usd", event.payload.costUsd, telemetryAttributes);
+      if (inputTokens !== undefined && Number.isSafeInteger(inputTokens)) {
+        this.#safeCounter("model.input_tokens.total", inputTokens, telemetryAttributes);
       }
+      if (outputTokens !== undefined && Number.isSafeInteger(outputTokens)) {
+        this.#safeCounter("model.output_tokens.total", outputTokens, telemetryAttributes);
+      }
+      if (costUsd !== undefined) this.#safeObserve("model.cost_usd", costUsd, telemetryAttributes);
     }
     try {
       this.store.appendEvent({
@@ -1112,9 +1115,9 @@ export class RunService {
 
   #enforceBudget(run: RunRecord): void {
     const exceeded =
-      run.usage.inputTokens > run.budget.maxInputTokens ? "input token" :
-      run.usage.outputTokens > run.budget.maxOutputTokens ? "output token" :
-      run.usage.costUsd > run.budget.maxCostUsd ? "cost" :
+      (run.usage.inputTokens !== null && run.usage.inputTokens > run.budget.maxInputTokens) ? "input token" :
+      (run.usage.outputTokens !== null && run.usage.outputTokens > run.budget.maxOutputTokens) ? "output token" :
+      (run.usage.costUsd !== null && run.usage.costUsd > run.budget.maxCostUsd) ? "cost" :
       run.usage.toolCalls > run.budget.maxToolCalls ? "tool call" : undefined;
     if (exceeded) this.#active.get(run.id)?.abort(new BudgetExceededError(exceeded));
   }
@@ -1207,8 +1210,8 @@ class BudgetExceededError extends Error {
   }
 }
 
-function numberValue(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export interface ApprovalExecutionBinding {
@@ -1283,9 +1286,15 @@ function remainingChildBudget(parent: RunRecord, children: readonly RunRecord[])
   return {
     maxTurns: Math.max(0, parent.budget.maxTurns - allocated.maxTurns),
     maxToolCalls: Math.max(0, parent.budget.maxToolCalls - allocated.maxToolCalls),
-    maxInputTokens: Math.max(0, parent.budget.maxInputTokens - parent.usage.inputTokens - allocated.maxInputTokens),
-    maxOutputTokens: Math.max(0, parent.budget.maxOutputTokens - parent.usage.outputTokens - allocated.maxOutputTokens),
-    maxCostUsd: Math.max(0, parent.budget.maxCostUsd - parent.usage.costUsd - allocated.maxCostUsd),
+    maxInputTokens: parent.usage.inputTokens === null
+      ? 0
+      : Math.max(0, parent.budget.maxInputTokens - parent.usage.inputTokens - allocated.maxInputTokens),
+    maxOutputTokens: parent.usage.outputTokens === null
+      ? 0
+      : Math.max(0, parent.budget.maxOutputTokens - parent.usage.outputTokens - allocated.maxOutputTokens),
+    maxCostUsd: parent.usage.costUsd === null
+      ? 0
+      : Math.max(0, parent.budget.maxCostUsd - parent.usage.costUsd - allocated.maxCostUsd),
     totalTimeoutMs: parent.budget.totalTimeoutMs,
     modelIdleTimeoutMs: parent.budget.modelIdleTimeoutMs,
     commandTimeoutMs: parent.budget.commandTimeoutMs,

@@ -1614,16 +1614,37 @@
         "type": "object",
         "properties": {
           "inputTokens": {
-            "minimum": 0,
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "outputTokens": {
-            "minimum": 0,
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "costUsd": {
-            "minimum": 0,
-            "type": "number"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "toolCalls": {
             "minimum": 0,

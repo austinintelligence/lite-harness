@@ -24,6 +24,7 @@ describe("durable subagent runs", () => {
       agent: "coder", workspace: "parent-workspace", input: "parent task", idempotencyKey: "parent",
       principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] },
     });
+    store.recordUsage(parent.runId, { inputTokens: 0, outputTokens: 0, costUsd: 0 });
     const child = service.createChildRun({
       parentRunId: parent.runId, agent: "coder", input: "child task", idempotencyKey: "tool-call-1",
       budget: { maxTurns: 2, maxToolCalls: 2, maxInputTokens: 1_000, maxOutputTokens: 1_000, maxCostUsd: 1 },
@@ -54,6 +55,7 @@ describe("durable subagent runs", () => {
         budget: { maxInputTokens: 1_000, maxOutputTokens: 1_000, maxCostUsd: 1, maxTurns: 2, maxToolCalls: 2 },
         principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
       });
+      store.recordUsage(parent.runId, { inputTokens: 0, outputTokens: 0, costUsd: 0 });
       expect(() => service.createChildRun({
         parentRunId: parent.runId, agent: "coder", input: "too large", idempotencyKey: "large",
         budget: { maxInputTokens: 2_000 },

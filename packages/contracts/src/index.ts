@@ -220,9 +220,12 @@ export interface RunBudget {
 }
 
 export interface RunUsage {
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
+  /** Null means the provider did not report authoritative usage. */
+  inputTokens: number | null;
+  /** Null means the provider did not report authoritative usage. */
+  outputTokens: number | null;
+  /** Null means the provider did not report an authoritative price/cost. */
+  costUsd: number | null;
   toolCalls: number;
 }
 
@@ -649,9 +652,9 @@ export const RunBudgetSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const RunUsageSchema = Type.Object({
-  inputTokens: Type.Integer({ minimum: 0 }),
-  outputTokens: Type.Integer({ minimum: 0 }),
-  costUsd: Type.Number({ minimum: 0 }),
+  inputTokens: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  outputTokens: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  costUsd: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
   toolCalls: Type.Integer({ minimum: 0 }),
 }, { additionalProperties: false });
 

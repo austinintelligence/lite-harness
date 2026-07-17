@@ -266,9 +266,9 @@ class RunStreamError(TypedDict):
 RunStreamFrame: TypeAlias = RunEvent | RunStreamError
 
 class RunUsage(TypedDict):
-    inputTokens: int
-    outputTokens: int
-    costUsd: float
+    inputTokens: int | None
+    outputTokens: int | None
+    costUsd: float | None
     toolCalls: int
 
 class SessionMessageRecord(TypedDict):

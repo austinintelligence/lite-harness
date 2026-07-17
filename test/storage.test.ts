@@ -200,6 +200,7 @@ describe("SqliteRunStore", () => {
       budget: { maxTurns: 2 },
     });
     expect(created.run.budget).toMatchObject({ maxTurns: 2, maxToolCalls: 3 });
+    expect(created.run.usage).toEqual({ inputTokens: null, outputTokens: null, costUsd: null, toolCalls: 0 });
     const attempt = store.createRunAttempt(created.run.id, "att-1");
     expect(store.completeRunAttempt(attempt.id, "SUCCEEDED")).toMatchObject({ status: "SUCCEEDED", endedAt: expect.any(String) });
     expect(store.recordUsage(created.run.id, { inputTokens: 5, toolCalls: 1 }).usage).toMatchObject({ inputTokens: 5, toolCalls: 1 });

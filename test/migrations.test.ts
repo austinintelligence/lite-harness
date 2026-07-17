@@ -89,15 +89,17 @@ describe("ordered SQLite migrations", () => {
     const migrated = new DatabaseSync(path, { readOnly: true });
     const versions = migrated.prepare("SELECT version FROM schema_migrations ORDER BY version").all()
       .map((row) => (row as { version: number }).version);
-    expect(versions).toEqual(Array.from({ length: 15 }, (_, index) => index + 1));
-    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(15);
+    expect(versions).toEqual(Array.from({ length: 16 }, (_, index) => index + 1));
+    expect((migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(16);
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM runtime_containers").get()).toEqual({ count: 0 });
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM run_route_plans").get()).toEqual({ count: 0 });
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM run_model_usage").get()).toEqual({ count: 0 });
     expect(migrated.prepare("SELECT COUNT(*) AS count FROM provider_connections").get()).toEqual({ count: 0 });
     const runColumns = migrated.prepare("PRAGMA table_info(runs)").all()
       .map((row) => (row as { name: string }).name);
-    expect(runColumns).toContain("provider_connection_id");
+    expect(runColumns).toEqual(expect.arrayContaining([
+      "provider_connection_id", "usage_input_tokens_reported", "usage_output_tokens_reported", "usage_cost_reported",
+    ]));
     const usageColumns = migrated.prepare("PRAGMA table_info(run_model_usage)").all()
       .map((row) => (row as { name: string }).name);
     expect(usageColumns).toEqual(expect.arrayContaining([

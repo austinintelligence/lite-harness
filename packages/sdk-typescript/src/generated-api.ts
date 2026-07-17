@@ -293,9 +293,9 @@ export type RunStreamError =
 export type RunStreamFrame = RunEvent | RunStreamError;
 export type RunUsage =
 {
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costUsd: number | null;
   toolCalls: number;
 };
 export type SessionMessageRecord =

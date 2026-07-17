@@ -36,7 +36,7 @@ describe("transactional run projections", () => {
       usage: { inputTokens: 7 },
     })).toThrow(/injected projection failure/);
     expect(store.listEvents("run-atomic")).toHaveLength(1);
-    expect(store.getRun("run-atomic")).toMatchObject({ lastSequence: 1, usage: { inputTokens: 0 } });
+    expect(store.getRun("run-atomic")).toMatchObject({ lastSequence: 1, usage: { inputTokens: null } });
     store.close();
   });
 
@@ -67,7 +67,7 @@ describe("transactional run projections", () => {
       id: "msg-late", sessionId: "ses_final", runId: "run-final", role: "assistant", content: "late",
     })).toThrow(/terminal.*cannot append a session message/);
     expect(store.listEvents("run-final")).toHaveLength(3);
-    expect(store.getRun("run-final")).toMatchObject({ status: "CANCELLED", usage: { inputTokens: 0, outputTokens: 0 } });
+    expect(store.getRun("run-final")).toMatchObject({ status: "CANCELLED", usage: { inputTokens: null, outputTokens: null } });
     expect(store.listSessionMessages("ses_final", request().principal)).toHaveLength(1);
     store.close();
   });
@@ -116,7 +116,7 @@ describe("transactional run projections", () => {
       lastSequence: 3,
       errorCode: "initial_failure",
       errorMessage: "initial failure",
-      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0, toolCalls: 0 },
+      usage: { inputTokens: null, outputTokens: null, costUsd: null, toolCalls: 0 },
     });
     store.close();
   });

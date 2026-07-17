@@ -200,24 +200,24 @@ async function runConcurrentTask(user: UserRuntime, round: number, index: number
     let artifact: Record<string, unknown> | undefined;
     if (typeof artifactId === "string") {
       const downloaded = await user.client.downloadArtifact(artifactId);
-      artifact = { artifactId, contentVerified: Buffer.from(downloaded.data).toString("utf8") === marker, bytes: downloaded.data.byteLength };
+      artifact = { artifactId, contentVerified: Buffer.from(downloaded.data).toString("utf8") === task.marker, bytes: downloaded.data.byteLength };
     }
-    const workspace = task.path ? inspectWorkspace(user, workspaceId, task.path, marker) : undefined;
+    const workspace = task.path ? inspectWorkspace(user, workspaceId, task.path, task.marker) : undefined;
     const failedCommand = observed.events.some((event) => event.type === "tool.call.completed" && event.payload?.ok === false);
     const requiredToolsPresent = task.requiredTools.every((tool) => observed.toolCalls.includes(tool));
-    const markerObserved = observed.events.some((event) => JSON.stringify(event).includes(marker));
+    const markerObserved = observed.events.some((event) => JSON.stringify(event).includes(task.marker));
     const workspaceVerified = task.kind === "artifact" || workspace === undefined || workspace.contentVerified === true;
     const artifactVerified = task.kind !== "artifact" || artifact?.contentVerified === true;
     const passed = observed.run.status === "SUCCEEDED" && requiredToolsPresent && markerObserved &&
       (task.kind !== "recovery" || failedCommand) && artifactVerified && workspaceVerified;
     const reason = observed.run.status !== "SUCCEEDED" ? `terminal status ${observed.run.status}`
       : !requiredToolsPresent ? `missing required tool; observed ${observed.toolCalls.join(",") || "none"}`
-        : !markerObserved ? `marker ${marker} was not observed in the event stream`
+      : !markerObserved ? `marker ${task.marker} was not observed in the event stream`
           : !artifactVerified ? "artifact bytes did not match the task marker"
             : !workspaceVerified ? "workspace bytes did not match the task marker"
               : task.kind === "recovery" && !failedCommand ? "the intentional failing command was not observed" : "task evidence verified";
     return {
-      label: user.label, round, index, kind: task.kind, marker, agentId, workspaceId, runId: created.runId, status: observed.run.status, passed, reason,
+      label: user.label, round, index, kind: task.kind, marker: task.marker, agentId, workspaceId, runId: created.runId, status: observed.run.status, passed, reason,
       latencyMs: Number((performance.now() - startedAt).toFixed(1)), toolCalls: observed.toolCalls, eventCount: observed.events.length,
       usage: usageSummary(observed.events), workspace, artifact,
       diagnostics: {

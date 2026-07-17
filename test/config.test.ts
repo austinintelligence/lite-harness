@@ -32,13 +32,13 @@ describe("versioned application configuration", () => {
         LITE_HARNESS_PORT: "4321",
         LITE_HARNESS_ENABLE_MEMORY: "true",
         LITE_HARNESS_WEBHOOK_SECRET: "must-not-be-persisted-either",
-      }, root, "win32");
+      }, root, process.platform);
       const path = writeInstallationConfiguration(installation);
       const persisted = readFileSync(path, "utf8");
       expect(persisted).toContain("fixture-model");
       expect(persisted).not.toContain("must-not-be-persisted");
 
-      const restored = readInstallationConfiguration(installation.dataDir, "win32");
+      const restored = readInstallationConfiguration(installation.dataDir, process.platform);
       const overrides = { LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_INTERNAL_TOKEN: tokens.LITE_HARNESS_INTERNAL_TOKEN, PATH: "fixture-path" };
       const manager = buildRoleEnvironment("manager", restored, overrides, overrides);
       const gateway = buildRoleEnvironment("gateway", restored, {

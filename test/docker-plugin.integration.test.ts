@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -146,6 +146,10 @@ function pluginSupervisor(
 function fixturePlugin(source: string): InspectedPlugin {
   const root = mkdtempSync(join(tmpdir(), "lite-docker-plugin-"));
   roots.push(root);
+  // The Docker sandbox deliberately runs as uid 1000. POSIX mkdtemp creates
+  // a 0700 directory, which is readable by the host test process but not by
+  // that fixed non-root container identity.
+  chmodSync(root, 0o755);
   writeFileSync(join(root, "worker.mjs"), `${source}\n`);
   writeFileSync(join(root, "lite-plugin.json"), JSON.stringify({
     schemaVersion: 1,

@@ -486,7 +486,7 @@ function stringValues(value) {
 
 function containsUnixAbsolutePath(value) {
   const withoutNetworkUrls = value.replace(/\b(?:https?|wss?):\/\/[^\s"'<>]+/gi, "");
-  return /(?:^|[^A-Za-z0-9_\/])\/(?!\/)[A-Za-z0-9._~-]+(?:[\\/][^\s"'<>]*)?/.test(withoutNetworkUrls);
+  return /(?:^|[^A-Za-z0-9_\/.])\/(?!\/)(?!\.\.?(?:[\\/]|$))[A-Za-z0-9_-][A-Za-z0-9._~-]*(?:[\\/][^\s"'<>]*)?/.test(withoutNetworkUrls);
 }
 
 function pnpmVersion(root) {

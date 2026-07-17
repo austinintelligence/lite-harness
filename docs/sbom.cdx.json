@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:cd5114a9-a99e-44c5-a2ab-1efce6c5dec4",
+  "serialNumber": "urn:uuid:cb7f4c5d-66bf-49e2-ae65-0ec7368928c0",
   "version": 1,
   "metadata": {
     "component": {
@@ -378,6 +378,13 @@
     },
     {
       "type": "library",
+      "name": "@lite-harness/context",
+      "version": "link:../../packages/context",
+      "bom-ref": "@lite-harness/context@link:../../packages/context",
+      "purl": "pkg:npm/%40lite-harness/context@link%3A..%2F..%2Fpackages%2Fcontext"
+    },
+    {
+      "type": "library",
       "name": "@lite-harness/contracts",
       "version": "0.0.0",
       "bom-ref": "@lite-harness/contracts@0.0.0",
@@ -504,6 +511,13 @@
     },
     {
       "type": "library",
+      "name": "@lite-harness/mcp",
+      "version": "link:../../packages/mcp",
+      "bom-ref": "@lite-harness/mcp@link:../../packages/mcp",
+      "purl": "pkg:npm/%40lite-harness/mcp@link%3A..%2F..%2Fpackages%2Fmcp"
+    },
+    {
+      "type": "library",
       "name": "@lite-harness/memory-sqlite",
       "version": "0.0.0",
       "bom-ref": "@lite-harness/memory-sqlite@0.0.0",
@@ -529,6 +543,20 @@
       "version": "link:../../packages/migration-openclaw",
       "bom-ref": "@lite-harness/migration-openclaw@link:../../packages/migration-openclaw",
       "purl": "pkg:npm/%40lite-harness/migration-openclaw@link%3A..%2F..%2Fpackages%2Fmigration-openclaw"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/observability",
+      "version": "0.0.0",
+      "bom-ref": "@lite-harness/observability@0.0.0",
+      "purl": "pkg:npm/%40lite-harness/observability@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/observability",
+      "version": "link:../../packages/observability",
+      "bom-ref": "@lite-harness/observability@link:../../packages/observability",
+      "purl": "pkg:npm/%40lite-harness/observability@link%3A..%2F..%2Fpackages%2Fobservability"
     },
     {
       "type": "library",
@@ -644,6 +672,13 @@
     },
     {
       "type": "library",
+      "name": "@lite-harness/runtime-docker",
+      "version": "link:../runtime-docker",
+      "bom-ref": "@lite-harness/runtime-docker@link:../runtime-docker",
+      "purl": "pkg:npm/%40lite-harness/runtime-docker@link%3A..%2Fruntime-docker"
+    },
+    {
+      "type": "library",
       "name": "@lite-harness/runtime",
       "version": "0.0.0",
       "bom-ref": "@lite-harness/runtime@0.0.0",
@@ -676,6 +711,13 @@
       "version": "0.0.0",
       "bom-ref": "@lite-harness/skills@0.0.0",
       "purl": "pkg:npm/%40lite-harness/skills@0.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@lite-harness/skills",
+      "version": "link:../../packages/skills",
+      "bom-ref": "@lite-harness/skills@link:../../packages/skills",
+      "purl": "pkg:npm/%40lite-harness/skills@link%3A..%2F..%2Fpackages%2Fskills"
     },
     {
       "type": "library",

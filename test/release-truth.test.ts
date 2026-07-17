@@ -320,6 +320,13 @@ describe("release truth", () => {
     expect(result.stderr).toContain("Unix-absolute filesystem path");
     expect(result.stderr).toContain("GitHub fine-grained token");
     expect(result.stderr).toContain("npm token");
+
+    const safePath = join(root, "safe-evidence.json");
+    writeJson(safePath, { relativeDoubleSlash: "a//b", relativeLink: "link:../../packages/example" });
+    const safe = spawnSync(process.execPath, ["scripts/check-secrets.mjs", "--include", safePath, "--evidence"], {
+      cwd: process.cwd(), encoding: "utf8",
+    });
+    expect(safe.status).toBe(0);
   });
 
   it("reconstructs downloaded artifacts at every ledger evidence path", () => {

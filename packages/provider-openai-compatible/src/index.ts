@@ -23,16 +23,35 @@ export const OPENAI_COMPATIBLE_PRESETS: Readonly<Record<OpenAICompatiblePreset["
 
 /** Native OpenAI direct route. Generic compatible endpoints remain on Chat Completions below. */
 export class OpenAIResponsesProvider implements ProviderAdapter {
-  readonly providerId = "openai";
+  readonly providerId: string;
   readonly apiOperation = "responses.create";
   readonly #fetch: typeof globalThis.fetch;
+  readonly #endpoint: string;
+  readonly #nativeOpenAi: boolean;
 
-  constructor(options: { fetch?: typeof globalThis.fetch } = {}) {
+  constructor(options: {
+    fetch?: typeof globalThis.fetch;
+    /** Optional OpenAI-compatible base URL, used by local Responses-compatible proxies. */
+    baseUrl?: string;
+    providerId?: string;
+    allowedOrigins?: readonly string[];
+  } = {}) {
+    this.providerId = options.providerId ?? "openai";
+    if (options.baseUrl !== undefined) {
+      this.#nativeOpenAi = false;
+      if (!options.allowedOrigins) throw new Error("Responses-compatible provider origins are required");
+      const baseUrl = validateCompatibleEndpoint(options.baseUrl, options.allowedOrigins);
+      this.#endpoint = new URL("responses", ensureTrailingSlash(baseUrl)).toString();
+    } else {
+      this.#nativeOpenAi = true;
+      if (this.providerId !== "openai") throw new Error("A non-OpenAI Responses provider requires a base URL");
+      this.#endpoint = "https://api.openai.com/v1/responses";
+    }
     this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
   async *stream(params: Parameters<ProviderAdapter["stream"]>[0]): AsyncIterable<ProviderAdapterEvent> {
-    const response = await this.#fetch("https://api.openai.com/v1/responses", {
+    const response = await this.#fetch(this.#endpoint, {
       method: "POST",
       redirect: "manual",
       headers: {
@@ -42,8 +61,8 @@ export class OpenAIResponsesProvider implements ProviderAdapter {
       body: JSON.stringify({
         model: params.model.id,
         stream: true,
-        store: false,
-        truncation: "disabled",
+        ...(this.#nativeOpenAi ? { store: false, truncation: "disabled" } : {}),
+        ...(responsesInstructions(params.messages) ? { instructions: responsesInstructions(params.messages) } : {}),
         input: toResponsesInput(params.messages),
         ...(params.tools?.length ? {
           tools: params.tools.map((tool) => ({
@@ -51,7 +70,11 @@ export class OpenAIResponsesProvider implements ProviderAdapter {
             name: tool.name,
             description: tool.description,
             parameters: tool.inputSchema,
-            strict: true,
+            // Hermes accepts OpenAI Responses tools but does not accept strict
+            // schemas whose optional properties are absent from `required`.
+            // Native OpenAI keeps the stricter contract; compatible proxies
+            // remain schema-compatible with the runtime's optional fields.
+            strict: this.#nativeOpenAi,
           })),
           tool_choice: "auto",
         } : {}),
@@ -59,19 +82,36 @@ export class OpenAIResponsesProvider implements ProviderAdapter {
       ...(params.signal ? { signal: params.signal } : {}),
     });
     if (!response.ok) {
+      let diagnostic = "";
+      if (process.env.LITE_HARNESS_DEBUG_PROVIDER === "1") {
+        try { diagnostic = sanitizeProviderDiagnostic(await response.clone().text()).slice(0, 2_000); } catch { diagnostic = "<unreadable-body>"; }
+        process.stderr.write(`lite-harness provider: Responses HTTP ${response.status} endpoint=${this.#endpoint} detail=${diagnostic}\n`);
+      }
       throw new ProviderError(
         classifyStatus(response.status),
-        `OpenAI Responses returned HTTP ${response.status}`,
+        `OpenAI Responses returned HTTP ${response.status}${diagnostic ? `: ${diagnostic}` : ""}`,
         response.status === 408 || response.status === 429 || response.status >= 500,
         response.status,
       );
     }
     yield { type: "request.accepted" };
-    if (response.headers.get("content-type")?.includes("text/event-stream")) {
+    if (isResponsesSse(response)) {
       yield* streamOpenAiResponses(response, params.signal);
       return;
     }
     yield* normalizeOpenAiResponse(await readProviderJson(response) as OpenAIResponsesBody);
+  }
+}
+
+/** OpenAI Responses-compatible adapter for local or explicitly allowlisted proxies. */
+export class OpenAIResponsesCompatibleProvider extends OpenAIResponsesProvider {
+  constructor(options: {
+    providerId?: string;
+    baseUrl: string;
+    allowedOrigins: readonly string[];
+    fetch?: typeof globalThis.fetch;
+  }) {
+    super(options);
   }
 }
 
@@ -173,8 +213,12 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIterable<ModelEvent> {
   const tools = new Map<number, { id: string; name: string; arguments: string }>();
   let finishReason: string | undefined;
+  let terminal = false;
   for await (const data of readSseData(response.body, signal)) {
-    if (data === "[DONE]") break;
+    if (data === "[DONE]") {
+      terminal = true;
+      break;
+    }
     let chunk: OpenAIStreamChunk;
     try { chunk = JSON.parse(data) as OpenAIStreamChunk; }
     catch { throw new ProviderError("invalid_response", "Provider returned an invalid SSE payload", false); }
@@ -196,6 +240,7 @@ async function* streamOpenAi(response: Response, signal?: AbortSignal): AsyncIte
       finishReason = choice.finish_reason ?? finishReason;
     }
   }
+  if (!terminal) throw new ProviderError("provider_stream_truncated", "Provider stream ended before a terminal event", false);
   for (const tool of [...tools.entries()].sort(([left], [right]) => left - right).map(([, value]) => value)) {
     if (!tool.id || !tool.name) throw new ProviderError("invalid_response", "Provider returned an incomplete tool call", false);
     let args: Record<string, unknown>;
@@ -214,6 +259,7 @@ type ResponsesInputItem =
 function toResponsesInput(messages: Parameters<ProviderAdapter["stream"]>[0]["messages"]): ResponsesInputItem[] {
   const input: ResponsesInputItem[] = [];
   for (const message of messages) {
+    if (message.role === "system") continue;
     if (message.role === "tool") {
       if (!message.toolCallId) {
         throw new ProviderError("invalid_request", "A tool result requires its function call id", false);
@@ -234,6 +280,14 @@ function toResponsesInput(messages: Parameters<ProviderAdapter["stream"]>[0]["me
     }
   }
   return input;
+}
+
+function responsesInstructions(messages: Parameters<ProviderAdapter["stream"]>[0]["messages"]): string {
+  return messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 type MessageWithImages = Parameters<ProviderAdapter["stream"]>[0]["messages"][number];
@@ -481,6 +535,30 @@ interface OpenAIStreamChunk {
 
 function ensureTrailingSlash(url: URL): URL {
   return new URL(url.href.endsWith("/") ? url.href : `${url.href}/`);
+}
+
+function validateCompatibleEndpoint(baseUrl: string, allowedOrigins: readonly string[]): URL {
+  const parsed = new URL(baseUrl);
+  if (!allowedOrigins.includes(parsed.origin)) {
+    throw new Error(`Provider endpoint origin is not allowlisted: ${parsed.origin}`);
+  }
+  if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("Provider endpoint must use HTTP or HTTPS");
+  if (parsed.protocol === "http:" && !isLoopbackHostname(parsed.hostname)) {
+    throw new Error("Plain HTTP provider endpoints must be loopback-local");
+  }
+  return parsed;
+}
+
+function isResponsesSse(response: Response): boolean {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  return contentType.includes("text/event-stream") || contentType.includes("application/octet-stream");
+}
+
+function sanitizeProviderDiagnostic(value: string): string {
+  return value
+    .replaceAll(/(authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|secret)\s*[:=]\s*[^,}\s]+/gi, "$1=[redacted]")
+    .replaceAll(/\s+/g, " ")
+    .trim();
 }
 
 function classifyStatus(status: number): string {

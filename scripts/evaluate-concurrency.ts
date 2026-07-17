@@ -209,6 +209,7 @@ async function runConcurrentTask(user: UserRuntime, round: number, index: number
       artifact = { artifactId, contentVerified: Buffer.from(downloaded.data).toString("utf8") === task.marker, bytes: downloaded.data.byteLength };
     }
     const workspace = task.path ? inspectWorkspace(user, workspaceId, task.path, task.marker) : undefined;
+    const usage = usageSummary(observed.events);
     const failedCommand = observed.events.some((event) => event.type === "tool.call.completed" && event.payload?.ok === false);
     const requiredToolsPresent = task.requiredTools.every((tool) => observed.toolCalls.includes(tool));
     const markerObserved = observed.events.some((event) => JSON.stringify(event).includes(task.marker));
@@ -216,16 +217,19 @@ async function runConcurrentTask(user: UserRuntime, round: number, index: number
     const artifactVerified = task.kind !== "artifact" || artifact?.contentVerified === true;
     const passed = observed.run.status === "SUCCEEDED" && requiredToolsPresent && markerObserved &&
       (task.kind !== "recovery" || failedCommand) && artifactVerified && workspaceVerified;
+    const usageComplete = usage.usageReported === true;
+    const qualified = passed && usageComplete;
     const reason = observed.run.status !== "SUCCEEDED" ? `terminal status ${observed.run.status}`
       : !requiredToolsPresent ? `missing required tool; observed ${observed.toolCalls.join(",") || "none"}`
       : !markerObserved ? `marker ${task.marker} was not observed in the event stream`
           : !artifactVerified ? "artifact bytes did not match the task marker"
             : !workspaceVerified ? "workspace bytes did not match the task marker"
-              : task.kind === "recovery" && !failedCommand ? "the intentional failing command was not observed" : "task evidence verified";
+              : task.kind === "recovery" && !failedCommand ? "the intentional failing command was not observed"
+                : !usageComplete ? "provider usage is unknown; qualification cannot pass" : "task evidence verified";
     return {
-      label: user.label, round, index, kind: task.kind, marker: task.marker, agentId, workspaceId, runId: created.runId, status: observed.run.status, passed, reason,
+      label: user.label, round, index, kind: task.kind, marker: task.marker, agentId, workspaceId, runId: created.runId, status: observed.run.status, passed: qualified, reason,
       latencyMs: Number((performance.now() - startedAt).toFixed(1)), toolCalls: observed.toolCalls, eventCount: observed.events.length,
-      usage: usageSummary(observed.events), workspace, artifact,
+      usage, workspace, artifact,
       diagnostics: {
         toolCalls: observed.events.filter((event) => event.type === "tool.call.requested").map((event) => ({ name: event.payload?.name, arguments: event.payload?.arguments })),
         toolFailures: observed.events.filter((event) => event.type === "tool.call.completed" && event.payload?.ok === false).map((event) => event.payload),
@@ -265,7 +269,7 @@ async function observeRun(client: LiteHarnessClient, runId: string): Promise<Obs
 }
 
 function inspectWorkspace(user: UserRuntime, workspaceId: string, path: string, expected: string): Record<string, unknown> {
-  const volume = dockerWorkspaceVolumeName(workspaceId, { ...user.principal, scopes: [] });
+  const volume = dockerWorkspaceVolumeName(workspaceId, { ...user.principal, scopes: [] }, user.dataDir);
   try {
     const content = execFileSync("docker", ["run", "--pull=never", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", "1000:1000", "--memory", "64m", "--cpus", "0.25", "--pids-limit", "32", "--mount", `type=volume,src=${volume},dst=/workspace,readonly`, runtimeImage, "sh", "-c", "set -eu; cat -- \"/workspace/$1\"", "lite-concurrency-read", path], { encoding: "utf8", windowsHide: true }).trimEnd();
     return { checked: true, contentVerified: content === expected, bytes: Buffer.byteLength(content) };
@@ -277,8 +281,8 @@ function verifyIsolation(): Record<string, unknown> {
     const a = users.find((user) => user.label === "user-a");
     const b = users.find((user) => user.label === "user-b");
     if (!a || !b) return { workspaceId, passed: false, error: "both users were not started" };
-    const volumeA = dockerWorkspaceVolumeName(workspaceId, { ...a.principal, scopes: [] });
-    const volumeB = dockerWorkspaceVolumeName(workspaceId, { ...b.principal, scopes: [] });
+    const volumeA = dockerWorkspaceVolumeName(workspaceId, { ...a.principal, scopes: [] }, a.dataDir);
+    const volumeB = dockerWorkspaceVolumeName(workspaceId, { ...b.principal, scopes: [] }, b.dataDir);
     return { workspaceId, identicalWorkspaceId: true, distinctVolumes: volumeA !== volumeB, passed: volumeA !== volumeB };
   });
   return { passed: pairs.length === 10 && pairs.every((pair) => pair.passed), pairs };
@@ -322,10 +326,19 @@ function managedContainers(installation: string): string[] { try { return execFi
 function managedNetworks(installation: string): string[] { try { return execFileSync("docker", ["network", "ls", "--filter", "label=lite-harness.managed=true", "--filter", `label=lite-harness.installation=${labelDigest(installation)}`, "--format", "{{.ID}}"], { encoding: "utf8", windowsHide: true }).split(/\r?\n/).map((value) => value.trim()).filter(Boolean); } catch { return []; } }
 function removeManagedContainers(installation: string): void { const ids = managedContainers(installation); if (ids.length) { try { execFileSync("docker", ["rm", "--force", ...ids], { stdio: "ignore", windowsHide: true }); } catch { /* checked below */ } } }
 function removeManagedNetworks(installation: string): void { const ids = managedNetworks(installation); if (ids.length) { try { execFileSync("docker", ["network", "rm", ...ids], { stdio: "ignore", windowsHide: true }); } catch { /* checked below */ } } }
-function managedVolumes(user: UserRuntime): string[] { return workspaceIds.map((workspaceId) => dockerWorkspaceVolumeName(workspaceId, { ...user.principal, scopes: [] })).filter((volume) => { try { execFileSync("docker", ["volume", "inspect", volume], { stdio: "ignore", windowsHide: true }); return true; } catch { return false; } }); }
+function managedVolumes(user: UserRuntime): string[] { return workspaceIds.map((workspaceId) => dockerWorkspaceVolumeName(workspaceId, { ...user.principal, scopes: [] }, user.dataDir)).filter((volume) => { try { execFileSync("docker", ["volume", "inspect", volume], { stdio: "ignore", windowsHide: true }); return true; } catch { return false; } }); }
 function removeManagedVolumes(user: UserRuntime): void { const volumes = managedVolumes(user); if (volumes.length) { try { execFileSync("docker", ["volume", "rm", "--force", ...volumes], { stdio: "ignore", windowsHide: true }); } catch { /* checked below */ } } }
 
-function usageSummary(events: RunEvent[]): Record<string, number> { return events.filter((event) => event.type === "usage.updated").reduce((sum, event) => ({ inputTokens: sum.inputTokens + numberValue(event.payload?.inputTokens), outputTokens: sum.outputTokens + numberValue(event.payload?.outputTokens), costUsd: sum.costUsd + numberValue(event.payload?.costUsd) }), { inputTokens: 0, outputTokens: 0, costUsd: 0 }); }
+function usageSummary(events: RunEvent[]): Record<string, number | boolean | null> {
+  const usageEvents = events.filter((event) => event.type === "usage.updated");
+  if (!usageEvents.length) return { usageReported: false, inputTokens: null, outputTokens: null, costUsd: null };
+  return usageEvents.reduce((sum, event) => ({
+    usageReported: true,
+    inputTokens: (sum.inputTokens as number) + numberValue(event.payload?.inputTokens),
+    outputTokens: (sum.outputTokens as number) + numberValue(event.payload?.outputTokens),
+    costUsd: (sum.costUsd as number) + numberValue(event.payload?.costUsd),
+  }), { usageReported: true, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+}
 function numberValue(value: unknown): number { return typeof value === "number" && Number.isFinite(value) ? value : 0; }
 function immutableImage(configured: string | undefined, fallback: string): string { const value = configured?.trim() || fallback; const id = /^sha256:[a-f0-9]{64}$/i.test(value) ? value : execFileSync("docker", ["image", "inspect", "--format", "{{.Id}}", value], { encoding: "utf8", windowsHide: true }).trim(); if (!/^sha256:[a-f0-9]{64}$/i.test(id)) throw new Error(`Image is not pinned: ${id}`); return id; }
 function gitOutput(args: string[]): string { try { return execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim(); } catch { return "unknown"; } }

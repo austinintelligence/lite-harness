@@ -37,7 +37,7 @@ describe("packaged Manager workspace durability across restart boundaries", () =
       agentId: `a09-shell-${suffix}`,
       internalToken: `a09-real-manager-token-${suffix}`,
     };
-    const volume = dockerWorkspaceVolumeName(fixture.workspaceId, { ...fixture.owner, scopes: [] });
+    const volume = dockerWorkspaceVolumeName(fixture.workspaceId, { ...fixture.owner, scopes: [] }, dataDir);
     let manager: PackagedWorkspaceManager | undefined;
     const managerPids: number[] = [];
     let testFailure: unknown;
@@ -146,7 +146,7 @@ describe("packaged Manager workspace durability across restart boundaries", () =
       agentId: `a08-shell-${suffix}`,
       internalToken: `a08-real-manager-token-${suffix}`,
     };
-    const volume = dockerWorkspaceVolumeName(fixture.workspaceId, { ...fixture.owner, scopes: [] });
+    const volume = dockerWorkspaceVolumeName(fixture.workspaceId, { ...fixture.owner, scopes: [] }, dataDir);
     let manager: PackagedWorkspaceManager | undefined;
     let testFailure: unknown;
     try {

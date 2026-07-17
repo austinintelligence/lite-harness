@@ -1,5 +1,5 @@
-import { join } from "node:path";
-import { accessSync, constants, readFileSync, statfsSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { accessSync, constants, readFileSync, renameSync, rmSync, statfsSync, statSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { loadManagerConfiguration, type ValidatedManagerConfiguration } from "@lite-harness/config";
@@ -36,17 +36,22 @@ import {
   type RoutePersistenceHooks,
   type RoutePlan,
 } from "@lite-harness/provider-core";
-import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
+import {
+  OPENAI_COMPATIBLE_PRESETS,
+  OpenAICompatibleProvider,
+  OpenAIResponsesCompatibleProvider,
+  OpenAIResponsesProvider,
+} from "@lite-harness/provider-openai-compatible";
 import { ArtifactPublishingRuntime, BrokeredToolRuntime, InMemoryToolRuntime, type ToolExecutionContext, type ToolRuntime } from "@lite-harness/runtime";
 import { DockerToolRuntime } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
-import { LocalArtifactStore, validateRegisteredBindRoot } from "@lite-harness/workspace";
+import { LocalArtifactStore, validateRegisteredBindRoot, workspaceSnapshotIdentity } from "@lite-harness/workspace";
 import { ManagerInstanceLock } from "@lite-harness/operations";
 import { JsonlObservabilitySink, StructuredObservability } from "@lite-harness/observability";
 import { buildManagerServer } from "./server.js";
 import { createDelegatedWorkspaceResolver } from "./delegated-workspace.js";
 import { shutdownManagerStages } from "./shutdown.js";
-import { configureProductionOptionalSystems } from "./optional-systems.js";
+import { configureProductionOptionalSystems, ownerMemoryWorkspace } from "./optional-systems.js";
 
 const configuration: ValidatedManagerConfiguration = loadManagerConfiguration();
 const { dataDir, socketPath, internalToken } = configuration;
@@ -102,6 +107,7 @@ const optionalSystems = await configureProductionOptionalSystems({
   runtime: brokeredRuntime,
   offline: configuration.offline,
   ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
+  ...(baseRuntime instanceof DockerToolRuntime ? { workspaceQuotaBytes: configuration.workspaceQuotaBytes } : {}),
   workspaceStore: store,
   snapshotKey: snapshotRootKey,
   ...(memoryStore ? { memoryStore } : {}),
@@ -145,6 +151,8 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   requiresApproval: configuration.approvalsRequired
     ? () => true
     : () => false,
+  requireAuthoritativeUsage: true,
+  allowUnmeteredUsage: isTrustedUnmeteredLocalUsageRoute(configuration.provider),
   approvalTimeoutMs: configuration.approvalTimeoutMs,
   approvalRouteGeneration: configuredApprovalRouteGeneration(configuration.provider),
   ...(automaticWorkspaceCheckpoint ? { workspaceLifecycle: automaticWorkspaceCheckpoint } : {}),
@@ -152,6 +160,68 @@ const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, 
   runSnapshot: runSnapshotConfiguration,
   observability,
 });
+const workspaceAdmin = {
+  registerWorkspace: ({ id, principal, registeredPath }: { id: string; principal: InternalPrincipal; registeredPath: string }) => {
+    const now = new Date().toISOString();
+    return service.createWorkspace({
+      id,
+      appId: principal.appId,
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      mode: "registered-bind",
+      state: "WARM",
+      registeredPath: validateRegisteredBindRoot(registeredPath),
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+  exportWorkspace: async ({ workspaceId, principal }: { workspaceId: string; principal: InternalPrincipal }) => {
+    requireOwnedWorkspace(store, workspaceId, principal);
+    return workspaceAdminRuntime(baseRuntime).exportWorkspace(workspaceId, principal);
+  },
+  importWorkspace: async ({ workspaceId, principal, archive }: { workspaceId: string; principal: InternalPrincipal; archive: Buffer }) => {
+    requireOwnedWorkspace(store, workspaceId, principal);
+    await workspaceAdminRuntime(baseRuntime).importWorkspace(workspaceId, archive, principal);
+  },
+  snapshotWorkspace: async ({ workspaceId, principal }: { workspaceId: string; principal: InternalPrincipal }) => {
+    requireOwnedWorkspace(store, workspaceId, principal);
+    const archive = await workspaceAdminRuntime(baseRuntime).exportWorkspace(workspaceId, principal);
+    const snapshots = optionalSystems.workspaceSnapshots;
+    if (!snapshots) throw new Error("Manager workspace snapshots are unavailable");
+    return snapshots.create(workspaceSnapshotIdentity({ workspaceId, ...principal }), archive);
+  },
+  restoreWorkspace: async ({ workspaceId, principal }: { workspaceId: string; principal: InternalPrincipal }) => {
+    const workspace = requireOwnedWorkspace(store, workspaceId, principal);
+    if (workspace.state === "IN_USE" || workspace.state === "SNAPSHOTTING") throw new Error("Workspace is busy with an active run");
+    const snapshots = optionalSystems.workspaceSnapshots;
+    if (!snapshots) throw new Error("Manager workspace snapshots are unavailable");
+    const recovered = await snapshots.restore(workspaceSnapshotIdentity({ workspaceId, ...principal }));
+    await workspaceAdminRuntime(baseRuntime).importWorkspace(workspaceId, recovered.archive, principal);
+    return { recoveredFromPrevious: recovered.recoveredFromPrevious };
+  },
+  deleteWorkspace: async ({ workspaceId, principal }: { workspaceId: string; principal: InternalPrincipal }) => {
+    const workspace = store.getWorkspace(workspaceId, principal);
+    if (!workspace) return false;
+    if (workspace.state === "IN_USE" || workspace.state === "SNAPSHOTTING") throw new Error("Workspace is busy with an active run");
+    return workspaceAdminRuntime(baseRuntime).removeWorkspace(workspaceId, principal);
+  },
+  exportWorkspaceToPath: async ({ workspaceId, principal, path }: { workspaceId: string; principal: InternalPrincipal; path: string }) => {
+    requireOwnedWorkspace(store, workspaceId, principal);
+    const archive = await workspaceAdminRuntime(baseRuntime).exportWorkspace(workspaceId, principal);
+    const target = writeWorkspaceArchive(path, archive);
+    return { path: target, bytes: archive.length };
+  },
+  importWorkspaceFromPath: async ({ workspaceId, principal, path }: { workspaceId: string; principal: InternalPrincipal; path: string }) => {
+    requireOwnedWorkspace(store, workspaceId, principal);
+    const archivePath = resolveWorkspaceArchivePath(path);
+    const metadata = statSync(archivePath);
+    const maximum = configuration.workspaceQuotaBytes + 64 * 1024 * 1024;
+    if (!metadata.isFile() || metadata.size > maximum) throw new Error(`Workspace archive must be a regular file no larger than ${maximum} bytes`);
+    const archive = readFileSync(archivePath);
+    await workspaceAdminRuntime(baseRuntime).importWorkspace(workspaceId, archive, principal);
+    return { path: archivePath, bytes: archive.length };
+  },
+};
 const integrationRouter = integrationStore && integrationModule ? new integrationModule.InboundRunRouter(integrationStore, async ({ binding, envelope, sessionId }) => {
   const created = service.createRun({
     agent: binding.agentId,
@@ -200,6 +270,7 @@ const app = buildManagerServer({
   providerConnectionLogout: async (connection: ProviderConnectionRecord) => {
     await providerSecretStore.delete(connection.credentialProfileId);
   },
+  workspaceAdmin,
   ...(optionalSystems.pluginLifecycle ? { pluginLifecycle: optionalSystems.pluginLifecycle } : {}),
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
@@ -233,31 +304,31 @@ async function configureBrokeredTools(
 ): Promise<{ stop(): Promise<void> }> {
   if (memories) {
     runtime.register("memory_add", async (params) => {
-      const principal = requireToolPrincipal(params.runId, params.principal);
+      const principal = requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
       const markdown = toolString(params.call.arguments.markdown, "markdown");
-      const entry = memories.add(principal.tenantId, params.workspaceId, markdown);
+      const entry = memories.add(principal.tenantId, ownerMemoryWorkspace(principal, params.workspaceId), markdown);
       return { callId: params.call.id, ok: true, content: JSON.stringify(entry), metadata: { memoryId: entry.id } };
     });
     runtime.register("memory_search", async (params) => {
-      const principal = requireToolPrincipal(params.runId, params.principal);
+      const principal = requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
       const query = toolString(params.call.arguments.query, "query");
       const limit = toolInteger(params.call.arguments.limit, "limit", 1, 100, 20);
-      const entries = memories.search(principal.tenantId, params.workspaceId, query, limit);
+      const entries = memories.search(principal.tenantId, ownerMemoryWorkspace(principal, params.workspaceId), query, limit);
       return { callId: params.call.id, ok: true, content: JSON.stringify(entries), metadata: { count: entries.length } };
     });
     runtime.register("memory_get", async (params) => {
-      const principal = requireToolPrincipal(params.runId, params.principal);
+      const principal = requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
       const id = toolString(params.call.arguments.id, "id");
-      const entry = memories.get(principal.tenantId, params.workspaceId, id);
+      const entry = memories.get(principal.tenantId, ownerMemoryWorkspace(principal, params.workspaceId), id);
       return entry
         ? { callId: params.call.id, ok: true, content: JSON.stringify(entry), metadata: { memoryId: entry.id } }
         : { callId: params.call.id, ok: false, content: "Memory not found" };
     });
   }
   runtime.register("subagent_spawn", async (params) => {
-    const principal = requireToolPrincipal(params.runId, params.principal);
+    const principal = requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
     const parent = runs.getRun(params.runId as string);
-    if (!parent || parent.tenantId !== principal.tenantId || parent.userId !== principal.userId) throw new Error("Parent run ownership check failed");
+    if (!parent || parent.appId !== principal.appId || parent.tenantId !== principal.tenantId || parent.userId !== principal.userId) throw new Error("Parent run ownership check failed");
     const created = runs.createChildRun({
       parentRunId: parent.id,
       agent: toolString(params.call.arguments.agent, "agent"),
@@ -270,11 +341,11 @@ async function configureBrokeredTools(
     return { callId: params.call.id, ok: true, content: JSON.stringify(created), metadata: { childRunId: created.runId } };
   });
   runtime.register("subagent_wait", async (params) => {
-    requireToolPrincipal(params.runId, params.principal);
+    requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
     const childRunId = toolString(params.call.arguments.runId, "runId");
     const timeoutMs = toolInteger(params.call.arguments.timeoutMs, "timeoutMs", 100, 300_000, 300_000);
     const child = await runs.waitForChildRun(params.runId as string, childRunId, timeoutMs);
-    const summary = [...runs.listEvents(child.id)].reverse().find((event) => event.type === "agent.message.completed")?.payload.content;
+    const summary = runs.getLastEvent(child.id, "agent.message.completed")?.payload.content;
     return {
       callId: params.call.id, ok: child.status === "SUCCEEDED",
       content: typeof summary === "string" ? summary : JSON.stringify({ runId: child.id, status: child.status }),
@@ -282,7 +353,7 @@ async function configureBrokeredTools(
     };
   });
   runtime.register("subagent_cancel", async (params) => {
-    requireToolPrincipal(params.runId, params.principal);
+    requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
     const childRunId = toolString(params.call.arguments.runId, "runId");
     const child = runs.getRun(childRunId);
     if (!child || child.parentRunId !== params.runId) throw new Error("Child run does not belong to the parent");
@@ -295,7 +366,7 @@ async function configureBrokeredTools(
     const { SignedAppCallbackClient } = await import("@lite-harness/integrations");
     const callbacks = new SignedAppCallbackClient(callbackUrl, async () => callbackSecret);
     runtime.register("app_callback", async (params) => {
-      const principal = requireToolPrincipal(params.runId, params.principal);
+      const principal = requireToolPrincipal(runs, params.runId, params.principal, params.workspaceId);
       const action = toolString(params.call.arguments.action, "action");
       const result = await callbacks.invoke({ appId: principal.appId, action, input: params.call.arguments.input, idempotencyKey: params.call.id }, params.signal);
       return { callId: params.call.id, ok: true, content: JSON.stringify(result) };
@@ -332,8 +403,18 @@ async function resolveStoredKey(environmentName: string, profileId: string): Pro
   return key;
 }
 
-function requireToolPrincipal(runId: string | undefined, principal: InternalPrincipal | undefined): InternalPrincipal {
+function requireToolPrincipal(
+  runs: RunService,
+  runId: string | undefined,
+  principal: InternalPrincipal | undefined,
+  workspaceId: string,
+): InternalPrincipal {
   if (!runId || !principal) throw new Error("Brokered tool requires an owned run context");
+  const run = runs.getRun(runId);
+  if (!run || run.appId !== principal.appId || run.tenantId !== principal.tenantId ||
+      run.userId !== principal.userId || run.workspaceId !== workspaceId) {
+    throw new Error("Brokered tool run ownership check failed");
+  }
   return principal;
 }
 
@@ -397,6 +478,44 @@ function resolveRuntime(
         : undefined;
     },
   });
+}
+
+function requireOwnedWorkspace(store: SqliteRunStore, workspaceId: string, principal: InternalPrincipal) {
+  const workspace = store.getWorkspace(workspaceId, principal);
+  if (!workspace) throw new Error(`Workspace is unavailable: ${workspaceId}`);
+  return workspace;
+}
+
+function workspaceAdminRuntime(runtime: ToolRuntime): DockerToolRuntime {
+  if (!(runtime instanceof DockerToolRuntime)) throw new Error("Workspace administration requires the Docker runtime");
+  return runtime;
+}
+
+function resolveWorkspaceArchivePath(value: string): string {
+  if (!value.trim() || value.length > 4_096 || /[\0\r\n]/u.test(value) || !isAbsolute(value)) {
+    throw new Error("Workspace archive path must be an absolute bounded path");
+  }
+  return resolve(value);
+}
+
+function writeWorkspaceArchive(value: string, archive: Buffer): string {
+  const target = resolveWorkspaceArchivePath(value);
+  const temporary = `${target}.tmp-${randomUUID()}`;
+  try {
+    writeFileSync(temporary, archive, { flag: "wx", mode: 0o600 });
+    try {
+      renameSync(temporary, target);
+    } catch (error) {
+      // Windows cannot atomically rename over an existing file. Remove only
+      // the requested archive target, then complete the prepared replacement.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" && (error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+      rmSync(target, { force: true });
+      renameSync(temporary, target);
+    }
+    return target;
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 function hasActiveWorkspaceFence(store: SqliteRunStore, params: ToolExecutionContext): boolean {
@@ -620,11 +739,17 @@ async function resolveConnectionModelGateway(
         allowedOrigins: [new URL(baseUrl ?? "https://api.anthropic.com/v1/").origin],
       })
       : baseUrl
-        ? new OpenAICompatibleProvider({
-          providerId: connection.providerId,
-          baseUrl,
-          allowedOrigins: [new URL(baseUrl).origin],
-        })
+        ? isHermesResponsesRoute(baseUrl, modelIds[0] ?? "")
+          ? new OpenAIResponsesCompatibleProvider({
+            providerId: connection.providerId,
+            baseUrl,
+            allowedOrigins: [new URL(baseUrl).origin],
+          })
+          : new OpenAICompatibleProvider({
+            providerId: connection.providerId,
+            baseUrl,
+            allowedOrigins: [new URL(baseUrl).origin],
+          })
         : undefined;
   if (!adapter) return undefined;
 
@@ -725,11 +850,14 @@ function resolveModelGateway(
       id: modelId, providerId, credentialProfileId, capabilities: ["text", "tools", "json"],
       contextWindow: configuration.modelContext ?? 128_000,
     }));
+    const adapter = provider === "openai"
+      ? new OpenAIResponsesProvider()
+      : isHermesResponsesRoute(baseUrl, modelId)
+        ? new OpenAIResponsesCompatibleProvider({ providerId, baseUrl, allowedOrigins })
+        : new OpenAICompatibleProvider({ providerId, baseUrl, allowedOrigins });
     return new RoutedModelGateway(
       registry,
-      [provider === "openai"
-        ? new OpenAIResponsesProvider()
-        : new OpenAICompatibleProvider({ providerId, baseUrl, allowedOrigins })],
+      [adapter],
       broker,
       hooks,
     );
@@ -960,6 +1088,25 @@ function configuredModelPricing(modelId?: string): Pick<ModelDescriptor,
   return { inputUsdPerMillion, outputUsdPerMillion, pricingSource: "operator" };
 }
 
+/** Hermes exposes structured tool calls on its Responses-compatible endpoint. */
+function isHermesResponsesRoute(baseUrl: string, modelId: string): boolean {
+  return baseUrl.trim() === "http://127.0.0.1:8645/v1" && modelId.trim() === "gpt-5.6-luna";
+}
+
+/**
+ * Hermes is a trusted local, explicitly zero-rated development route. Its
+ * proxy may omit billing telemetry, so the Manager permits the run to
+ * continue while evaluators preserve usage as unknown. Paid or custom routes
+ * remain authoritative-usage fail-closed.
+ */
+function isTrustedUnmeteredLocalUsageRoute(provider: string): boolean {
+  return provider === "openai-compatible" &&
+    process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() === "http://127.0.0.1:8645/v1" &&
+    process.env.LITE_HARNESS_MODEL?.trim() === "gpt-5.6-luna" &&
+    process.env.LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION?.trim() === "0" &&
+    process.env.LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION?.trim() === "0";
+}
+
 function installShutdownHandlers(server: { close(): Promise<void> }): void {
   let closing = false;
   const shutdown = (signal: string) => {
@@ -1004,7 +1151,7 @@ async function configureIntegrationDelivery(runs: RunService, integrations: Sqli
     const run = runs.getRun(runId);
     if (!run) return { terminal: true, errorCode: "run_missing" };
     if (!isTerminalRunStatus(run.status)) return { terminal: false };
-    const completed = [...runs.listEvents(run.id)].reverse().find((event) => event.type === "agent.message.completed")?.payload.content;
+    const completed = runs.getLastEvent(run.id, "agent.message.completed")?.payload.content;
     return typeof completed === "string"
       ? { terminal: true, text: completed }
       : { terminal: true, errorCode: run.errorCode ?? "run_no_reply" };

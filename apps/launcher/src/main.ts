@@ -10,7 +10,8 @@ import {
   type ValidatedInstallationConfiguration,
 } from "@lite-harness/config";
 
-const root = resolve(import.meta.dirname, "../../..");
+const bundled = extname(import.meta.filename) !== ".ts";
+const root = resolve(import.meta.dirname, bundled ? "../.." : "../../..");
 const dataDirArgument = process.argv.indexOf("--data-dir");
 const requestedDataDir = dataDirArgument >= 0 && process.argv[dataDirArgument + 1]
   ? resolve(process.argv[dataDirArgument + 1] as string)
@@ -88,9 +89,9 @@ function withEnvironmentOverride(environment: NodeJS.ProcessEnv, name: string, v
 }
 
 function applicationEntry(name: "manager" | "gateway"): string {
-  return extname(import.meta.filename) === ".ts"
-    ? join(root, "apps", name, "src", "main.ts")
-    : join(root, "dist", "apps", name, "main.js");
+  return bundled
+    ? join(root, "apps", name, "main.js")
+    : join(root, "apps", name, "src", "main.ts");
 }
 
 function explicitEnvironmentSecrets(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

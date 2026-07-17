@@ -47,6 +47,7 @@ export interface RunStore {
   listChildRuns(parentRunId: string): RunRecord[];
   appendEvent(params: AppendRunEvent): RunEvent;
   listEvents(runId: string, after?: number, limit?: number): RunEvent[];
+  getLastEvent(runId: string, type?: RunEventType): RunEvent | undefined;
   listNonTerminalRuns(): RunRecord[];
   getSession(id: string, owner: ResourceOwner): SessionRecord | undefined;
   appendSessionMessage(params: {

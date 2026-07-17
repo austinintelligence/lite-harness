@@ -68,6 +68,9 @@ export class AgentRunner {
     fencingToken?: number;
     providerConnectionId?: string;
     maxCostUsd?: number;
+    requireAuthoritativeUsage?: boolean;
+    /** Explicitly trusted local routes may run without billing telemetry; callers must report usage as unknown. */
+    allowUnmeteredUsage?: boolean;
     modelCapabilities?: readonly ModelCapability[];
     principal?: InternalPrincipal;
     history?: readonly ModelMessage[];
@@ -151,6 +154,8 @@ export class AgentRunner {
       let assistantText = "";
       const toolCalls: ToolCall[] = [];
       let finishReason: "stop" | "tool_calls" | undefined;
+      let sawTerminalEvent = false;
+      let sawUsageEvent = false;
 
       const stream = this.model.streamTurn({
         messages,
@@ -176,6 +181,7 @@ export class AgentRunner {
           } else if (event.type === "tool.call") {
             toolCalls.push(event.call);
           } else if (event.type === "usage") {
+            sawUsageEvent = true;
             if (params.maxCostUsd !== undefined && event.costUsd === undefined) {
               throw new ProviderError(
                 "unknown_model_price",
@@ -184,12 +190,28 @@ export class AgentRunner {
               );
             }
             params.onEvent({ type: "usage.updated", payload: event });
-          } else {
+          } else if (event.type === "completed") {
+            sawTerminalEvent = true;
             finishReason = event.finishReason;
           }
         }
       } finally {
         startBestEffortIteratorCleanup(stream);
+      }
+
+      if (!sawTerminalEvent) {
+        throw new ProviderError(
+          "provider_stream_truncated",
+          "Provider stream ended before a terminal event",
+          false,
+        );
+      }
+      if (params.requireAuthoritativeUsage === true && !sawUsageEvent && params.allowUnmeteredUsage !== true) {
+        throw new ProviderError(
+          "provider_usage_missing",
+          "Provider turn completed without authoritative usage under an enforced cost ceiling",
+          false,
+        );
       }
 
       messages.push({ role: "assistant", content: assistantText, toolCalls });

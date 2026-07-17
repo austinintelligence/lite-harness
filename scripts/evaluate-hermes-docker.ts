@@ -29,7 +29,7 @@ const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "gpt-5.6-luna";
 const offline = process.env.LITE_HARNESS_OFFLINE?.trim() || (provider === "openai-compatible" && /^http:\/\/127\.0\.0\.1(?::\d+)?(?:\/|$)/i.test(providerBaseUrl) ? "true" : "false");
 const expectedContent = `Hermes real Docker artifact ${suffix}`;
 const runtimeImage = resolveRuntimeImage(process.env.LITE_HARNESS_RUNTIME_IMAGE);
-const volume = dockerWorkspaceVolumeName(workspaceId, { ...owner, scopes: [] });
+const volume = dockerWorkspaceVolumeName(workspaceId, { ...owner, scopes: [] }, dataDir);
 const installationLabel = labelDigest(dataDir);
 const managedSeen = new Set<string>();
 let manager: ChildProcessWithoutNullStreams | undefined;

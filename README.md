@@ -138,8 +138,6 @@ import { LiteHarnessClient } from "@lite-harness/sdk";
 const lite = new LiteHarnessClient({
   baseUrl: "http://127.0.0.1:3210",
   token: process.env.LITE_HARNESS_APP_TOKEN!,
-  tenantId: "tenant-demo",
-  userId: "user-demo",
 });
 
 const run = await lite.createRun({
@@ -182,6 +180,14 @@ accepts the deterministic fake provider in development or an
 callback egress plus non-loopback HTTP MCP servers. Runtime, MCP, plugin, and
 browser Docker launches use only preloaded digest-pinned images
 (`--pull=never`); missing images fail instead of being downloaded.
+
+The local Hermes qualification lane is the only explicitly trusted
+unmetered route: `openai-compatible` at
+`http://127.0.0.1:8645/v1`, model `gpt-5.6-luna`, with both configured model
+rates set to `0`. If that proxy omits usage, the run may continue for semantic
+testing, but usage remains unknown and the qualification evaluator cannot
+pass or make a billing/performance claim. Paid or custom routes remain
+authoritative-usage fail-closed.
 
 For trusted owner-local delegated execution, use `codex` or `claude` as
 `LITE_HARNESS_PROVIDER`; see

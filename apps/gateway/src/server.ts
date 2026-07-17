@@ -52,14 +52,14 @@ export interface ManagerTransport {
   health(): Promise<ManagerHealth>;
   readiness(): Promise<ManagerReadiness>;
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse>;
-  getRun(runId: string): Promise<RunRecord>;
-  cancelRun(runId: string): Promise<RunRecord>;
-  steerRun(runId: string, instruction: string): Promise<RunRecord>;
-  getApproval(approvalId: string): Promise<ApprovalRecord>;
-  resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord>;
-  getEvents(runId: string, after: number, waitMs: number, signal?: AbortSignal): Promise<RunEvent[]>;
-  getRunAttempts(runId: string): Promise<RunAttemptRecord[]>;
-  getChildRuns(runId: string): Promise<RunRecord[]>;
+  getRun(runId: string, principal: InternalPrincipal): Promise<RunRecord>;
+  cancelRun(runId: string, principal: InternalPrincipal): Promise<RunRecord>;
+  steerRun(runId: string, instruction: string, principal: InternalPrincipal): Promise<RunRecord>;
+  getApproval(approvalId: string, principal: InternalPrincipal): Promise<ApprovalRecord>;
+  resolveApproval(approvalId: string, approved: boolean, principal: InternalPrincipal): Promise<ApprovalRecord>;
+  getEvents(runId: string, after: number, waitMs: number, signal: AbortSignal | undefined, principal: InternalPrincipal): Promise<RunEvent[]>;
+  getRunAttempts(runId: string, principal: InternalPrincipal): Promise<RunAttemptRecord[]>;
+  getChildRuns(runId: string, principal: InternalPrincipal): Promise<RunRecord[]>;
   getSession(sessionId: string, principal: InternalPrincipal): Promise<SessionRecord>;
   getSessionMessages(sessionId: string, principal: InternalPrincipal): Promise<SessionMessageRecord[]>;
   publishArtifact(runId: string, request: PublishArtifactRequest, principal: InternalPrincipal): Promise<ArtifactRecord>;
@@ -259,6 +259,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     const response = await options.manager.startRun({
       ...request.body,
       idempotencyKey,
+      createIfMissing: false,
       principal,
     });
     return reply.code(202).send(response);
@@ -292,8 +293,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId", async (request, reply) => {
     try {
-      const run = await options.manager.getRun(request.params.runId);
-      return ownsRun(run, principalFromRequest(request))
+      const principal = principalFromRequest(request);
+      const run = await options.manager.getRun(request.params.runId, principal);
+      return ownsRun(run, principal)
         ? run
         : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     } catch (error) {
@@ -305,11 +307,12 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
   app.post<{ Params: { runId: string } }>("/v1/runs/:runId/cancel", async (request, reply) => {
     try {
-      const existing = await options.manager.getRun(request.params.runId);
-      if (!ownsRun(existing, principalFromRequest(request))) {
+      const principal = principalFromRequest(request);
+      const existing = await options.manager.getRun(request.params.runId, principal);
+      if (!ownsRun(existing, principal)) {
         return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
       }
-      return await options.manager.cancelRun(request.params.runId);
+      return await options.manager.cancelRun(request.params.runId, principal);
     } catch (error) {
       return reply.code(404).send({
         error: { code: "not_found", message: error instanceof Error ? error.message : "Run not found" },
@@ -322,12 +325,12 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     async (request, reply) => {
       const principal = principalFromRequest(request);
       try {
-        const run = await options.manager.getRun(request.params.runId);
+        const run = await options.manager.getRun(request.params.runId, principal);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
         if (typeof request.body?.instruction !== "string" || !request.body.instruction.trim()) {
           return reply.code(400).send({ error: { code: "invalid_request", message: "Steering instruction is required" } });
         }
-        return await options.manager.steerRun(run.id, request.body.instruction);
+        return await options.manager.steerRun(run.id, request.body.instruction, principal);
       } catch (error) {
         return reply.code(409).send({ error: { code: "run_not_active", message: error instanceof Error ? error.message : String(error) } });
       }
@@ -342,10 +345,10 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       }
       const principal = principalFromRequest(request);
       try {
-        const approval = await options.manager.getApproval(request.params.approvalId);
-        const run = await options.manager.getRun(approval.runId);
+        const approval = await options.manager.getApproval(request.params.approvalId, principal);
+        const run = await options.manager.getRun(approval.runId, principal);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Approval not found" } });
-        return await options.manager.resolveApproval(approval.id, request.body.approved);
+        return await options.manager.resolveApproval(approval.id, request.body.approved, principal);
       } catch {
         return reply.code(404).send({ error: { code: "not_found", message: "Approval not found" } });
       }
@@ -359,9 +362,10 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       if (startAfter === undefined) {
         return reply.code(400).send(errorEnvelope("invalid_event_cursor", "after must be a non-negative safe integer"));
       }
+      const principal = principalFromRequest(request);
       try {
-        const run = await options.manager.getRun(request.params.runId);
-        if (!ownsRun(run, principalFromRequest(request))) {
+        const run = await options.manager.getRun(request.params.runId, principal);
+        if (!ownsRun(run, principal)) {
           return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
         }
       } catch {
@@ -387,12 +391,12 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
 
       try {
         while (!closed) {
-          const events = await options.manager.getEvents(request.params.runId, cursor, 5_000, disconnected.signal);
+          const events = await options.manager.getEvents(request.params.runId, cursor, 5_000, disconnected.signal, principal);
           for (const event of events) {
             await writeSse(response, `id: ${event.sequence}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`, disconnected.signal);
             cursor = event.sequence;
           }
-          const run = await options.manager.getRun(request.params.runId);
+          const run = await options.manager.getRun(request.params.runId, principal);
           if (isTerminalRunStatus(run.status) && cursor >= run.lastSequence) {
             break;
           }
@@ -418,9 +422,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId/attempts", async (request, reply) => {
     const principal = principalFromRequest(request);
     try {
-      const run = await options.manager.getRun(request.params.runId);
+      const run = await options.manager.getRun(request.params.runId, principal);
       return ownsRun(run, principal)
-        ? { attempts: await options.manager.getRunAttempts(run.id) }
+        ? { attempts: await options.manager.getRunAttempts(run.id, principal) }
         : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     } catch {
       return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
@@ -430,9 +434,9 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId/children", async (request, reply) => {
     const principal = principalFromRequest(request);
     try {
-      const run = await options.manager.getRun(request.params.runId);
+      const run = await options.manager.getRun(request.params.runId, principal);
       return ownsRun(run, principal)
-        ? { runs: (await options.manager.getChildRuns(run.id)).filter((child) => ownsRun(child, principal)) }
+        ? { runs: (await options.manager.getChildRuns(run.id, principal)).filter((child) => ownsRun(child, principal)) }
         : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     } catch {
       return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
@@ -456,7 +460,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     async (request, reply) => {
       const principal = principalFromRequest(request);
       try {
-        const run = await options.manager.getRun(request.params.runId);
+        const run = await options.manager.getRun(request.params.runId, principal);
         if (!ownsRun(run, principal)) return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
         if (!Value.Check(PublishArtifactRequestSchema, request.body)) return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
         return reply.code(201).send(await options.manager.publishArtifact(run.id, request.body, principal));
@@ -472,7 +476,7 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
       const principal = principalFromRequest(request);
       try {
         const payload = await options.manager.getArtifact(request.params.artifactId, principal);
-        const run = await options.manager.getRun(payload.record.runId);
+        const run = await options.manager.getRun(payload.record.runId, principal);
         return ownsRun(run, principal)
           ? payload
           : reply.code(404).send({ error: { code: "not_found", message: "Artifact not found" } });

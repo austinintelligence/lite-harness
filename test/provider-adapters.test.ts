@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
-import { OPENAI_COMPATIBLE_PRESETS, OpenAICompatibleProvider, OpenAIResponsesProvider } from "@lite-harness/provider-openai-compatible";
+import {
+  OPENAI_COMPATIBLE_PRESETS,
+  OpenAICompatibleProvider,
+  OpenAIResponsesCompatibleProvider,
+  OpenAIResponsesProvider,
+} from "@lite-harness/provider-openai-compatible";
 import type { ModelDescriptor } from "@lite-harness/provider-core";
 
 const model = (id: string, providerId: string): ModelDescriptor => ({
@@ -196,6 +201,44 @@ describe("direct provider adapters", () => {
     await expect(iterator.next()).rejects.toMatchObject({ code: "response_incomplete" });
   });
 
+  it("uses the Responses-compatible route and accepts Hermes octet-stream SSE framing", async () => {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(String(input)).toBe("http://127.0.0.1:8645/v1/responses");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: "gpt-5.6-luna",
+        stream: true,
+        input: [{ type: "message", role: "user", content: "invoke" }],
+        tools: [{ type: "function", name: "write_file" }],
+        tool_choice: "auto",
+      });
+      return sseResponse([
+        { type: "response.created", sequence_number: 0, response: { status: "in_progress" } },
+        { type: "response.output_item.added", sequence_number: 1, output_index: 0, item: { type: "function_call", id: "fc-1", call_id: "call-1", name: "write_file", arguments: "" } },
+        { type: "response.function_call_arguments.done", sequence_number: 2, output_index: 0, item_id: "fc-1", call_id: "call-1", name: "write_file", arguments: '{"path":"probe.txt","content":"PROBE_OK"}' },
+        { type: "response.completed", sequence_number: 3, response: { status: "completed", usage: null } },
+      ], "application/octet-stream");
+    });
+    const adapter = new OpenAIResponsesCompatibleProvider({
+      providerId: "openai-compatible",
+      baseUrl: "http://127.0.0.1:8645/v1",
+      allowedOrigins: ["http://127.0.0.1:8645"],
+      fetch,
+    });
+    const events = [];
+    for await (const event of adapter.stream({
+      model: model("gpt-5.6-luna", "openai-compatible"),
+      messages: [{ role: "user", content: "invoke" }],
+      tools: [{ name: "write_file", description: "Write a file", inputSchema: { type: "object" } }],
+      credential: { authorizationHeader: "Bearer sk-hermes-local" },
+    })) events.push(event);
+    expect(events).toEqual([
+      { type: "request.accepted" },
+      { type: "tool.call", call: { id: "call-1", name: "write_file", arguments: { path: "probe.txt", content: "PROBE_OK" } } },
+      { type: "completed", finishReason: "tool_calls" },
+    ]);
+  });
+
   it("preserves tool-call and tool-result pairing in OpenAI-compatible requests", async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> };
@@ -220,6 +263,44 @@ describe("direct provider adapters", () => {
       credential: { authorizationHeader: "Bearer fixture-secret" },
     })) events.push(event);
     expect(events).toContainEqual({ type: "tool.call", call: { id: "call-2", name: "write_file", arguments: { path: "x" } } });
+  });
+
+  it("rejects OpenAI-compatible Chat Completions EOF after text without [DONE]", async () => {
+    const adapter = new OpenAICompatibleProvider({
+      providerId: "openai", baseUrl: "https://api.openai.com/v1/", allowedOrigins: ["https://api.openai.com"],
+      fetch: vi.fn(async () => sseResponse([
+        { choices: [{ delta: { content: "partial" }, finish_reason: null }] },
+      ])),
+    });
+    const events: unknown[] = [];
+    await expect((async () => {
+      for await (const event of adapter.stream({
+        model: model("fixture", "openai"), messages: [{ role: "user", content: "work" }],
+        credential: { authorizationHeader: "Bearer fixture-secret" },
+      })) events.push(event);
+    })()).rejects.toMatchObject({ code: "provider_stream_truncated" });
+    expect(events).toEqual([
+      { type: "request.accepted" },
+      { type: "text.delta", delta: "partial" },
+    ]);
+  });
+
+  it("rejects OpenAI-compatible Chat Completions EOF during fragmented tool arguments", async () => {
+    const adapter = new OpenAICompatibleProvider({
+      providerId: "openai", baseUrl: "https://api.openai.com/v1/", allowedOrigins: ["https://api.openai.com"],
+      fetch: vi.fn(async () => sseResponse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", function: { name: "read_file", arguments: '{"path":"' } }] }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "a\"" } }] }, finish_reason: null }] },
+      ])),
+    });
+    const events: unknown[] = [];
+    await expect((async () => {
+      for await (const event of adapter.stream({
+        model: model("fixture", "openai"), messages: [{ role: "user", content: "work" }],
+        credential: { authorizationHeader: "Bearer fixture-secret" },
+      })) events.push(event);
+    })()).rejects.toMatchObject({ code: "provider_stream_truncated" });
+    expect(events).toEqual([{ type: "request.accepted" }]);
   });
 
   it("normalizes an Anthropic response", async () => {
@@ -307,9 +388,47 @@ describe("direct provider adapters", () => {
     expect(events).toContainEqual({ type: "tool.call", call: { id: "new-tool", name: "read_file", arguments: { path: "a" } } });
     expect(events).toContainEqual({ type: "usage", inputTokens: 4, outputTokens: 3 });
   });
+
+  it("rejects Anthropic SSE EOF after text without message_stop", async () => {
+    const adapter = new AnthropicProvider({
+      fetch: vi.fn(async () => sseResponse([
+        { type: "message_start", message: { usage: { input_tokens: 4 } } },
+        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "partial" } },
+      ])),
+    });
+    const events: unknown[] = [];
+    await expect((async () => {
+      for await (const event of adapter.stream({
+        model: model("claude-fixture", "anthropic"), messages: [{ role: "user", content: "work" }],
+        credential: { authorizationHeader: "Bearer fixture-secret" },
+      })) events.push(event);
+    })()).rejects.toMatchObject({ code: "provider_stream_truncated" });
+    expect(events).toEqual([
+      { type: "request.accepted" },
+      { type: "text.delta", delta: "partial" },
+    ]);
+  });
+
+  it("rejects Anthropic SSE EOF during fragmented tool arguments", async () => {
+    const adapter = new AnthropicProvider({
+      fetch: vi.fn(async () => sseResponse([
+        { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tool-1", name: "read_file", input: {} } },
+        { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"path":"' } },
+        { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "a\"" } },
+      ])),
+    });
+    const events: unknown[] = [];
+    await expect((async () => {
+      for await (const event of adapter.stream({
+        model: model("claude-fixture", "anthropic"), messages: [{ role: "user", content: "work" }],
+        credential: { authorizationHeader: "Bearer fixture-secret" },
+      })) events.push(event);
+    })()).rejects.toMatchObject({ code: "provider_stream_truncated" });
+    expect(events).toEqual([{ type: "request.accepted" }]);
+  });
 });
 
-function sseResponse(events: readonly unknown[]): Response {
+function sseResponse(events: readonly unknown[], contentType = "text/event-stream"): Response {
   const body = events.map((event) => `data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`).join("");
-  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  return new Response(body, { status: 200, headers: { "content-type": contentType } });
 }

@@ -166,7 +166,7 @@ describe("Docker runtime integration", () => {
     } finally {
       for (const worker of workers) killWorker(worker.pid);
       removeManagedContainers(installationId);
-      const volume = dockerWorkspaceVolumeName(workspaceId, principal);
+      const volume = dockerWorkspaceVolumeName(workspaceId, principal, installationId);
       const inspected = spawnSync("docker", ["volume", "inspect", volume], { encoding: "utf8", windowsHide: true });
       if (inspected.status === 0) spawnSync("docker", ["volume", "rm", "--force", volume], { encoding: "utf8", windowsHide: true });
       rmSync(root, { recursive: true, force: true });

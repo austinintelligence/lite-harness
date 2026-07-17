@@ -30,6 +30,63 @@ describe("AgentRunner", () => {
     ]);
   });
 
+  it("rejects a truncated stream before publishing or executing its tool call", async () => {
+    const runtime = new InMemoryToolRuntime();
+    const execute = vi.spyOn(runtime, "execute");
+    const onEvent = vi.fn();
+    const model: ModelGateway = {
+      async *streamTurn() {
+        yield { type: "tool.call", call: { id: "call-truncated", name: "write_file", arguments: { path: "x.txt", content: "x" } } };
+      },
+    };
+
+    await expect(new AgentRunner(model, runtime).run({
+      input: "write x",
+      allowedTools: ["write_file"],
+      workspaceId: "truncated-stream",
+      onEvent,
+    })).rejects.toMatchObject({ code: "provider_stream_truncated", retryable: false });
+    expect(execute).not.toHaveBeenCalled();
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "agent.message.completed" }));
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "tool.call.requested" }));
+  });
+
+  it("rejects a completed turn without usage when authoritative usage is required", async () => {
+    const runtime = new InMemoryToolRuntime();
+    const onEvent = vi.fn();
+    const model: ModelGateway = {
+      async *streamTurn() {
+        yield { type: "completed", finishReason: "stop" };
+      },
+    };
+
+    await expect(new AgentRunner(model, runtime).run({
+      input: "finish",
+      workspaceId: "missing-usage",
+      maxCostUsd: 1,
+      requireAuthoritativeUsage: true,
+      onEvent,
+    })).rejects.toMatchObject({ code: "provider_usage_missing", retryable: false });
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "agent.message.completed" }));
+  });
+
+  it("allows missing usage only for an explicitly trusted unmetered route", async () => {
+    const onEvent = vi.fn();
+    const model: ModelGateway = {
+      async *streamTurn() {
+        yield { type: "text.delta", delta: "local" };
+        yield { type: "completed", finishReason: "stop" };
+      },
+    };
+
+    await new AgentRunner(model, new InMemoryToolRuntime()).run({
+      input: "finish", workspaceId: "unmetered-local", maxCostUsd: 25,
+      requireAuthoritativeUsage: true, allowUnmeteredUsage: true, onEvent,
+    });
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "agent.message.completed" }));
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "usage.updated" }));
+  });
+
   it.each([99, 3_600_001, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
     "rejects an invalid direct command timeout (%s) before executing the tool",
     async (commandTimeoutMs) => {

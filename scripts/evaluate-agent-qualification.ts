@@ -126,12 +126,21 @@ try {
   try {
     for (const task of tasks) {
       if (task.beforeRun) await task.beforeRun();
+      const taskAgentId = `${agentId}-${task.id}`;
+      await client.createAgent({
+        id: taskAgentId,
+        name: `Qualification agent ${task.id}`,
+        instructions: "You are being evaluated on exact tool use. Follow each task literally, use only the allowed tools, verify outputs before finishing, and never claim a step succeeded unless its tool result proves it.",
+        modelCapabilities: ["text", "tools"],
+        allowedTools: task.allowedTools,
+        defaultBudget: { maxTurns: 12, maxToolCalls: 24, totalTimeoutMs: 300_000, modelIdleTimeoutMs: 120_000, commandTimeoutMs: 45_000 },
+      });
       const startedAt = performance.now();
       const workspaceId = `qualification-${task.id}-${suffix}`;
       createdWorkspaceIds.push(workspaceId);
       await client.createWorkspace({ id: workspaceId });
       const created = await client.createRun({
-        agent: agentId,
+        agent: taskAgentId,
         workspace: workspaceId,
         input: task.input,
         budget: { maxTurns: 12, maxToolCalls: 24, totalTimeoutMs: task.timeoutMs ?? 300_000, modelIdleTimeoutMs: 120_000, commandTimeoutMs: 45_000 },
@@ -141,7 +150,7 @@ try {
       let lifecycleError: string | undefined;
       if (task.afterRun) {
         try {
-          lifecycle = await task.afterRun({ client, runId: created.runId, workspaceId });
+          lifecycle = await task.afterRun({ client, runId: created.runId, workspaceId, agentId: taskAgentId });
         } catch (error) {
           lifecycleError = error instanceof Error ? error.message : String(error);
         }
@@ -149,6 +158,7 @@ try {
       const evaluation = task.verify(observed);
       const expectedTerminal = task.id === "cancellation" ? observed.run.status === "CANCELLED" : observed.run.status === "SUCCEEDED";
       const passed = evaluation.passed && expectedTerminal && !lifecycleError && (lifecycle?.passed !== false);
+      const usage = usageSummary(observed.events);
       taskResults.push({
         id: task.id,
         allowedTools: task.allowedTools,
@@ -162,7 +172,8 @@ try {
         latencyMs: Number((performance.now() - startedAt).toFixed(1)),
         toolCalls: observed.toolCalls,
         approvals: observed.approvals,
-        usage: usageSummary(observed.events),
+        usage,
+        usageReported: usage.usageReported,
         eventCount: observed.events.length,
         diagnostics: observationDiagnostics(observed),
         lifecycle,
@@ -172,7 +183,8 @@ try {
   } finally {
     metrics.stop();
   }
-  const passed = taskResults.length === tasks.length && taskResults.every((item) => item.passed === true);
+  const usageComplete = taskResults.every((item) => item.id === "cancellation" || item.usageReported === true);
+  const passed = taskResults.length === tasks.length && taskResults.every((item) => item.passed === true) && usageComplete;
   report = {
     schemaVersion: 1,
     kind: "one-agent-real-task-corpus",
@@ -184,6 +196,12 @@ try {
     taskCount: tasks.length,
     passedTasks: taskResults.filter((item) => item.passed === true).length,
     failedTasks: taskResults.filter((item) => item.passed !== true).length,
+    usageAccounting: {
+      complete: usageComplete,
+      unknownTasks: taskResults
+        .filter((item) => item.id !== "cancellation" && item.usageReported !== true)
+        .map((item) => item.id),
+    },
     tasks: taskResults,
     measurements: metrics.report(),
     browser: { image: browserImage ?? null, fixtureOrigin: browserOrigin || null },
@@ -247,7 +265,7 @@ interface CorpusTask {
   timeoutMs?: number;
   cancelAfterMs?: number;
   beforeRun?: () => Promise<void>;
-  afterRun?: (context: { client: LiteHarnessClient; runId: string; workspaceId: string }) => Promise<Record<string, unknown> | undefined>;
+  afterRun?: (context: { client: LiteHarnessClient; runId: string; workspaceId: string; agentId: string }) => Promise<Record<string, unknown> | undefined>;
   verify: (observation: TaskObservation) => { passed: boolean; reason: string };
 }
 
@@ -359,7 +377,7 @@ function corpusTasks(origin: string, browserEnabled: boolean): CorpusTask[] {
       id: "approval-required-action",
       marker: "CORPUS_APPROVED_OK",
       allowedTools: ["shell_exec"],
-      input: "Use shell_exec to print exactly CORPUS_APPROVED_OK. This action requires approval; wait for approval and then verify the result before finishing.",
+      input: "Call shell_exec now to print exactly CORPUS_APPROVED_OK. The evaluator will pause the tool for approval and resolve it; after the tool result returns, verify the exact output before finishing.",
       verify: (o) => requireTools(o, ["shell_exec"], "approval action") && o.approvals.length > 0 && hasEventText(o, "CORPUS_APPROVED_OK")
         ? pass("approval request/resolution and command output observed") : fail("approval or command evidence missing"),
     },
@@ -397,9 +415,9 @@ function corpusTasks(origin: string, browserEnabled: boolean): CorpusTask[] {
         qualificationEnvironment.LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT = "true";
         await restartQualificationServices();
       },
-      afterRun: async ({ client, workspaceId }) => {
+      afterRun: async ({ client, workspaceId, agentId: restoredAgentId }) => {
         const second = await client.createRun({
-          agent: agentId,
+          agent: restoredAgentId,
           workspace: workspaceId,
           input: "Use read_file to read snapshot-marker.txt from the restored workspace. Verify the exact content CORPUS_SNAPSHOT_OK and report it. Do not rewrite the file.",
           budget: { maxTurns: 8, maxToolCalls: 12, totalTimeoutMs: 180_000, modelIdleTimeoutMs: 120_000, commandTimeoutMs: 45_000 },
@@ -493,12 +511,15 @@ function observationDiagnostics(observation: TaskObservation): Record<string, un
 function pass(reason: string): { passed: boolean; reason: string } { return { passed: true, reason }; }
 function fail(reason: string): { passed: boolean; reason: string } { return { passed: false, reason }; }
 
-function usageSummary(events: RunEvent[]): { inputTokens: number; outputTokens: number; costUsd: number } {
-  return events.filter((event) => event.type === "usage.updated").reduce((sum, event) => ({
+function usageSummary(events: RunEvent[]): { usageReported: boolean; inputTokens: number | null; outputTokens: number | null; costUsd: number | null } {
+  const usageEvents = events.filter((event) => event.type === "usage.updated");
+  if (!usageEvents.length) return { usageReported: false, inputTokens: null, outputTokens: null, costUsd: null };
+  return usageEvents.reduce((sum, event) => ({
     inputTokens: sum.inputTokens + numberField(event.payload?.inputTokens),
     outputTokens: sum.outputTokens + numberField(event.payload?.outputTokens),
     costUsd: sum.costUsd + numberField(event.payload?.costUsd),
-  }), { inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    usageReported: true,
+  }), { inputTokens: 0, outputTokens: 0, costUsd: 0, usageReported: true });
 }
 
 function numberField(value: unknown): number { return typeof value === "number" && Number.isFinite(value) ? value : 0; }
@@ -507,7 +528,7 @@ function workspacePath(path: string): string { return path.replaceAll("\\", "/")
 
 function inspectWorkspaceFile(workspaceId: string, path: string, image: string, principal: { appId: string; tenantId: string; userId: string }, expected?: string): Record<string, unknown> {
   if (!expected) return { checked: false };
-  const volume = dockerWorkspaceVolumeName(workspaceId, { ...principal, scopes: [] });
+  const volume = dockerWorkspaceVolumeName(workspaceId, { ...principal, scopes: [] }, dataDir);
   try {
     const content = execFileSync("docker", [
       "run", "--pull=never", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -564,8 +585,10 @@ async function waitForReady(processes: ChildProcessWithoutNullStreams[], port: n
     if (exited) throw new Error(`Qualification process exited before readiness: ${managerLogs}\n${gatewayLogs}`);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/readyz`, { signal: AbortSignal.timeout(500) });
-      if (response.ok && (await response.json() as { ok?: boolean }).ok === true) return port;
-      lastError = `HTTP ${response.status}`;
+      const body = await response.text();
+      const parsed = body ? JSON.parse(body) as { ok?: boolean } : {};
+      if (response.ok && parsed.ok === true) return port;
+      lastError = `HTTP ${response.status}: ${body.slice(0, 512)}`;
     } catch (error) { lastError = error instanceof Error ? error.message : String(error); }
     await delay(100);
   }
@@ -631,7 +654,7 @@ function removeManagedNetworks(installation: string): void {
 }
 
 function managedWorkspaceVolumes(workspaceIds: readonly string[], principal: { appId: string; tenantId: string; userId: string }): string[] {
-  return workspaceIds.map((workspaceId) => dockerWorkspaceVolumeName(workspaceId, { ...principal, scopes: [] }))
+  return workspaceIds.map((workspaceId) => dockerWorkspaceVolumeName(workspaceId, { ...principal, scopes: [] }, dataDir))
     .filter((volume) => { try { execFileSync("docker", ["volume", "inspect", volume], { stdio: "ignore", windowsHide: true }); return true; } catch { return false; } });
 }
 

@@ -15,10 +15,15 @@ describe("durable Docker tool lifecycle", () => {
       let nextId = 1;
       let currentId = "";
       let exists = false;
+      let volumeLabels = "{}";
       let observedPersistedBeforeStart = false;
       const runner: DockerCommandRunner = async (args) => {
         commands.push([...args]);
-        if (args[0] === "volume") return ok("volume");
+        if (args[0] === "volume") {
+          if (args[1] === "create") volumeLabels = JSON.stringify(Object.fromEntries(labelPairs(args)));
+          if (args[1] === "inspect") return ok(volumeLabels);
+          return ok("volume");
+        }
         if (args[0] === "run") return ok();
         if (args[0] === "create") {
           createNames.push(args[args.indexOf("--name") + 1]!);
@@ -86,11 +91,16 @@ describe("durable Docker tool lifecycle", () => {
       const runtimeContainerId = "c".repeat(64);
       let exists = false;
       let running = false;
+      let volumeLabels = "{}";
       let notifyStarted!: () => void;
       const started = new Promise<void>((resolve) => { notifyStarted = resolve; });
       const runner: DockerCommandRunner = async (args, options) => {
         commands.push([...args]);
-        if (args[0] === "volume") return ok("volume");
+        if (args[0] === "volume") {
+          if (args[1] === "create") volumeLabels = JSON.stringify(Object.fromEntries(labelPairs(args)));
+          if (args[1] === "inspect") return ok(volumeLabels);
+          return ok("volume");
+        }
         if (args[0] === "run") return ok();
         if (args[0] === "create") { exists = true; return ok(runtimeContainerId); }
         if (args[0] === "start") {
@@ -230,4 +240,12 @@ function ok(stdout = ""): { code: number; stdout: string; stderr: string } {
 
 function missing(): { code: number; stdout: string; stderr: string } {
   return { code: 1, stdout: "", stderr: "Error: No such container" };
+}
+
+function labelPairs(args: readonly string[]): Array<[string, string]> {
+  return args.flatMap((value, index) => {
+    if (value !== "--label" || !args[index + 1]) return [];
+    const separator = args[index + 1]!.indexOf("=");
+    return separator > 0 ? [[args[index + 1]!.slice(0, separator), args[index + 1]!.slice(separator + 1)]] : [];
+  });
 }

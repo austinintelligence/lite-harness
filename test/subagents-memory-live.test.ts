@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { RunService } from "@lite-harness/control-plane";
 import { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
-import { configureProductionOptionalSystems } from "../apps/manager/src/optional-systems.js";
+import { configureProductionOptionalSystems, ownerMemoryWorkspace } from "../apps/manager/src/optional-systems.js";
 import { BrokeredToolRuntime, InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
@@ -99,7 +99,7 @@ describe("live memory and brokered tools", () => {
   it("assembles bounded owner-scoped durable memory into model context", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-memory-context-")); cleanup.push(directory);
     const memory = new SqliteMemoryStore(join(directory, "memory.db"));
-    const entry = memory.add("tenant", "workspace", "The blue canary requires the health gate before deployment.");
+    const entry = memory.add("tenant", ownerMemoryWorkspace({ appId: "app", tenantId: "tenant", userId: "user" }, "workspace"), "The blue canary requires the health gate before deployment.");
     const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
     const systems = await configureProductionOptionalSystems({
       dataDir: directory, modelId: "model", runtime, memoryStore: memory,

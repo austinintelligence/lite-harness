@@ -80,6 +80,8 @@ describe("owner-scoped resource identities", () => {
     expect(result).toMatchObject({ ok: false, content: "File not found: owner.txt" });
     expect(dockerWorkspaceVolumeName("shared-workspace", first))
       .not.toBe(dockerWorkspaceVolumeName("shared-workspace", second));
+    expect(dockerWorkspaceVolumeName("shared-workspace", first, "installation-one"))
+      .not.toBe(dockerWorkspaceVolumeName("shared-workspace", first, "installation-two"));
   });
 });
 

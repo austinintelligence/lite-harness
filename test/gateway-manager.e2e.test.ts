@@ -214,6 +214,12 @@ describe("Gateway to Manager vertical slice", () => {
       },
     };
     const gateway = buildGatewayServer({ manager: managerTransport, accessTokens });
+    await managerTransport.createAgent({ id: "coder", name: "Coder" }, {
+      appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [],
+    });
+    await managerTransport.createWorkspace({ id: "workspace-a" }, {
+      appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [],
+    });
 
     cleanup.push(async () => {
       await gateway.close();
@@ -253,7 +259,9 @@ describe("Gateway to Manager vertical slice", () => {
     expect(runtime.readFile("workspace-a", "hello.txt", {
       appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [],
     })).toContain("first vertical slice");
-    expect((await managerTransport.getRunAttempts(firstBody.runId))).toMatchObject([
+    expect((await managerTransport.getRunAttempts(firstBody.runId, {
+      appId: "app_local", tenantId: "tenant-a", userId: "user-a", scopes: [],
+    }))).toMatchObject([
       { attempt: 1, status: "SUCCEEDED" },
     ]);
     expect(terminal.sessionId).toMatch(/^ses_/);
@@ -387,7 +395,10 @@ describe("Gateway to Manager vertical slice", () => {
     const authenticatedIpc = await manager.inject({
       method: "GET",
       url: `/internal/runs/${firstBody.runId}`,
-      headers: { "x-lite-internal-token": internalToken, "x-lite-ipc-version": "1" },
+      headers: {
+        "x-lite-internal-token": internalToken, "x-lite-ipc-version": "1",
+        "x-lite-app-id": "app_local", "x-lite-tenant-id": "tenant-a", "x-lite-user-id": "user-a",
+      },
     });
     expect(authenticatedIpc.statusCode).toBe(200);
 

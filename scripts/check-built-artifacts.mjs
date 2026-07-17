@@ -40,8 +40,12 @@ try {
   execFileSync(npm.command, [...npm.prefix, "init", "-y"], { cwd: fixture, stdio: "pipe" });
   execFileSync(npm.command, [...npm.prefix, "install", "--ignore-scripts", "--no-audit", "--no-fund",
     resolve(root, required.application), resolve(root, required.contracts), resolve(root, required.sdk)], { cwd: fixture, stdio: "pipe" });
+  const installedPackage = resolve(fixture, "node_modules", "@lite-harness", "application");
   const installedApplication = resolve(fixture, "node_modules", "@lite-harness", "application", "apps");
-  execFileSync(process.execPath, [resolve(installedApplication, "cli", "main.js"), "help"], { cwd: fixture, stdio: "pipe" });
+  const publicCli = resolve(installedApplication, "cli", "main.js");
+  const publicLauncherEntry = resolve(installedApplication, "launcher", "main.js");
+  if (!existsSync(resolve(installedPackage, "package.json"))) throw new Error("Installed application package manifest is missing");
+  execFileSync(process.execPath, [publicCli, "help"], { cwd: fixture, stdio: "pipe" });
 
   const port = await availablePort();
   const dataDir = resolve(fixture, "data");
@@ -60,6 +64,34 @@ try {
     LITE_HARNESS_HOST: "127.0.0.1",
     LITE_HARNESS_PORT: String(port),
   };
+  const publicInitDataDir = resolve(fixture, "public-init-data");
+  const publicInitEnvironment = {
+    ...environment,
+    LITE_HARNESS_DATA_DIR: publicInitDataDir,
+    LITE_HARNESS_MANAGER_SOCKET: process.platform === "win32"
+      ? `\\\\.\\pipe\\lite-harness-public-${process.pid}-${Date.now()}`
+      : resolve(fixture, "public-manager.sock"),
+    LITE_HARNESS_CREDENTIAL_RECOVERY_KEY: "artifact-public-recovery-key",
+    LITE_HARNESS_INTERNAL_TOKEN: "artifact-public-internal-token",
+    LITE_HARNESS_APP_TOKEN: "artifact-public-app-token",
+    LITE_HARNESS_HOST: "127.0.0.1",
+    LITE_HARNESS_PORT: String(await availablePort()),
+  };
+  const initResult = JSON.parse(execFileSync(process.execPath, [publicCli, "init"], {
+    cwd: fixture, env: publicInitEnvironment, encoding: "utf8",
+  }));
+  if (initResult.initialized !== true || initResult.dataDir !== publicInitDataDir) {
+    throw new Error("Installed public CLI could not initialize an external data directory");
+  }
+  const publicLauncherPort = await availablePort();
+  const publicLauncherProcess = start(publicLauncherEntry, {
+    ...publicInitEnvironment,
+    LITE_HARNESS_PORT: String(publicLauncherPort),
+  }, fixture);
+  await waitForReady(`http://127.0.0.1:${publicLauncherPort}/readyz`, [publicLauncherProcess]);
+  if (publicLauncherProcess.exitCode !== null) throw new Error("Installed public launcher exited before readiness");
+  await stop(publicLauncherProcess);
+
   const baseUrl = `http://127.0.0.1:${port}`;
   const isolationCredentials = [
     { dimension: "app", token: "artifact-app-token-other-app", appId: "app_secondary", tenantId: "tenant_local", userId: "user_local" },
@@ -105,6 +137,7 @@ const client = new LiteHarnessClient({ baseUrl: process.argv[2], token: "artifac
 const isolationClients = ${JSON.stringify(isolationCredentials.map(({ dimension, token }) => ({ dimension, token })))}
   .map(({ dimension, token }) => ({ dimension, client: new LiteHarnessClient({ baseUrl: process.argv[2], token }) }));
 await client.createAgent({ id: "artifact-coder", name: "Packaged artifact coder", allowedTools: ["write_file", "artifact_publish"] });
+await client.createWorkspace({ id: "packaged-workspace" });
 const created = await client.createRun({ agent: "artifact-coder", workspace: "packaged-workspace", input: "create and publish the fixture" }, "packaged-ipc-smoke");
 let run;
 for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -219,7 +252,9 @@ for _operation_id, method_name in AUTHENTICATED_OPERATION_METHODS.items():
 client = LiteHarnessClient(sys.argv[1], "artifact-app-token")
 isolation_clients = [(item["dimension"], LiteHarnessClient(sys.argv[1], item["token"]))
                      for item in json.loads(sys.argv[2])]
-created = client.create_run(agent="artifact-coder", workspace="python-packaged-workspace", input="create and publish the Python fixture", idempotency_key="python-packaged-ipc-smoke")
+client.create_agent(agent_id="python-artifact-coder", name="Packaged Python artifact coder", allowed_tools=["write_file", "artifact_publish"])
+client.create_workspace(workspace_id="python-packaged-workspace")
+created = client.create_run(agent="python-artifact-coder", workspace="python-packaged-workspace", input="create and publish the Python fixture", idempotency_key="python-packaged-ipc-smoke")
 run = None
 for _ in range(100):
     run = client.get_run(created["runId"])

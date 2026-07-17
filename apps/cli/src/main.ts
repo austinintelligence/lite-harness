@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, statfsSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   loadInstallationConfiguration,
@@ -24,19 +24,18 @@ import { createCredentialStore } from "@lite-harness/credential-store";
 import { installUserService, renderUserService, startUserService, stopUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
 import type { PluginPermissions } from "@lite-harness/plugin-core";
-import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
+import { inspectDocker } from "@lite-harness/runtime-docker";
 import { SQLITE_SCHEMA_VERSION, SqliteRunStore } from "@lite-harness/storage-sqlite";
 import {
   createInstallationRecoveryBundle,
-  DerivedSnapshotKeyProvider,
-  LocalWorkspaceSnapshotStore,
   restoreInstallationRecoveryBundle,
-  StaticSnapshotKeyProvider,
   validateRegisteredBindRoot,
 } from "@lite-harness/workspace";
 
 const [command = "help", subcommand, argument, extraArgument, fifthArgument] = process.argv.slice(2);
 const remainingArguments = process.argv.slice(6);
+const bundled = extname(import.meta.filename) !== ".ts";
+const applicationRoot = resolve(import.meta.dirname, bundled ? "../.." : "../../..");
 const dataDir = process.env.LITE_HARNESS_DATA_DIR ?? join(process.cwd(), ".lite-harness");
 let installedConfiguration: Awaited<ReturnType<typeof readInstallationConfiguration>> | undefined;
 try { installedConfiguration = readInstallationConfiguration(dataDir); } catch { /* doctor reports missing/invalid configuration below. */ }
@@ -278,6 +277,7 @@ if (command === "help" || command === "--help") {
     if (!input) throw new Error("Run input is required");
     process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/runs", {
       agent: argument, workspace: extraArgument, input, principal,
+      createIfMissing: false,
       session: process.env.LITE_HARNESS_SESSION_ID,
       idempotencyKey: process.env.LITE_HARNESS_IDEMPOTENCY_KEY ?? `cli-${randomBytes(12).toString("hex")}`,
     }, headers), null, 2)}\n`);
@@ -356,17 +356,21 @@ if (command === "help" || command === "--help") {
   const restored = restoreInstallationRecoveryBundle(readFileSync(argument), recoveryKey, extraArgument);
   process.stdout.write(`${JSON.stringify({ imported: true, path: resolve(argument), target: resolve(extraArgument), bundleId: restored.bundleId, entries: restored.restoredPaths.length })}\n`);
 } else if ((command === "export" && subcommand) || (command === "workspace" && subcommand === "export" && argument)) {
-  const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
   const workspaceId = command === "workspace" ? argument! : subcommand!;
   const archivePath = command === "workspace" ? extraArgument ?? `${workspaceId}.tar` : argument ?? `${workspaceId}.tar`;
-  writeFileSync(archivePath, await runtime.exportWorkspace(workspaceId, cliPrincipal()));
-  process.stdout.write(`${JSON.stringify({ workspaceId, path: resolve(archivePath), exported: true })}\n`);
+  const result = await managerPluginRequest<{ path: string; bytes: number }>(
+    "POST", `/internal/workspaces/${encodeURIComponent(workspaceId)}/export`,
+    { path: resolve(archivePath) }, principalHeaders(cliPrincipal()),
+  );
+  process.stdout.write(`${JSON.stringify({ workspaceId, ...result, exported: true })}\n`);
 } else if ((command === "import" && subcommand) || (command === "workspace" && subcommand === "import" && argument)) {
-  const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
   const workspaceId = command === "workspace" ? argument! : subcommand!;
   const archivePath = command === "workspace" ? extraArgument ?? `${workspaceId}.tar` : argument ?? `${workspaceId}.tar`;
-  await runtime.importWorkspace(workspaceId, readFileSync(archivePath), cliPrincipal());
-  process.stdout.write(`${JSON.stringify({ workspaceId, path: resolve(archivePath), imported: true })}\n`);
+  const result = await managerPluginRequest<{ path: string; bytes: number }>(
+    "POST", `/internal/workspaces/${encodeURIComponent(workspaceId)}/import`,
+    { path: resolve(archivePath) }, principalHeaders(cliPrincipal()),
+  );
+  process.stdout.write(`${JSON.stringify({ workspaceId, ...result, imported: true })}\n`);
 } else if (command === "gateway" || command === "manager") {
   const installation = installedConfiguration ?? loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
   const credentials = createCredentialStore(installation.dataDir, effectiveEnvironment);
@@ -377,51 +381,32 @@ if (command === "help" || command === "--help") {
     LITE_HARNESS_INTERNAL_TOKEN: internalToken,
     ...(appToken ? { LITE_HARNESS_APP_TOKEN: appToken } : {}),
   });
-  const entry = join(resolve(import.meta.dirname, "../../.."), "apps", command, "src", "main.ts");
-  const child = spawn(process.execPath, ["--import", "tsx", entry], { cwd: resolve(import.meta.dirname, "../../.."), env: roleEnvironment, stdio: "inherit", windowsHide: true });
+  const entry = applicationEntry(command);
+  const child = spawn(process.execPath, bundled ? [entry] : ["--import", "tsx", entry], { cwd: applicationRoot, env: roleEnvironment, stdio: "inherit", windowsHide: true });
   await new Promise<void>((resolveProcess, rejectProcess) => { child.once("error", rejectProcess); child.once("exit", () => resolveProcess()); });
   process.exitCode = child.exitCode ?? 1;
 } else if (command === "workspace" && subcommand === "register") {
   if (!argument || !extraArgument) throw new Error("Usage: workspace register <id> <absolute-path>");
-  const registeredPath = validateRegisteredBindRoot(extraArgument);
-  const database = new SqliteRunStore(join(dataDir, "lite-harness.db"));
-  try {
-    const now = new Date().toISOString();
-    const workspace = database.createWorkspace({
-      id: argument,
-      appId: requiredEnvironment("LITE_HARNESS_APP_ID"),
-      tenantId: requiredEnvironment("LITE_HARNESS_TENANT_ID"),
-      userId: requiredEnvironment("LITE_HARNESS_USER_ID"),
-      mode: "registered-bind", state: "WARM", registeredPath, createdAt: now, updatedAt: now,
-    });
-    process.stdout.write(`${JSON.stringify(workspace, null, 2)}\n`);
-  } finally { database.close(); }
+  process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+    "POST", `/internal/workspaces/${encodeURIComponent(argument)}/register`,
+    { registeredPath: resolve(extraArgument) }, principalHeaders(cliPrincipal()),
+  ), null, 2)}\n`);
 } else if (command === "workspace" && ["snapshot", "restore", "delete"].includes(subcommand ?? "")) {
   if (!argument) throw new Error("A workspace id is required");
-  const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
-  const principal = {
-    appId: requiredEnvironment("LITE_HARNESS_APP_ID"),
-    tenantId: requiredEnvironment("LITE_HARNESS_TENANT_ID"),
-    userId: requiredEnvironment("LITE_HARNESS_USER_ID"),
-    scopes: [],
-  };
+  const headers = principalHeaders(cliPrincipal());
   if (subcommand === "delete") {
-    const removed = await runtime.removeWorkspace(argument, principal);
-    process.stdout.write(`${JSON.stringify({ workspaceId: argument, removed })}\n`);
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+      "DELETE", `/internal/workspaces/${encodeURIComponent(argument)}`, undefined, headers,
+    ), null, 2)}\n`);
   } else {
-    const rootKey = await snapshotKey();
-    const snapshots = new LocalWorkspaceSnapshotStore(
-      join(dataDir, "snapshots"),
-      new DerivedSnapshotKeyProvider(rootKey),
-      new StaticSnapshotKeyProvider(rootKey),
-    );
     if (subcommand === "snapshot") {
-      const record = await snapshots.create(argument, await runtime.exportWorkspace(argument, principal));
-      process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+        "POST", `/internal/workspaces/${encodeURIComponent(argument)}/snapshot`, undefined, headers,
+      ), null, 2)}\n`);
     } else {
-      const restored = await snapshots.restore(argument);
-      await runtime.importWorkspace(argument, restored.archive, principal);
-      process.stdout.write(`${JSON.stringify({ workspaceId: argument, recoveredFromPrevious: restored.recoveredFromPrevious })}\n`);
+      process.stdout.write(`${JSON.stringify(await managerPluginRequest(
+        "POST", `/internal/workspaces/${encodeURIComponent(argument)}/restore`, undefined, headers,
+      ), null, 2)}\n`);
     }
   }
 } else if (command === "keygen") {
@@ -497,10 +482,9 @@ if (command === "help" || command === "--help") {
     }, null, 2)}\n`);
   }
 } else if (command === "service" && ["install", "status", "uninstall"].includes(subcommand ?? "")) {
-  const root = resolve(import.meta.dirname, "../../..");
   if (subcommand === "install") {
     const installation = loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
-    const service = { root, dataDir: installation.dataDir };
+    const service = serviceOptions(installation.dataDir);
     const credentials = createCredentialStore(installation.dataDir, effectiveEnvironment);
     await credentials.getOrCreate("service.internal-token", () => randomBytes(32).toString("hex"));
     await credentials.getOrCreate("service.app-token", () => randomBytes(32).toString("hex"));
@@ -508,10 +492,10 @@ if (command === "help" || command === "--help") {
     const installed = await installUserService(service);
     process.stdout.write(`${JSON.stringify({ installed: true, path: installed.path })}\n`);
   } else if (subcommand === "uninstall") {
-    const service = { root, dataDir: installedConfiguration?.dataDir ?? dataDir };
+    const service = serviceOptions(installedConfiguration?.dataDir ?? dataDir);
     process.stdout.write(`${JSON.stringify({ removed: await uninstallUserService(service) })}\n`);
   } else {
-    const service = { root, dataDir: installedConfiguration?.dataDir ?? dataDir };
+    const service = serviceOptions(installedConfiguration?.dataDir ?? dataDir);
     process.stdout.write(`${JSON.stringify(await userServiceStatus(service))}\n`);
   }
 } else {
@@ -650,21 +634,6 @@ async function inspectGatewayReadiness(url: string | undefined, required: boolea
   }
 }
 
-async function snapshotKey(): Promise<Buffer> {
-  const credentials = createCredentialStore(dataDir, effectiveEnvironment);
-  const value = effectiveEnvironment.LITE_HARNESS_SNAPSHOT_KEY?.trim() || await credentials.get("snapshot.root");
-  if (!value) throw new Error("Configure LITE_HARNESS_SNAPSHOT_KEY or run `pnpm lite keygen-store`");
-  const key = Buffer.from(value, "base64");
-  if (key.length !== 32) throw new Error("LITE_HARNESS_SNAPSHOT_KEY must be a base64-encoded 32-byte key");
-  return key;
-}
-
-function requiredEnvironment(name: string): string {
-  const value = effectiveEnvironment[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
 function readRecoveryKey(path: string): Buffer {
   const raw = readFileSync(path, "utf8").trim();
   const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
@@ -689,8 +658,14 @@ function principalHeaders(principal: { appId: string; tenantId: string; userId: 
   };
 }
 
-function serviceOptions(): { root: string; dataDir: string } {
-  return { root: resolve(import.meta.dirname, "../../.."), dataDir: installedConfiguration?.dataDir ?? dataDir };
+function applicationEntry(name: "manager" | "gateway" | "launcher"): string {
+  return bundled
+    ? join(applicationRoot, "apps", name, "main.js")
+    : join(applicationRoot, "apps", name, "src", "main.ts");
+}
+
+function serviceOptions(serviceDataDir = installedConfiguration?.dataDir ?? dataDir): { root: string; dataDir: string; launcherPath: string } {
+  return { root: applicationRoot, dataDir: serviceDataDir, launcherPath: applicationEntry("launcher") };
 }
 
 function persistConfigurationPatch(updates: Record<string, string>): Awaited<ReturnType<typeof loadInstallationConfiguration>> {

@@ -11,6 +11,7 @@ import type {
   InternalProviderConnectionLoginRequest,
   ModelCatalogRecord,
   ProviderConnectionRecord,
+  WorkspaceRecord,
   ManagerHealth,
   ManagerReadiness,
   ReadinessDependency,
@@ -30,7 +31,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { RunService } from "@lite-harness/control-plane";
 import { StructuredObservability, type TraceSpan } from "@lite-harness/observability";
-import type { LocalArtifactStore } from "@lite-harness/workspace";
+import type { LocalArtifactStore, SnapshotRecord } from "@lite-harness/workspace";
 import type { InboundRunRouter, SqliteIntegrationStore } from "@lite-harness/integrations";
 import { normalizeInbound, verifyHmacSha256 } from "@lite-harness/integrations";
 import type { PluginPermissions } from "@lite-harness/plugin-core";
@@ -63,7 +64,23 @@ export interface ManagerServerOptions {
   modelCatalog?: (principal: InternalPrincipal) => ModelCatalogRecord[] | Promise<ModelCatalogRecord[]>;
   providerConnectionLogin?: (connection: ProviderConnectionRecord, secret: string) => Promise<void>;
   providerConnectionLogout?: (connection: ProviderConnectionRecord) => Promise<void>;
+  workspaceAdmin?: ManagerWorkspaceAdmin;
   productionReadinessChecks: () => Promise<Record<string, ReadinessDependency>>;
+}
+
+export interface ManagerWorkspaceAdmin {
+  registerWorkspace(params: {
+    id: string;
+    principal: InternalPrincipal;
+    registeredPath: string;
+  }): WorkspaceRecord;
+  exportWorkspace(params: { workspaceId: string; principal: InternalPrincipal }): Promise<Buffer>;
+  importWorkspace(params: { workspaceId: string; principal: InternalPrincipal; archive: Buffer }): Promise<void>;
+  snapshotWorkspace(params: { workspaceId: string; principal: InternalPrincipal }): Promise<SnapshotRecord>;
+  restoreWorkspace(params: { workspaceId: string; principal: InternalPrincipal }): Promise<{ recoveredFromPrevious: boolean }>;
+  deleteWorkspace(params: { workspaceId: string; principal: InternalPrincipal }): Promise<boolean>;
+  exportWorkspaceToPath?(params: { workspaceId: string; principal: InternalPrincipal; path: string }): Promise<{ path: string; bytes: number }>;
+  importWorkspaceFromPath?(params: { workspaceId: string; principal: InternalPrincipal; path: string }): Promise<{ path: string; bytes: number }>;
 }
 
 export function buildManagerServer(options: ManagerServerOptions): FastifyInstance {
@@ -242,18 +259,23 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
         error: { code: "invalid_request", message: "Malformed internal run request" },
       });
     }
-    return reply.code(202).send(options.runService.createRun(body));
+    const principal = requireInternalPrincipal(request.headers);
+    if (!samePrincipal(body.principal, principal)) {
+      return reply.code(403).send(errorEnvelope("owner_mismatch", "The request principal does not match the authenticated IPC owner"));
+    }
+    return reply.code(202).send(options.runService.createRun({ ...body, principal }));
   });
 
   app.get<{ Querystring: { limit?: string } }>("/internal/runs", async (request) => {
-    const principal = principalFromInternalHeaders(request.headers);
+    const principal = requireInternalPrincipal(request.headers);
     const limit = boundedInteger(request.query.limit, 1, 1_000, 100);
     return { runs: options.runService.listRuns(principal, limit), limit };
   });
 
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId", async (request, reply) => {
+    const principal = requireInternalPrincipal(request.headers);
     const run = options.runService.getRun(request.params.runId);
-    return run
+    return run && samePrincipal(run, principal)
       ? reply.send(run)
       : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
   });
@@ -262,7 +284,9 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     Params: { runId: string };
     Querystring: { after?: string; wait_ms?: string };
   }>("/internal/runs/:runId/events", async (request, reply) => {
-    if (!options.runService.getRun(request.params.runId)) {
+    const principal = requireInternalPrincipal(request.headers);
+    const run = options.runService.getRun(request.params.runId);
+    if (!run || !samePrincipal(run, principal)) {
       return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
     }
     const after = boundedInteger(request.query.after, 0, Number.MAX_SAFE_INTEGER, 0);
@@ -284,13 +308,17 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   });
 
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId/attempts", async (request, reply) => {
-    return options.runService.getRun(request.params.runId)
+    const principal = requireInternalPrincipal(request.headers);
+    const run = options.runService.getRun(request.params.runId);
+    return run && samePrincipal(run, principal)
       ? { attempts: options.runService.listRunAttempts(request.params.runId) }
       : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
   });
 
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId/children", async (request, reply) => {
-    return options.runService.getRun(request.params.runId)
+    const principal = requireInternalPrincipal(request.headers);
+    const run = options.runService.getRun(request.params.runId);
+    return run && samePrincipal(run, principal)
       ? { runs: options.runService.listChildRuns(request.params.runId) }
       : reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
   });
@@ -298,6 +326,11 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.post<{ Params: { runId: string } }>(
     "/internal/runs/:runId/cancel",
     async (request, reply) => {
+      const principal = requireInternalPrincipal(request.headers);
+      const existing = options.runService.getRun(request.params.runId);
+      if (!existing || !samePrincipal(existing, principal)) {
+        return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+      }
       const run = options.runService.cancelRun(request.params.runId);
       return run
         ? reply.send(run)
@@ -308,6 +341,11 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.post<{ Params: { runId: string }; Body: { instruction?: string } }>(
     "/internal/runs/:runId/steer",
     async (request, reply) => {
+      const principal = requireInternalPrincipal(request.headers);
+      const existing = options.runService.getRun(request.params.runId);
+      if (!existing || !samePrincipal(existing, principal)) {
+        return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
+      }
       if (typeof request.body?.instruction !== "string" || !request.body.instruction.trim()) {
         return reply.code(400).send({ error: { code: "invalid_request", message: "Steering instruction is required" } });
       }
@@ -323,7 +361,9 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     "/internal/approvals/:approvalId",
     async (request, reply) => {
       const approval = options.runService.getApproval(request.params.approvalId);
-      return approval
+      const run = approval ? options.runService.getRun(approval.runId) : undefined;
+      const principal = requireInternalPrincipal(request.headers);
+      return approval && run && samePrincipal(run, principal)
         ? approval
         : reply.code(404).send({ error: { code: "not_found", message: "Approval not found" } });
     },
@@ -335,6 +375,12 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       if (typeof request.body?.approved !== "boolean") {
         return reply.code(400).send({ error: { code: "invalid_request", message: "approved must be boolean" } });
       }
+      const principal = requireInternalPrincipal(request.headers);
+      const existing = options.runService.getApproval(request.params.approvalId);
+      const run = existing ? options.runService.getRun(existing.runId) : undefined;
+      if (!existing || !run || !samePrincipal(run, principal)) {
+        return reply.code(404).send({ error: { code: "not_found", message: "Approval not found" } });
+      }
       const approval = options.runService.resolveApproval(request.params.approvalId, request.body.approved);
       return approval
         ? approval
@@ -345,9 +391,10 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId",
     async (request, reply) => {
+      const principal = requireInternalPrincipal(request.headers);
       const session = options.runService.getSession(
         request.params.sessionId,
-        principalFromInternalHeaders(request.headers),
+        principal,
       );
       return session
         ? reply.send(session)
@@ -362,8 +409,12 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       if (!options.artifactStore || !options.readWorkspaceArtifact || !Value.Check(InternalPublishArtifactRequestSchema, request.body)) {
         return reply.code(400).send({ error: { code: "invalid_request", message: "Malformed artifact request" } });
       }
+      const authenticatedPrincipal = requireInternalPrincipal(request.headers);
+      if (!samePrincipal(request.body.principal, authenticatedPrincipal)) {
+        return reply.code(403).send(errorEnvelope("owner_mismatch", "The artifact principal does not match the authenticated IPC owner"));
+      }
       const run = options.runService.getRun(request.params.runId);
-      if (!run || !samePrincipal(run, request.body.principal)) {
+      if (!run || !samePrincipal(run, authenticatedPrincipal)) {
         return reply.code(404).send({ error: { code: "not_found", message: "Run not found" } });
       }
       const attempt = options.runService.listRunAttempts(run.id).findLast((item) => item.status === "RUNNING");
@@ -376,7 +427,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
         const currentLease = currentRun
           ? options.runService.getWorkspaceLease(currentRun.workspaceId, currentRun.id)
           : undefined;
-        return Boolean(currentRun && samePrincipal(currentRun, request.body.principal) && attempt && lease &&
+        return Boolean(currentRun && samePrincipal(currentRun, authenticatedPrincipal) && attempt && lease &&
           currentAttempt?.id === attempt.id && currentLease?.fencingToken === lease.fencingToken &&
           options.runService.validateWorkspaceLease(currentLease));
       };
@@ -385,7 +436,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       }
       const data = await options.readWorkspaceArtifact({
         runId: run.id, workspaceId: run.workspaceId, attemptId: attempt.id, fencingToken: lease.fencingToken,
-        principal: request.body.principal, path: request.body.path, maxBytes: 16 * 1024 * 1024,
+        principal: authenticatedPrincipal, path: request.body.path, maxBytes: 16 * 1024 * 1024,
       });
       if (!hasActiveFence()) {
         return reply.code(409).send({ error: { code: "artifact_publish_requires_active_lease", message: "Artifacts can only be promoted from the actively fenced workspace" } });
@@ -393,7 +444,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       const record = options.artifactStore.publish({
         runId: run.id,
         workspaceId: run.workspaceId,
-        principal: request.body.principal,
+        principal: authenticatedPrincipal,
         path: request.body.path,
         mediaType: request.body.mediaType,
         data,
@@ -406,7 +457,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     "/internal/artifacts/:artifactId",
     async (request, reply) => {
       if (!options.artifactStore) return reply.code(404).send({ error: { code: "not_found", message: "Artifact not found" } });
-      const principal = principalFromInternalHeaders(request.headers);
+      const principal = requireInternalPrincipal(request.headers);
       const payload = options.artifactStore.get(request.params.artifactId, principal);
       if (!payload) return reply.code(404).send({ error: { code: "not_found", message: "Artifact not found" } });
       const response: ArtifactPayloadResponse = { record: payload.record, dataBase64: payload.data.toString("base64") };
@@ -419,13 +470,15 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     if (!Value.Check(InternalCreateAgentProfileRequestSchema, body)) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Agent name and principal are required" } });
     }
+    const principal = requireInternalPrincipal(request.headers);
+    if (!samePrincipal(body.principal, principal)) return reply.code(403).send(errorEnvelope("owner_mismatch", "The agent principal does not match the authenticated IPC owner"));
     const now = new Date().toISOString();
     return reply.code(201).send(options.runService.createAgentProfile({
       id: body.id ?? `agt_${randomUUID().replaceAll("-", "")}`,
       version: 1,
-      appId: body.principal.appId,
-      tenantId: body.principal.tenantId,
-      userId: body.principal.userId,
+      appId: principal.appId,
+      tenantId: principal.tenantId,
+      userId: principal.userId,
       name: body.name,
       instructions: body.instructions ?? "",
       modelCapabilities: body.modelCapabilities ?? ["text", "tools"],
@@ -436,13 +489,13 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   });
 
   app.get("/internal/agents", async (request) => ({
-    agents: options.runService.listAgentProfiles(principalFromInternalHeaders(request.headers)),
+    agents: options.runService.listAgentProfiles(requireInternalPrincipal(request.headers)),
   }));
 
   app.get<{ Params: { agentId: string } }>("/internal/agents/:agentId", async (request, reply) => {
     const agent = options.runService.getAgentProfile(
       request.params.agentId,
-      principalFromInternalHeaders(request.headers),
+      requireInternalPrincipal(request.headers),
     );
     return agent
       ? agent
@@ -452,7 +505,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.delete<{ Params: { agentId: string } }>("/internal/agents/:agentId", async (request, reply) => {
     const deleted = options.runService.deleteAgentProfile(
       request.params.agentId,
-      principalFromInternalHeaders(request.headers),
+      requireInternalPrincipal(request.headers),
     );
     return deleted
       ? { deleted: true, agentId: request.params.agentId }
@@ -464,12 +517,14 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     if (!Value.Check(InternalCreateWorkspaceRequestSchema, body)) {
       return reply.code(400).send({ error: { code: "invalid_request", message: "Only managed public workspaces are supported" } });
     }
+    const principal = requireInternalPrincipal(request.headers);
+    if (!samePrincipal(body.principal, principal)) return reply.code(403).send(errorEnvelope("owner_mismatch", "The workspace principal does not match the authenticated IPC owner"));
     const now = new Date().toISOString();
     return reply.code(201).send(options.runService.createWorkspace({
       id: body.id ?? `wsp_${randomUUID().replaceAll("-", "")}`,
-      appId: body.principal.appId,
-      tenantId: body.principal.tenantId,
-      userId: body.principal.userId,
+      appId: principal.appId,
+      tenantId: principal.tenantId,
+      userId: principal.userId,
       mode: "managed",
       state: "WARM",
       createdAt: now,
@@ -478,25 +533,104 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   });
 
   app.get("/internal/workspaces", async (request) => ({
-    workspaces: options.runService.listWorkspaces(principalFromInternalHeaders(request.headers)),
+    workspaces: options.runService.listWorkspaces(requireInternalPrincipal(request.headers)),
   }));
 
   app.get<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId", async (request, reply) => {
     const workspace = options.runService.getWorkspace(
       request.params.workspaceId,
-      principalFromInternalHeaders(request.headers),
+      requireInternalPrincipal(request.headers),
     );
     return workspace
       ? workspace
       : reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } });
   });
 
+  app.post<{ Params: { workspaceId: string }; Body: unknown }>("/internal/workspaces/:workspaceId/register", async (request, reply) => {
+    if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+    const body = objectBody(request.body, "workspace register request");
+    const registeredPath = boundedPath(body.registeredPath, "registeredPath");
+    const principal = requireInternalPrincipal(request.headers);
+    return reply.code(201).send(options.workspaceAdmin.registerWorkspace({
+      id: request.params.workspaceId,
+      principal,
+      registeredPath,
+    }));
+  });
+
+  app.post<{ Params: { workspaceId: string }; Body: unknown }>(
+    "/internal/workspaces/:workspaceId/export",
+    { bodyLimit: 64 * 1024 },
+    async (request, reply) => {
+      if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+      const body = objectBody(request.body, "workspace export request");
+      const principal = requireInternalPrincipal(request.headers);
+      const path = optionalBoundedPath(body.path, "path");
+      if (path !== undefined) {
+        if (!options.workspaceAdmin.exportWorkspaceToPath) return reply.code(503).send(errorEnvelope("workspace_archive_path_unavailable", "Manager archive path export is unavailable"));
+        return reply.send(await options.workspaceAdmin.exportWorkspaceToPath({ workspaceId: request.params.workspaceId, principal, path }));
+      }
+      const archive = await options.workspaceAdmin.exportWorkspace({ workspaceId: request.params.workspaceId, principal });
+      if (archive.length > 8 * 1024 * 1024) return reply.code(413).send(errorEnvelope("workspace_archive_requires_path", "Large workspace exports require an archive path"));
+      return reply.send({ workspaceId: request.params.workspaceId, archiveBase64: archive.toString("base64"), bytes: archive.length });
+    },
+  );
+
+  app.post<{ Params: { workspaceId: string }; Body: unknown }>(
+    "/internal/workspaces/:workspaceId/import",
+    { bodyLimit: 64 * 1024 * 1024 },
+    async (request, reply) => {
+      if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+      const body = objectBody(request.body, "workspace import request");
+      const principal = requireInternalPrincipal(request.headers);
+      const path = optionalBoundedPath(body.path, "path");
+      if (path !== undefined) {
+        if (!options.workspaceAdmin.importWorkspaceFromPath) return reply.code(503).send(errorEnvelope("workspace_archive_path_unavailable", "Manager archive path import is unavailable"));
+        return reply.send(await options.workspaceAdmin.importWorkspaceFromPath({ workspaceId: request.params.workspaceId, principal, path }));
+      }
+      const archiveBase64 = boundedBase64(body.archiveBase64, "archiveBase64");
+      const archive = Buffer.from(archiveBase64, "base64");
+      return reply.send(await options.workspaceAdmin.importWorkspace({ workspaceId: request.params.workspaceId, principal, archive }).then(() => ({
+        workspaceId: request.params.workspaceId,
+        imported: true,
+        bytes: archive.length,
+      })));
+    },
+  );
+
+  app.post<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId/snapshot", async (request, reply) => {
+    if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+    return reply.send(await options.workspaceAdmin.snapshotWorkspace({
+      workspaceId: request.params.workspaceId,
+      principal: requireInternalPrincipal(request.headers),
+    }));
+  });
+
+  app.post<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId/restore", async (request, reply) => {
+    if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+    return reply.send(await options.workspaceAdmin.restoreWorkspace({
+      workspaceId: request.params.workspaceId,
+      principal: requireInternalPrincipal(request.headers),
+    }));
+  });
+
+  app.delete<{ Params: { workspaceId: string } }>("/internal/workspaces/:workspaceId", async (request, reply) => {
+    if (!options.workspaceAdmin) return reply.code(503).send(errorEnvelope("workspace_admin_unavailable", "Workspace administration is unavailable"));
+    return reply.send({
+      workspaceId: request.params.workspaceId,
+      removed: await options.workspaceAdmin.deleteWorkspace({
+        workspaceId: request.params.workspaceId,
+        principal: requireInternalPrincipal(request.headers),
+      }),
+    });
+  });
+
   app.get("/internal/models", async (request) => ({
-    models: await options.modelCatalog?.(principalFromInternalHeaders(request.headers)) ?? [],
+    models: await options.modelCatalog?.(requireInternalPrincipal(request.headers)) ?? [],
   }));
 
   app.get("/internal/provider-connections", async (request) => ({
-    connections: options.runService.listProviderConnections(principalFromInternalHeaders(request.headers)),
+    connections: options.runService.listProviderConnections(requireInternalPrincipal(request.headers)),
   }));
 
   app.post<{ Body: InternalCreateProviderConnectionRequest }>(
@@ -506,6 +640,8 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       if (!Value.Check(InternalCreateProviderConnectionRequestSchema, body)) {
         return reply.code(400).send(errorEnvelope("invalid_request", "Provider connection metadata does not match the schema"));
       }
+      const principal = requireInternalPrincipal(request.headers);
+      if (!samePrincipal(body.principal, principal)) return reply.code(403).send(errorEnvelope("owner_mismatch", "The provider connection principal does not match the authenticated IPC owner"));
       try {
         validateProviderConnectionEndpoint(body.baseUrl);
       } catch (error) {
@@ -515,9 +651,9 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       try {
         return reply.code(201).send(options.runService.createProviderConnection({
           id: body.id ?? `pc_${randomUUID().replaceAll("-", "")}`,
-          appId: body.principal.appId,
-          tenantId: body.principal.tenantId,
-          userId: body.principal.userId,
+          appId: principal.appId,
+          tenantId: principal.tenantId,
+          userId: principal.userId,
           providerId: body.providerId,
           displayName: body.displayName,
           authKind: body.authKind ?? "api_key",
@@ -541,7 +677,8 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       if (!Value.Check(InternalProviderConnectionLoginRequestSchema, body)) {
         return reply.code(400).send(errorEnvelope("invalid_request", "Provider login payload does not match the schema"));
       }
-      const owner = body.principal;
+      const owner = requireInternalPrincipal(request.headers);
+      if (!samePrincipal(body.principal, owner)) return reply.code(403).send(errorEnvelope("owner_mismatch", "The provider login principal does not match the authenticated IPC owner"));
       const connection = options.runService.getProviderConnection(request.params.connectionId, owner);
       if (!connection) return reply.code(404).send(errorEnvelope("not_found", "Provider connection not found"));
       if (!options.providerConnectionLogin) {
@@ -564,7 +701,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.delete<{ Params: { connectionId: string } }>(
     "/internal/provider-connections/:connectionId",
     async (request, reply) => {
-      const owner = principalFromInternalHeaders(request.headers);
+      const owner = requireInternalPrincipal(request.headers);
       const connection = options.runService.getProviderConnection(request.params.connectionId, owner);
       if (!connection) return reply.code(404).send(errorEnvelope("not_found", "Provider connection not found"));
       try {
@@ -582,7 +719,7 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId/messages",
     async (request, reply) => {
-      const principal = principalFromInternalHeaders(request.headers);
+      const principal = requireInternalPrincipal(request.headers);
       const session = options.runService.getSession(request.params.sessionId, principal);
       return session
         ? reply.send({ messages: options.runService.listSessionMessages(request.params.sessionId, principal) })
@@ -646,6 +783,32 @@ function installExactJsonBodyParser(app: FastifyInstance): void {
 function principalFromInternalHeaders(headers: Record<string, unknown>): InternalPrincipal {
   const value = (name: string) => typeof headers[name] === "string" ? headers[name] as string : "";
   return { appId: value("x-lite-app-id"), tenantId: value("x-lite-tenant-id"), userId: value("x-lite-user-id"), scopes: [] };
+}
+
+function requireInternalPrincipal(headers: Record<string, unknown>): InternalPrincipal {
+  const principal = principalFromInternalHeaders(headers);
+  if (!principal.appId || !principal.tenantId || !principal.userId) throw new Error("Owner headers are required for Manager IPC operations");
+  return principal;
+}
+
+function objectBody(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function boundedPath(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim() || value.length > 4_096 || /[\0\r\n]/u.test(value)) throw new Error(`${label} must be a bounded path`);
+  return value.trim();
+}
+
+function optionalBoundedPath(value: unknown, label: string): string | undefined {
+  return value === undefined ? undefined : boundedPath(value, label);
+}
+
+function boundedBase64(value: unknown, label: string): string {
+  const encoded = boundedPath(value, label);
+  if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded) || encoded.length % 4 === 1) throw new Error(`${label} must be valid base64`);
+  return encoded;
 }
 
 function samePrincipal(

@@ -97,7 +97,9 @@ describe("SSE and local IPC flow control", () => {
 
     const controller = new AbortController();
     const pending = new ManagerClient(socketPath, "internal-token", 60_000)
-      .getEvents("run-backpressure", 0, 10_000, controller.signal);
+      .getEvents("run-backpressure", 0, 10_000, controller.signal, {
+        appId: "app", tenantId: "tenant", userId: "user", scopes: [],
+      });
     await requested;
     controller.abort(new Error("SSE downstream disconnected"));
     await expect(pending).rejects.toThrow();

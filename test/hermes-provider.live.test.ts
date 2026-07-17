@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AgentRunner } from "@lite-harness/agent-runtime";
 import { InMemoryCredentialBroker, ModelRegistry, RoutedModelGateway } from "@lite-harness/provider-core";
-import { OpenAICompatibleProvider } from "@lite-harness/provider-openai-compatible";
+import { OpenAIResponsesCompatibleProvider } from "@lite-harness/provider-openai-compatible";
 import { InMemoryToolRuntime } from "@lite-harness/runtime";
 
 if (process.env.LITE_HARNESS_LIVE_MODEL_TEST !== "hermes") {
@@ -24,7 +24,7 @@ describe("local Hermes model route", () => {
     }]);
     const gateway = new RoutedModelGateway(
       registry.plan({ requiredCapabilities: ["text"] }),
-      [new OpenAICompatibleProvider({ providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin] })],
+      [new OpenAIResponsesCompatibleProvider({ providerId: "openai-compatible", baseUrl, allowedOrigins: [new URL(baseUrl).origin] })],
       credentials,
     );
     const completed: string[] = [];

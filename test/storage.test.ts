@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 const stores: SqliteRunStore[] = [];
@@ -48,6 +49,23 @@ describe("SqliteRunStore", () => {
     );
   });
 
+  it("fails closed when a public-style run request opts out of resource provisioning", () => {
+    const store = new SqliteRunStore(":memory:");
+    stores.push(store);
+    expect(() => store.createOrGetRun("run-missing-agent", {
+      ...request(), idempotencyKey: "missing-agent", createIfMissing: false,
+    })).toThrow(/Agent profile is unavailable/);
+
+    store.createAgentProfile({
+      id: "coder", version: 1, appId: "app-1", tenantId: "tenant-1", userId: "user-1",
+      name: "Coder", instructions: "", modelCapabilities: ["text"], allowedTools: ["read_file"],
+      defaultBudget: DEFAULT_RUN_BUDGET, createdAt: new Date().toISOString(),
+    });
+    expect(() => store.createOrGetRun("run-missing-workspace", {
+      ...request(), idempotencyKey: "missing-workspace", createIfMissing: false,
+    })).toThrow(/Workspace is unavailable/);
+  });
+
   it("appends ordered events and updates the projected state atomically", () => {
     const store = new SqliteRunStore(":memory:");
     stores.push(store);
@@ -61,6 +79,24 @@ describe("SqliteRunStore", () => {
 
     expect(event.sequence).toBe(2);
     expect(store.getRun("run-first")).toMatchObject({ status: "QUEUED", lastSequence: 2 });
+  });
+
+  it("retrieves the durable typed tail after more than ten thousand events", () => {
+    const store = new SqliteRunStore(":memory:");
+    stores.push(store);
+    store.createOrGetRun("run-long", request());
+    for (let index = 0; index < 10_050; index += 1) {
+      store.appendEvent({ runId: "run-long", type: "agent.message.delta", payload: { delta: String(index) } });
+    }
+    store.appendEvent({
+      runId: "run-long", type: "agent.message.completed", payload: { content: "durable tail" },
+    });
+
+    expect(store.listEvents("run-long", 10_000, 256)).toHaveLength(52);
+    expect(store.getLastEvent("run-long")).toMatchObject({ sequence: 10_052, type: "agent.message.completed" });
+    expect(store.getLastEvent("run-long", "agent.message.completed")).toMatchObject({
+      sequence: 10_052, payload: { content: "durable tail" },
+    });
   });
 
   it("persists implicit sessions and scopes an explicit session slug by owner", () => {
@@ -86,6 +122,29 @@ describe("SqliteRunStore", () => {
     });
     expect(store.listSessionMessages("ses_first", other)).toMatchObject([{ content: "second" }]);
     expect(store.listSessionMessages("ses_first", request().principal)).toMatchObject([{ content: "Create a file" }]);
+  });
+
+  it("binds a session to its first workspace and rejects cross-project reuse", () => {
+    const store = new SqliteRunStore(":memory:");
+    stores.push(store);
+    store.createOrGetRun("run-first", {
+      ...request(),
+      idempotencyKey: "session-first",
+      session: "shared-session",
+    });
+
+    expect(() => store.createOrGetRun("run-other-workspace", {
+      ...request("second project"),
+      idempotencyKey: "session-second",
+      session: "shared-session",
+      workspace: "workspace-2",
+    })).toThrow(/bound to a different workspace/);
+
+    expect(store.createOrGetRun("run-same-workspace", {
+      ...request("same project"),
+      idempotencyKey: "session-third",
+      session: "shared-session",
+    }).created).toBe(true);
   });
 
   it("uses monotonically increasing fencing tokens to reject stale workspace writers", () => {

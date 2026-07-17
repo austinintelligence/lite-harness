@@ -295,9 +295,17 @@ export class DockerToolRuntime implements ToolRuntime {
 
   async workspaceExists(workspaceId: string, principal: InternalPrincipal, signal?: AbortSignal): Promise<boolean> {
     if (this.#registeredPath(workspaceId, principal)) return true;
-    const result = await this.#run(["volume", "inspect", volumeName(workspaceIdentity(workspaceId, principal))], { signal });
-    if (result.code === 0) return true;
-    if (/no such volume/i.test(result.stderr)) return false;
+    const managed = this.#managedVolume(workspaceId, principal);
+    const result = await this.#run(["volume", "inspect", managed.name], { signal });
+    if (result.code === 0) {
+      await this.#assertVolumeLabels(managed.name, managed.labels, signal);
+      await this.#assertNoLegacyVolume(managed, signal);
+      return true;
+    }
+    if (/no such volume/i.test(result.stderr)) {
+      await this.#assertNoLegacyVolume(managed, signal);
+      return false;
+    }
     throw new Error(`Could not inspect workspace volume: ${result.stderr}`);
   }
 
@@ -307,14 +315,16 @@ export class DockerToolRuntime implements ToolRuntime {
       maxBytes: this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024,
       maxFiles: this.config.maxArchiveFiles,
     });
-    const target = volumeName(workspaceIdentity(workspaceId, principal));
-    await this.#ensureVolume(target, signal);
+    const managed = this.#managedVolume(workspaceId, principal);
+    const target = managed.name;
+    await this.#ensureVolume(target, managed.labels, signal, managed.legacyName);
     const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
     const staging = `${target}-staging-${suffix}`;
     const backup = `${target}-backup-${suffix}`;
+    let preserveBackup = false;
     try {
-      await this.#createRawVolume(staging, signal);
-      await this.#createRawVolume(backup, signal);
+      await this.#createRawVolume(staging, signal, { ...managed.labels, "lite-harness.kind": "workspace-staging" });
+      await this.#createRawVolume(backup, signal, { ...managed.labels, "lite-harness.kind": "workspace-backup" });
       const extract = await runCommandBytes(
         this.#docker,
         [
@@ -334,31 +344,50 @@ export class DockerToolRuntime implements ToolRuntime {
       try {
         await this.#replaceVolumeContents(staging, target, signal);
       } catch (error) {
-        await this.#replaceVolumeContents(backup, target, signal);
+        try {
+          // The caller's signal may already be aborted. Rollback is a bounded
+          // recovery obligation and must get an independent cancellation path.
+          await this.#replaceVolumeContents(backup, target, undefined);
+          await this.#verifyVolumeContents(backup, target, undefined);
+        } catch (rollbackError) {
+          preserveBackup = true;
+          throw new AggregateError([error, rollbackError], "Workspace restore failed and rollback could not be verified");
+        }
         throw error;
       }
     } finally {
       await runCommand(this.#docker, ["volume", "rm", "--force", staging], undefined, undefined).catch(() => undefined);
-      await runCommand(this.#docker, ["volume", "rm", "--force", backup], undefined, undefined).catch(() => undefined);
+      if (!preserveBackup) {
+        await runCommand(this.#docker, ["volume", "rm", "--force", backup], undefined, undefined).catch(() => undefined);
+      }
     }
   }
 
   async removeWorkspace(workspaceId: string, principal?: InternalPrincipal): Promise<boolean> {
     if (this.#registeredPath(workspaceId, principal)) throw new Error("Registered bind workspaces cannot be deleted by Lite-Harness");
-    const volume = volumeName(workspaceIdentity(workspaceId, principal));
+    const volume = this.#managedVolume(workspaceId, principal).name;
     const result = await this.#run(["volume", "rm", volume]);
     this.#readyVolumes.delete(volume);
     return result.code === 0;
   }
 
-  async #ensureVolume(volume: string, signal?: AbortSignal): Promise<void> {
+  async #ensureVolume(
+    volume: string,
+    expectedLabels: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
+    legacyVolume?: string,
+  ): Promise<void> {
     if (this.#readyVolumes.has(volume)) {
+      await this.#assertVolumeLabels(volume, expectedLabels, signal);
+      if (legacyVolume) await this.#assertNoLegacyVolume({ name: volume, legacyName: legacyVolume, labels: expectedLabels }, signal);
       return;
     }
-    const create = await this.#run(["volume", "create", volume], { signal });
+    const create = await this.#run(["volume", "create", ...dockerLabelArgs(expectedLabels), volume], { signal });
     if (create.code !== 0) {
       throw new Error(`Could not create workspace volume: ${create.stderr}`);
     }
+    await this.#assertVolumeLabels(volume, expectedLabels, signal);
+    if (legacyVolume) await this.#assertNoLegacyVolume({ name: volume, legacyName: legacyVolume, labels: expectedLabels }, signal);
     // Root ownership is the trusted initialization commit: untrusted tool containers run as
     // 1000:1000 with every capability dropped, and maintenance writes the root owner last.
     // Workspace content (including the compatibility marker) is intentionally not trusted.
@@ -383,8 +412,8 @@ export class DockerToolRuntime implements ToolRuntime {
     this.#readyVolumes.add(volume);
   }
 
-  async #createRawVolume(volume: string, signal?: AbortSignal): Promise<void> {
-    const result = await this.#run(["volume", "create", volume], { signal });
+  async #createRawVolume(volume: string, signal?: AbortSignal, labels: Readonly<Record<string, string>> = {}): Promise<void> {
+    const result = await this.#run(["volume", "create", ...dockerLabelArgs(labels), volume], { signal });
     if (result.code !== 0) throw new Error(`Could not create staging volume: ${result.stderr}`);
   }
 
@@ -419,12 +448,73 @@ export class DockerToolRuntime implements ToolRuntime {
     if (result.code !== 0) throw new Error(`Could not replace workspace volume: ${result.stderr}`);
   }
 
+  async #verifyVolumeContents(source: string, destination: string, signal?: AbortSignal): Promise<void> {
+    const result = await this.#run(
+      [
+        "run", "--pull=never", "--rm", ...dockerMaintenanceHardeningArgs(this.config, {
+          capabilities: ["DAC_READ_SEARCH"],
+          user: "0:0",
+        }),
+        "--volume", `${source}:/source:ro`, "--volume", `${destination}:/destination:ro`,
+        this.config.image, "sh", "-c",
+        "set -eu; diff -qr /source /destination",
+      ],
+      { signal },
+    );
+    if (result.code !== 0) throw new Error(`Workspace rollback verification failed: ${result.stderr}`);
+  }
+
   async #workspaceMount(workspaceId: string, signal?: AbortSignal, principal?: InternalPrincipal): Promise<WorkspaceMount> {
     const registered = this.#registeredPath(workspaceId, principal);
     if (registered) return { kind: "bind", source: registered };
-    const volume = volumeName(workspaceIdentity(workspaceId, principal));
-    await this.#ensureVolume(volume, signal);
-    return { kind: "volume", source: volume };
+    const managed = this.#managedVolume(workspaceId, principal);
+    await this.#ensureVolume(managed.name, managed.labels, signal, managed.legacyName);
+    return { kind: "volume", source: managed.name };
+  }
+
+  #managedVolume(workspaceId: string, principal?: InternalPrincipal): { name: string; legacyName: string; labels: Record<string, string> } {
+    const installationId = this.config.installationId?.trim();
+    if (!installationId) throw new Error("Managed Docker workspace operations require an installation identity");
+    const identity = workspaceIdentity(workspaceId, principal, installationId);
+    return {
+      name: volumeName(identity),
+      legacyName: volumeName(workspaceIdentity(workspaceId, principal)),
+      labels: volumeLabels(installationId, identity),
+    };
+  }
+
+  async #assertNoLegacyVolume(
+    managed: { name: string; legacyName: string; labels: Readonly<Record<string, string>> },
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (managed.name === managed.legacyName) return;
+    const inspected = await this.#run(["volume", "inspect", "--format", "{{json .Labels}}", managed.legacyName], { signal });
+    if (inspected.code !== 0) {
+      if (/no such volume/i.test(inspected.stderr)) return;
+      throw new Error(`Could not inspect legacy workspace volume ownership: ${inspected.stderr}`);
+    }
+    let labels: unknown;
+    try { labels = JSON.parse(inspected.stdout.trim() || "null"); } catch { throw new Error("Legacy workspace volume labels were not valid JSON"); }
+    // The pre-installation-scoped runtime created the deterministic legacy
+    // name without labels. Never silently create an empty replacement when
+    // that volume exists. A fixture that returns the current target labels for
+    // every inspect call is treated as the already-authenticated target.
+    const isCurrentTarget = labels && typeof labels === "object" && !Array.isArray(labels) &&
+      Object.entries(managed.labels).every(([key, value]) => (labels as Record<string, unknown>)[key] === value);
+    if (!isCurrentTarget) {
+      throw new Error(`Legacy workspace volume ${managed.legacyName} exists; explicit migration is required before using installation-scoped volume ${managed.name}`);
+    }
+  }
+
+  async #assertVolumeLabels(volume: string, expected: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<void> {
+    const inspected = await this.#run(["volume", "inspect", "--format", "{{json .Labels}}", volume], { signal });
+    if (inspected.code !== 0) throw new Error(`Could not inspect workspace volume ownership: ${inspected.stderr}`);
+    let labels: unknown;
+    try { labels = JSON.parse(inspected.stdout.trim() || "null"); } catch { throw new Error("Workspace volume labels were not valid JSON"); }
+    if (!labels || typeof labels !== "object" || Array.isArray(labels) ||
+        Object.entries(expected).some(([key, value]) => (labels as Record<string, unknown>)[key] !== value)) {
+      throw new Error("Workspace volume ownership labels do not match the active installation and workspace");
+    }
   }
 
   async #workspaceUsage(
@@ -1085,14 +1175,29 @@ function volumeName(workspaceId: string): string {
   return `lite-harness-ws-${digest}`;
 }
 
-function workspaceIdentity(workspaceId: string, principal?: InternalPrincipal): string {
-  return principal
+function workspaceIdentity(workspaceId: string, principal?: InternalPrincipal, installationId?: string): string {
+  const installation = installationId?.trim();
+  const owner = principal
     ? `${principal.appId.length}:${principal.appId}:${principal.tenantId.length}:${principal.tenantId}:${principal.userId.length}:${principal.userId}:${workspaceId}`
     : workspaceId;
+  return installation ? `${installation.length}:${installation}:${owner}` : owner;
 }
 
-export function dockerWorkspaceVolumeName(workspaceId: string, principal?: InternalPrincipal): string {
-  return volumeName(workspaceIdentity(workspaceId, principal));
+export function dockerWorkspaceVolumeName(workspaceId: string, principal?: InternalPrincipal, installationId?: string): string {
+  return volumeName(workspaceIdentity(workspaceId, principal, installationId));
+}
+
+function volumeLabels(installationId: string, identity: string, kind = "workspace"): Record<string, string> {
+  return {
+    "lite-harness.managed": "true",
+    "lite-harness.kind": kind,
+    "lite-harness.installation": labelDigest(installationId),
+    "lite-harness.workspace": labelDigest(identity),
+  };
+}
+
+function dockerLabelArgs(labels: Readonly<Record<string, string>>): string[] {
+  return Object.entries(labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]);
 }
 
 function commandResult(

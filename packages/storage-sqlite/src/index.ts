@@ -899,6 +899,7 @@ export class SqliteRunStore implements RunStore {
         request.principal.appId, request.principal.tenantId, request.principal.userId, request.agent,
       ) as AgentRow | undefined;
       if (!agent) {
+        if (request.createIfMissing === false) throw new Error(`Agent profile is unavailable: ${request.agent}`);
         this.#database.prepare(
           `INSERT INTO agent_profiles(internal_id, id, version, app_id, tenant_id, user_id, name, instructions,
             model_capabilities_json, allowed_tools_json, default_budget_json, created_at)
@@ -914,6 +915,7 @@ export class SqliteRunStore implements RunStore {
         request.principal.appId, request.principal.tenantId, request.principal.userId, request.workspace,
       ) as WorkspaceRow | undefined;
       if (!workspace) {
+        if (request.createIfMissing === false) throw new Error(`Workspace is unavailable: ${request.workspace}`);
         this.#database.prepare(
           `INSERT INTO workspaces(internal_id, id, app_id, tenant_id, user_id, mode, state, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, 'managed', 'WARM', ?, ?)`,
@@ -968,6 +970,15 @@ export class SqliteRunStore implements RunStore {
       ).get(
         request.principal.appId, request.principal.tenantId, request.principal.userId, sessionId,
       ) as unknown as SessionRow;
+      const sessionWorkspaces = this.#database.prepare(
+        `SELECT DISTINCT workspace_internal_id
+         FROM runs
+         WHERE session_internal_id = ? AND workspace_internal_id IS NOT NULL`,
+      ).all(effectiveSession.internal_id) as Array<{ workspace_internal_id: string }>;
+      const boundWorkspaceIds = new Set(sessionWorkspaces.map((row) => row.workspace_internal_id));
+      if (boundWorkspaceIds.size > 1 || (boundWorkspaceIds.size === 1 && !boundWorkspaceIds.has(effectiveWorkspace.internal_id))) {
+        throw new Error("Session is bound to a different workspace; use a new session for this workspace");
+      }
       this.#database
         .prepare(
           `INSERT INTO runs (
@@ -1138,6 +1149,15 @@ export class SqliteRunStore implements RunStore {
       )
       .all(runId, after, limit) as unknown as EventRow[];
     return rows.map(toEvent);
+  }
+
+  getLastEvent(runId: string, type?: RunEventType): RunEvent | undefined {
+    const row = this.#database.prepare(
+      `SELECT * FROM run_events
+       WHERE run_id = ?${type ? " AND type = ?" : ""}
+       ORDER BY sequence DESC LIMIT 1`,
+    ).get(...(type ? [runId, type] : [runId])) as EventRow | undefined;
+    return row ? toEvent(row) : undefined;
   }
 
   listNonTerminalRuns(): RunRecord[] {

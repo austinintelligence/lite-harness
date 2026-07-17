@@ -163,6 +163,8 @@ export const InternalStartRunRequestSchema = Type.Object({
   parentRunId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 128 })),
   deliveryAllowed: Type.Optional(Type.Boolean()),
+  /** Only trusted internal schedulers/subagent creation may opt into provisioning. */
+  createIfMissing: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
 export type InternalStartRunRequest = Static<typeof InternalStartRunRequestSchema>;

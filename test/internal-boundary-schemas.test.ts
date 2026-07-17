@@ -53,7 +53,10 @@ describe("authoritative boundary schemas", () => {
       productionReadinessChecks: async () => ({}),
     });
     servers.push(server);
-    const headers = { "x-lite-internal-token": "internal-schema-token", "x-lite-ipc-version": "1" };
+    const headers = {
+      "x-lite-internal-token": "internal-schema-token", "x-lite-ipc-version": "1",
+      "x-lite-app-id": "app", "x-lite-tenant-id": "tenant", "x-lite-user-id": "user",
+    };
     const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["runs:create"] };
     const invalid = [
       ["/internal/runs", { agent: "coder", workspace: "workspace", input: "go", idempotencyKey: "key", principal, unexpected: true }],
@@ -154,7 +157,10 @@ describe("authoritative boundary schemas", () => {
       productionReadinessChecks: async () => ({}),
     });
     servers.push(server);
-    const headers = { "x-lite-internal-token": "internal-artifact-token", "x-lite-ipc-version": "1" };
+    const headers = {
+      "x-lite-internal-token": "internal-artifact-token", "x-lite-ipc-version": "1",
+      "x-lite-app-id": principal.appId, "x-lite-tenant-id": principal.tenantId, "x-lite-user-id": principal.userId,
+    };
     const valid = await server.inject({
       method: "POST", url: `/internal/runs/${run.id}/artifacts`, headers,
       payload: { path: "reports/result.txt", mediaType: "text/plain", principal },
@@ -200,7 +206,10 @@ describe("authoritative boundary schemas", () => {
     servers.push(server);
     const response = await server.inject({
       method: "POST", url: `/internal/runs/${run.id}/artifacts`,
-      headers: { "x-lite-internal-token": "internal-artifact-fence-token", "x-lite-ipc-version": "1" },
+      headers: {
+        "x-lite-internal-token": "internal-artifact-fence-token", "x-lite-ipc-version": "1",
+        "x-lite-app-id": principal.appId, "x-lite-tenant-id": principal.tenantId, "x-lite-user-id": principal.userId,
+      },
       payload: { path: "reports/result.txt", mediaType: "text/plain", principal },
     });
     expect(response.statusCode).toBe(409);

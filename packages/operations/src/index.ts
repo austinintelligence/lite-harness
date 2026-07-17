@@ -10,6 +10,8 @@ import { StringDecoder } from "node:string_decoder";
 export interface ServiceInstallOptions {
   root: string;
   dataDir: string;
+  /** Absolute path to the compiled launcher in the active installation layout. */
+  launcherPath?: string;
   nodePath?: string;
   platform?: NodeJS.Platform;
   home?: string;
@@ -334,7 +336,7 @@ export function renderUserService(options: ServiceInstallOptions): RenderedServi
   const platform = options.platform ?? process.platform;
   const home = options.home ?? homedir();
   const node = options.nodePath ?? process.execPath;
-  const launcher = join(options.root, "dist", "apps", "launcher", "main.js");
+  const launcher = options.launcherPath ?? join(options.root, "dist", "apps", "launcher", "main.js");
   const args = [launcher, "--data-dir", options.dataDir];
   if (platform === "linux") {
     const path = join(home, ".config", "systemd", "user", "lite-harness.service");

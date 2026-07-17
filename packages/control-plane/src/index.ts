@@ -92,6 +92,10 @@ export class RunService {
       approvalTimeoutMs?: number;
       approvalRouteGeneration?: string | ((run: RunRecord) => string);
       maxSubagentDepth?: number;
+      /** Production Manager sets this true; direct deterministic harnesses may use fake gateways without usage. */
+      requireAuthoritativeUsage?: boolean;
+      /** Narrow exception for an explicitly trusted local unmetered route; reports must retain unknown usage. */
+      allowUnmeteredUsage?: boolean;
       requiresApproval?: (tool: ToolCall, run: RunRecord) => boolean;
       workspaceLifecycle?: WorkspaceRunLifecycle;
       workspaceCheckpointTimeoutMs?: number;
@@ -162,6 +166,20 @@ export class RunService {
     const parent = this.getRun(request.parentRunId);
     if (!parent || isTerminalRunStatus(parent.status)) throw new Error("Parent run is unavailable or terminal");
     if (parent.depth >= (this.options.maxSubagentDepth ?? 3)) throw new Error("Subagent nesting limit reached");
+    const owner = { appId: parent.appId, tenantId: parent.tenantId, userId: parent.userId };
+    const parentProfile = this.store.getAgentProfile(parent.agentId, owner);
+    const childProfile = this.store.getAgentProfile(request.agent, owner);
+    if (!childProfile) throw new Error(`Subagent agent profile is unavailable: ${request.agent}`);
+    if (parentProfile) {
+      const parentTools = new Set(parentProfile.allowedTools);
+      if (childProfile.allowedTools.some((tool) => !parentTools.has(tool))) {
+        throw new Error("Subagent tool authority must be a subset of the parent agent");
+      }
+      const parentCapabilities = new Set(parentProfile.modelCapabilities);
+      if (childProfile.modelCapabilities.some((capability) => !parentCapabilities.has(capability))) {
+        throw new Error("Subagent model capabilities must be a subset of the parent agent");
+      }
+    }
     const existing = this.store.listChildRuns(parent.id);
     const idempotencyKey = `subagent:${parent.id}:${request.idempotencyKey}`;
     const replay = existing.find((child) => child.idempotencyKey === idempotencyKey);
@@ -188,6 +206,7 @@ export class RunService {
       parentRunId: parent.id,
       depth: parent.depth + 1,
       deliveryAllowed: false,
+      createIfMissing: true,
       principal: {
         appId: parent.appId, tenantId: parent.tenantId, userId: parent.userId,
         scopes: ["runs:create", "subagents:execute"],
@@ -353,6 +372,10 @@ export class RunService {
     return boundedEventBatch(this.store.listEvents(runId, after, EVENT_PAGE_LIMIT));
   }
 
+  getLastEvent(runId: string, type?: RunEventType): RunEvent | undefined {
+    return this.store.getLastEvent(runId, type);
+  }
+
   listRunAttempts(runId: string): RunAttemptRecord[] {
     return this.store.listRunAttempts(runId);
   }
@@ -504,6 +527,7 @@ export class RunService {
     let attempt: RunAttemptRecord | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let renewal: ReturnType<typeof setInterval> | undefined;
+    let leaseLoss: AbortController | undefined;
     let workspacePrepared = false;
     let terminal: { status: RunStatus; type: RunEventType; payload?: Record<string, unknown> } | undefined;
     try {
@@ -540,6 +564,28 @@ export class RunService {
       this.#safeCounter("workspace.leases.acquired", 1, lifecycleAttributes);
       this.#safeAudit("workspace.lease", "accepted", lifecycleAttributes, executionTrace);
       this.#notify(runId);
+      const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
+      const renewalIntervalMs = this.options.workspaceLeaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseTtlMs / 3));
+      const leaseLossController = new AbortController();
+      leaseLoss = leaseLossController;
+      renewal = setInterval(() => {
+        if (!lease || leaseLossController.signal.aborted) return;
+        try {
+          const renewed = this.store.renewWorkspaceLease(lease, leaseTtlMs);
+          if (!renewed) {
+            const error = new WorkspaceLeaseLostError();
+            leaseLossController.abort(error);
+            controller.abort(error);
+            return;
+          }
+          lease = renewed;
+        } catch (error) {
+          const leaseError = new WorkspaceLeaseLostError();
+          leaseLossController.abort(error instanceof Error ? error : leaseError);
+          controller.abort(leaseError);
+        }
+      }, renewalIntervalMs);
+      renewal.unref?.();
       if (this.options.workspaceLifecycle) {
         const prepared = await this.options.workspaceLifecycle.prepare(run, controller.signal);
         workspacePrepared = true;
@@ -552,18 +598,6 @@ export class RunService {
         }
       }
       if (!this.#transitionIfActive(runId, "RUNNING", "run.started")) return;
-      const leaseTtlMs = this.options.workspaceLeaseTtlMs ?? 60_000;
-      const renewalIntervalMs = this.options.workspaceLeaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseTtlMs / 3));
-      renewal = setInterval(() => {
-        if (!lease || controller.signal.aborted) return;
-        const renewed = this.store.renewWorkspaceLease(lease, leaseTtlMs);
-        if (!renewed) {
-          controller.abort(new WorkspaceLeaseLostError());
-          return;
-        }
-        lease = renewed;
-      }, renewalIntervalMs);
-      renewal.unref?.();
 
       const history = run.sessionId
         ? this.store.listSessionMessages(run.sessionId, run).map(toModelMessage)
@@ -580,6 +614,8 @@ export class RunService {
         attemptId: attempt.id,
         fencingToken: lease.fencingToken,
         maxCostUsd: run.budget.maxCostUsd,
+        requireAuthoritativeUsage: this.options.requireAuthoritativeUsage ?? false,
+        allowUnmeteredUsage: this.options.allowUnmeteredUsage ?? false,
         modelCapabilities: profile.modelCapabilities,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
         ...(run.providerConnectionId ? { providerConnectionId: run.providerConnectionId } : {}),
@@ -661,7 +697,10 @@ export class RunService {
             if (!lease || !this.store.validateWorkspaceLease(lease)) throw new WorkspaceLeaseLostError();
             const configured = this.options.makeWorkspaceColdAfterCheckpoint;
             const makeCold = typeof configured === "function" ? configured(currentRun) : configured ?? false;
-            const checkpoint = await this.options.workspaceLifecycle.checkpoint(currentRun, { makeCold, signal: checkpointController.signal });
+            const checkpointSignal = leaseLoss
+              ? AbortSignal.any([checkpointController.signal, leaseLoss.signal])
+              : checkpointController.signal;
+            const checkpoint = await this.options.workspaceLifecycle.checkpoint(currentRun, { makeCold, signal: checkpointSignal });
             this.store.appendEvent({
               runId, type: "workspace.checkpoint.completed",
               payload: {
@@ -677,9 +716,13 @@ export class RunService {
             payload: { workspaceId: this.getRun(runId)?.workspaceId, message: error instanceof Error ? error.message : String(error) },
           });
           this.#notify(runId);
-          if (error instanceof WorkspaceLeaseLostError) terminal = {
+          if (error instanceof WorkspaceLeaseLostError || leaseLoss?.signal.aborted) terminal = {
             status: "ORPHANED", type: "run.orphaned",
-            payload: { code: "workspace_lease_lost", message: error.message, retryable: true },
+            payload: {
+              code: "workspace_lease_lost",
+              message: error instanceof Error ? error.message : "Workspace lease renewal or fencing validation failed",
+              retryable: true,
+            },
           };
           else if (terminal.status === "SUCCEEDED") terminal = {
             status: "FAILED", type: "run.failed",
@@ -1109,7 +1152,7 @@ export class RunService {
     });
     this.#notify(runId);
     if (isTerminalRunStatus(status) && run.parentRunId) {
-      const summary = [...this.store.listEvents(run.id)].reverse().find((event) => event.type === "agent.message.completed")?.payload.content;
+      const summary = this.store.getLastEvent(run.id, "agent.message.completed")?.payload.content;
       try {
         this.store.appendEvent({
           runId: run.parentRunId,

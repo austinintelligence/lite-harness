@@ -73,6 +73,7 @@ async function* streamAnthropic(response: Response, signal?: AbortSignal): Async
   let inputTokens = 0;
   let outputTokens = 0;
   let stopReason: string | undefined;
+  let terminal = false;
   for await (const data of readSseData(response.body, signal)) {
     let event: AnthropicStreamEvent;
     try { event = JSON.parse(data) as AnthropicStreamEvent; }
@@ -99,7 +100,9 @@ async function* streamAnthropic(response: Response, signal?: AbortSignal): Async
       stopReason = event.delta?.stop_reason ?? stopReason;
       outputTokens = event.usage?.output_tokens ?? outputTokens;
     }
+    if (event.type === "message_stop") terminal = true;
   }
+  if (!terminal) throw new ProviderError("provider_stream_truncated", "Anthropic stream ended before a terminal event", false);
   for (const tool of [...tools.entries()].sort(([left], [right]) => left - right).map(([, value]) => value)) {
     if (!tool.id || !tool.name) throw new ProviderError("invalid_response", "Anthropic returned an incomplete tool call", false);
     let input: Record<string, unknown>;

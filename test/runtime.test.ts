@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ArtifactPublishingRuntime, CODING_TOOL_DEFINITIONS, InMemoryToolRuntime, validateWorkspacePath, type ToolRuntime } from "@lite-harness/runtime";
-import { DockerToolRuntime, dockerMaintenanceHardeningArgs, type DockerCommandRunner } from "@lite-harness/runtime-docker";
+import { DockerToolRuntime, dockerMaintenanceHardeningArgs, dockerWorkspaceVolumeName, type DockerCommandRunner } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
 describe("tool runtime policy", () => {
@@ -64,8 +64,16 @@ describe("tool runtime policy", () => {
     let current = "";
     let currentCreateArgs: string[] = [];
     let exists = false;
+    let workspaceLabels: Record<string, string> = {};
     const runner: DockerCommandRunner = async (args, options) => {
-      if (args[0] === "volume") { volumes.push([...args]); return dockerOk("volume"); }
+      if (args[0] === "volume") {
+        volumes.push([...args]);
+        if (args[1] === "create") {
+          workspaceLabels = Object.fromEntries(args.flatMap((value, index) => value === "--label" && args[index + 1] ? [args[index + 1]!.split("=", 2) as [string, string]] : []));
+        }
+        if (args[1] === "inspect") return dockerOk(JSON.stringify(workspaceLabels));
+        return dockerOk("volume");
+      }
       if (args[0] === "run") { runs.push([...args]); return dockerOk(); }
       if (args[0] === "create") {
         creates.push([...args]); currentCreateArgs = [...args]; current = (++sequence).toString(16).padStart(64, "a"); exists = true; return dockerOk(current);
@@ -121,8 +129,16 @@ describe("tool runtime policy", () => {
     let currentCreateArgs: string[] = [];
     let exists = false;
     let overQuota = false;
+    let workspaceLabels: Record<string, string> = {};
     const runner: DockerCommandRunner = async (args) => {
-      if (args[0] === "volume" || args[0] === "run") return dockerOk("volume");
+      if (args[0] === "volume") {
+        if (args[1] === "create") {
+          workspaceLabels = Object.fromEntries(args.flatMap((value, index) => value === "--label" && args[index + 1] ? [args[index + 1]!.split("=", 2) as [string, string]] : []));
+        }
+        if (args[1] === "inspect") return dockerOk(JSON.stringify(workspaceLabels));
+        return dockerOk("volume");
+      }
+      if (args[0] === "run") return dockerOk("volume");
       if (args[0] === "create") {
         current = "e".repeat(64);
         currentCreateArgs = [...args];
@@ -158,6 +174,66 @@ describe("tool runtime policy", () => {
       await expect(execute()).rejects.toThrow(/Workspace mutation exceeded/);
       expect(store.listRuntimeContainers()).toEqual([]);
       expect(exists).toBe(false);
+    } finally { store.close(); }
+  });
+
+  it("fails closed when an existing workspace volume has the wrong installation labels", async () => {
+    const store = new SqliteRunStore(":memory:");
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: [] };
+    let inspectCount = 0;
+    const runner: DockerCommandRunner = async (args) => {
+      if (args[0] === "volume" && args[1] === "create") return dockerOk("workspace-volume");
+      if (args[0] === "volume" && args[1] === "inspect") {
+        inspectCount += 1;
+        return dockerOk(JSON.stringify({
+          "lite-harness.managed": "true",
+          "lite-harness.kind": "workspace",
+          "lite-harness.installation": "wrong-installation",
+          "lite-harness.workspace": "wrong-workspace",
+        }));
+      }
+      throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+    };
+    const runtime = new DockerToolRuntime({
+      image: `sha256:${"f".repeat(64)}`,
+      installationId: "installation",
+      containerStore: store,
+      commandRunner: runner,
+    });
+    try {
+      await expect(runtime.execute({
+        runId: "run-labels", attemptId: "attempt-labels", workspaceId: "workspace", principal,
+        call: { id: "call-labels", name: "read_file", arguments: { path: "README.md" } },
+      })).rejects.toThrow(/ownership labels/);
+      expect(inspectCount).toBe(1);
+    } finally { store.close(); }
+  });
+
+  it("fails closed instead of silently replacing a pre-installation-scoped workspace volume", async () => {
+    const store = new SqliteRunStore(":memory:");
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: [] };
+    const legacy = dockerWorkspaceVolumeName("workspace", principal);
+    let labels: Record<string, string> = {};
+    const runner: DockerCommandRunner = async (args) => {
+      if (args[0] === "volume" && args[1] === "create") {
+        labels = Object.fromEntries(args.flatMap((value, index) => value === "--label" && args[index + 1]
+          ? [args[index + 1]!.split("=", 2) as [string, string]] : []));
+        return dockerOk("workspace-volume");
+      }
+      if (args[0] === "volume" && args[1] === "inspect") {
+        return args.at(-1) === legacy ? dockerOk("{}") : dockerOk(JSON.stringify(labels));
+      }
+      if (args[0] === "run") return dockerOk();
+      throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+    };
+    const runtime = new DockerToolRuntime({
+      image: `sha256:${"a".repeat(64)}`, installationId: "installation", containerStore: store, commandRunner: runner,
+    });
+    try {
+      await expect(runtime.execute({
+        runId: "run-legacy", attemptId: "attempt-legacy", workspaceId: "workspace", principal,
+        call: { id: "call-legacy", name: "read_file", arguments: { path: "README.md" } },
+      })).rejects.toThrow(/Legacy workspace volume/);
     } finally { store.close(); }
   });
 

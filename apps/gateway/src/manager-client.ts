@@ -76,49 +76,49 @@ export class ManagerClient {
   }
 
   startRun(request: InternalStartRunRequest): Promise<CreateRunResponse> {
-    return this.#request<CreateRunResponse>("POST", "/internal/runs", request);
+    return this.#request<CreateRunResponse>("POST", "/internal/runs", request, principalHeaders(request.principal));
   }
 
-  getRun(runId: string): Promise<RunRecord> {
-    return this.#request<RunRecord>("GET", `/internal/runs/${encodeURIComponent(runId)}`);
+  getRun(runId: string, principal: InternalPrincipal): Promise<RunRecord> {
+    return this.#request<RunRecord>("GET", `/internal/runs/${encodeURIComponent(runId)}`, undefined, principalHeaders(principal));
   }
 
-  cancelRun(runId: string): Promise<RunRecord> {
-    return this.#request<RunRecord>("POST", `/internal/runs/${encodeURIComponent(runId)}/cancel`);
+  cancelRun(runId: string, principal: InternalPrincipal): Promise<RunRecord> {
+    return this.#request<RunRecord>("POST", `/internal/runs/${encodeURIComponent(runId)}/cancel`, undefined, principalHeaders(principal));
   }
 
-  steerRun(runId: string, instruction: string): Promise<RunRecord> {
-    return this.#request<RunRecord>("POST", `/internal/runs/${encodeURIComponent(runId)}/steer`, { instruction });
+  steerRun(runId: string, instruction: string, principal: InternalPrincipal): Promise<RunRecord> {
+    return this.#request<RunRecord>("POST", `/internal/runs/${encodeURIComponent(runId)}/steer`, { instruction }, principalHeaders(principal));
   }
 
-  getApproval(approvalId: string): Promise<ApprovalRecord> {
-    return this.#request<ApprovalRecord>("GET", `/internal/approvals/${encodeURIComponent(approvalId)}`);
+  getApproval(approvalId: string, principal: InternalPrincipal): Promise<ApprovalRecord> {
+    return this.#request<ApprovalRecord>("GET", `/internal/approvals/${encodeURIComponent(approvalId)}`, undefined, principalHeaders(principal));
   }
 
-  resolveApproval(approvalId: string, approved: boolean): Promise<ApprovalRecord> {
-    return this.#request<ApprovalRecord>("POST", `/internal/approvals/${encodeURIComponent(approvalId)}/resolve`, { approved });
+  resolveApproval(approvalId: string, approved: boolean, principal: InternalPrincipal): Promise<ApprovalRecord> {
+    return this.#request<ApprovalRecord>("POST", `/internal/approvals/${encodeURIComponent(approvalId)}/resolve`, { approved }, principalHeaders(principal));
   }
 
-  async getEvents(runId: string, after: number, waitMs: number, signal?: AbortSignal): Promise<RunEvent[]> {
+  async getEvents(runId: string, after: number, waitMs: number, signal: AbortSignal | undefined, principal: InternalPrincipal): Promise<RunEvent[]> {
     const result = await this.#request<{ events: RunEvent[] }>(
       "GET",
       `/internal/runs/${encodeURIComponent(runId)}/events?after=${after}&wait_ms=${waitMs}`,
       undefined,
-      {},
+      principalHeaders(principal),
       signal,
     );
     return result.events;
   }
 
-  async getRunAttempts(runId: string): Promise<RunAttemptRecord[]> {
+  async getRunAttempts(runId: string, principal: InternalPrincipal): Promise<RunAttemptRecord[]> {
     return (await this.#request<{ attempts: RunAttemptRecord[] }>(
-      "GET", `/internal/runs/${encodeURIComponent(runId)}/attempts`,
+      "GET", `/internal/runs/${encodeURIComponent(runId)}/attempts`, undefined, principalHeaders(principal),
     )).attempts;
   }
 
-  async getChildRuns(runId: string): Promise<RunRecord[]> {
+  async getChildRuns(runId: string, principal: InternalPrincipal): Promise<RunRecord[]> {
     return (await this.#request<{ runs: RunRecord[] }>(
-      "GET", `/internal/runs/${encodeURIComponent(runId)}/children`,
+      "GET", `/internal/runs/${encodeURIComponent(runId)}/children`, undefined, principalHeaders(principal),
     )).runs;
   }
 
@@ -146,7 +146,7 @@ export class ManagerClient {
     return this.#request<ArtifactRecord>("POST", `/internal/runs/${encodeURIComponent(runId)}/artifacts`, {
       ...request,
       principal,
-    });
+    }, principalHeaders(principal));
   }
 
   getArtifact(artifactId: string, principal: InternalPrincipal): Promise<ArtifactPayloadResponse> {
@@ -163,7 +163,7 @@ export class ManagerClient {
   }
 
   createAgent(request: CreateAgentProfileRequest, principal: InternalPrincipal): Promise<AgentProfileRecord> {
-    return this.#request<AgentProfileRecord>("POST", "/internal/agents", { ...request, principal });
+    return this.#request<AgentProfileRecord>("POST", "/internal/agents", { ...request, principal }, principalHeaders(principal));
   }
 
   getAgent(agentId: string, principal: InternalPrincipal): Promise<AgentProfileRecord> {
@@ -175,7 +175,7 @@ export class ManagerClient {
   }
 
   createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord> {
-    return this.#request<WorkspaceRecord>("POST", "/internal/workspaces", { ...request, principal });
+    return this.#request<WorkspaceRecord>("POST", "/internal/workspaces", { ...request, principal }, principalHeaders(principal));
   }
 
   getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord> {
@@ -197,7 +197,7 @@ export class ManagerClient {
   }
 
   createProviderConnection(request: CreateProviderConnectionRequest, principal: InternalPrincipal): Promise<ProviderConnectionRecord> {
-    return this.#request<ProviderConnectionRecord>("POST", "/internal/provider-connections", { ...request, principal });
+    return this.#request<ProviderConnectionRecord>("POST", "/internal/provider-connections", { ...request, principal }, principalHeaders(principal));
   }
 
   loginProviderConnection(
@@ -206,7 +206,7 @@ export class ManagerClient {
     principal: InternalPrincipal,
   ): Promise<ProviderConnectionRecord> {
     return this.#request<ProviderConnectionRecord>(
-      "POST", `/internal/provider-connections/${encodeURIComponent(connectionId)}/login`, { ...request, principal },
+      "POST", `/internal/provider-connections/${encodeURIComponent(connectionId)}/login`, { ...request, principal }, principalHeaders(principal),
     );
   }
 

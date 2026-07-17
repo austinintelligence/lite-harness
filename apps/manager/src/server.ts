@@ -236,6 +236,12 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     return reply.code(202).send(options.runService.createRun(body));
   });
 
+  app.get<{ Querystring: { limit?: string } }>("/internal/runs", async (request) => {
+    const principal = principalFromInternalHeaders(request.headers);
+    const limit = boundedInteger(request.query.limit, 1, 1_000, 100);
+    return { runs: options.runService.listRuns(principal, limit), limit };
+  });
+
   app.get<{ Params: { runId: string } }>("/internal/runs/:runId", async (request, reply) => {
     const run = options.runService.getRun(request.params.runId);
     return run
@@ -432,6 +438,16 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
     return agent
       ? agent
       : reply.code(404).send({ error: { code: "not_found", message: "Agent not found" } });
+  });
+
+  app.delete<{ Params: { agentId: string } }>("/internal/agents/:agentId", async (request, reply) => {
+    const deleted = options.runService.deleteAgentProfile(
+      request.params.agentId,
+      principalFromInternalHeaders(request.headers),
+    );
+    return deleted
+      ? { deleted: true, agentId: request.params.agentId }
+      : reply.code(409).send({ error: { code: "resource_in_use_or_missing", message: "Agent is missing or still referenced by a run/session" } });
   });
 
   app.post<{ Body: InternalCreateWorkspaceRequest }>("/internal/workspaces", async (request, reply) => {

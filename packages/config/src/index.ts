@@ -1,7 +1,107 @@
+import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { isLoopbackHttpUrl } from "@lite-harness/contracts";
 
 export const LITE_CONFIG_SCHEMA_VERSION = 1 as const;
+export const LITE_INSTALLATION_CONFIGURATION_FILE = "installation.json";
+
+export const LITE_INSTALLATION_ENVIRONMENT_KEYS = [
+  "LITE_HARNESS_CONFIG_VERSION", "LITE_HARNESS_MANAGER_SOCKET",
+  "LITE_HARNESS_PROVIDER", "LITE_HARNESS_PROVIDER_BASE_URL", "LITE_HARNESS_MODEL",
+  "LITE_HARNESS_MODEL_CATALOG", "LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION",
+  "LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION", "LITE_HARNESS_RUNTIME",
+  "LITE_HARNESS_RUNTIME_IMAGE", "LITE_HARNESS_MODE", "LITE_HARNESS_OFFLINE",
+  "LITE_HARNESS_APPROVAL_TIMEOUT_MS", "LITE_HARNESS_SHUTDOWN_TIMEOUT_MS",
+  "LITE_HARNESS_WORKSPACE_QUOTA_BYTES", "LITE_HARNESS_BROWSER_IDLE_MS",
+  "LITE_HARNESS_MODEL_CONTEXT", "LITE_HARNESS_DELEGATED_MAX_BUDGET_USD",
+  "LITE_HARNESS_RUNTIME_MEMORY", "LITE_HARNESS_RUNTIME_CPUS", "LITE_HARNESS_RUNTIME_PIDS",
+  "LITE_HARNESS_ENABLE_MEMORY", "LITE_HARNESS_REQUIRE_APPROVALS",
+  "LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT", "LITE_HARNESS_BROWSER_ALLOW_PRIVATE",
+  "LITE_HARNESS_CONTEXT_OPTIMIZATION", "LITE_HARNESS_ENABLE_PLUGINS",
+  "LITE_HARNESS_ENABLE_CACHE_CATALOG", "LITE_HARNESS_CREDENTIAL_PROFILE",
+  "LITE_HARNESS_CREDENTIAL_STORE", "LITE_HARNESS_TOOL_PROFILE",
+  "LITE_HARNESS_CONTEXT_FILE", "LITE_HARNESS_CONTEXT_KIND", "LITE_HARNESS_CONTEXT_ALLOWED_APPS",
+  "LITE_HARNESS_CONTEXT_ALLOWED_MODELS", "LITE_HARNESS_CONTEXT_KILLED_APPS", "LITE_HARNESS_CONTEXT_KILLED_MODELS",
+  "LITE_HARNESS_SKILL_ROOTS", "LITE_HARNESS_SKILL_CAPABILITIES", "LITE_HARNESS_MCP_SERVERS",
+  "LITE_HARNESS_PLUGIN_IMAGE", "LITE_HARNESS_PLUGIN_IDLE_MS", "LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS",
+  "LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS", "LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS",
+  "LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS", "LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS",
+  "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS", "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS",
+  "LITE_HARNESS_MEMORY_CONTEXT_ENTRIES", "LITE_HARNESS_MEMORY_CONTEXT_BYTES",
+  "LITE_HARNESS_SNAPSHOT_COMPACTION_CONCURRENCY", "LITE_HARNESS_SNAPSHOT_MAX_LOAD_PER_CPU",
+  "LITE_HARNESS_SNAPSHOT_MIN_FREE_BYTES", "LITE_HARNESS_CACHE_GC_INTERVAL_MS",
+  "LITE_HARNESS_CACHE_QUOTA_BYTES", "LITE_HARNESS_CACHE_MAX_ENTRIES", "LITE_HARNESS_CACHE_MAX_ENTRY_BYTES",
+  "LITE_HARNESS_CACHE_MAX_FILES",
+  "LITE_HARNESS_DELEGATED_TOOLS", "LITE_HARNESS_CODEX_COMMAND", "LITE_HARNESS_CLAUDE_COMMAND",
+  "LITE_HARNESS_ROUTE_GENERATION", "LITE_HARNESS_BROWSER_IMAGE",
+  "LITE_HARNESS_BROWSER_ALLOWED_ORIGINS", "LITE_HARNESS_BROWSER_PROFILE_ID",
+  "LITE_HARNESS_BROWSER_REMOTE_CDP", "LITE_HARNESS_APP_ID", "LITE_HARNESS_TENANT_ID",
+  "LITE_HARNESS_USER_ID", "LITE_HARNESS_DEFAULT_AGENT_ID", "LITE_HARNESS_DEFAULT_WORKSPACE_ID",
+  "LITE_HARNESS_HOST", "LITE_HARNESS_PORT",
+  "LITE_HARNESS_AUTH_FAILURE_LIMIT", "LITE_HARNESS_AUTH_FAILURE_WINDOW_MS",
+  "LITE_HARNESS_APP_CALLBACK_URL", "LITE_HARNESS_WEBHOOK_REPLY_URL",
+  "LITE_HARNESS_WEBHOOK_ACCOUNT", "LITE_HARNESS_WEBHOOK_SENDER",
+  "LITE_HARNESS_WEBHOOK_APP_ID", "LITE_HARNESS_WEBHOOK_TENANT_ID",
+  "LITE_HARNESS_WEBHOOK_USER_ID", "LITE_HARNESS_WEBHOOK_AGENT_ID",
+  "LITE_HARNESS_WEBHOOK_WORKSPACE_ID", "LITE_HARNESS_WEBHOOK_SESSION_PREFIX",
+  "LITE_HARNESS_SCHEDULES_JSON",
+] as const;
+
+const MANAGER_ENVIRONMENT_KEYS = new Set([
+  "LITE_HARNESS_MANAGER_SOCKET", "LITE_HARNESS_PROVIDER", "LITE_HARNESS_PROVIDER_BASE_URL",
+  "LITE_HARNESS_MODEL", "LITE_HARNESS_MODEL_CATALOG", "LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION",
+  "LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION", "LITE_HARNESS_RUNTIME", "LITE_HARNESS_RUNTIME_IMAGE",
+  "LITE_HARNESS_MODE", "LITE_HARNESS_OFFLINE", "LITE_HARNESS_APPROVAL_TIMEOUT_MS",
+  "LITE_HARNESS_SHUTDOWN_TIMEOUT_MS", "LITE_HARNESS_WORKSPACE_QUOTA_BYTES", "LITE_HARNESS_BROWSER_IDLE_MS",
+  "LITE_HARNESS_MODEL_CONTEXT", "LITE_HARNESS_DELEGATED_MAX_BUDGET_USD", "LITE_HARNESS_RUNTIME_MEMORY",
+  "LITE_HARNESS_RUNTIME_CPUS", "LITE_HARNESS_RUNTIME_PIDS", "LITE_HARNESS_ENABLE_MEMORY",
+  "LITE_HARNESS_REQUIRE_APPROVALS", "LITE_HARNESS_WORKSPACE_COLD_AFTER_CHECKPOINT",
+  "LITE_HARNESS_BROWSER_ALLOW_PRIVATE", "LITE_HARNESS_CONTEXT_OPTIMIZATION", "LITE_HARNESS_ENABLE_PLUGINS",
+  "LITE_HARNESS_ENABLE_CACHE_CATALOG", "LITE_HARNESS_CREDENTIAL_PROFILE", "LITE_HARNESS_CREDENTIAL_STORE",
+  "LITE_HARNESS_TOOL_PROFILE", "LITE_HARNESS_DELEGATED_TOOLS", "LITE_HARNESS_CODEX_COMMAND",
+  "LITE_HARNESS_CLAUDE_COMMAND", "LITE_HARNESS_ROUTE_GENERATION", "LITE_HARNESS_BROWSER_IMAGE",
+  "LITE_HARNESS_BROWSER_ALLOWED_ORIGINS", "LITE_HARNESS_BROWSER_PROFILE_ID", "LITE_HARNESS_BROWSER_REMOTE_CDP",
+  "LITE_HARNESS_CONTEXT_FILE", "LITE_HARNESS_CONTEXT_KIND", "LITE_HARNESS_CONTEXT_ALLOWED_APPS",
+  "LITE_HARNESS_CONTEXT_ALLOWED_MODELS", "LITE_HARNESS_CONTEXT_KILLED_APPS", "LITE_HARNESS_CONTEXT_KILLED_MODELS",
+  "LITE_HARNESS_SKILL_ROOTS", "LITE_HARNESS_SKILL_CAPABILITIES", "LITE_HARNESS_MCP_SERVERS",
+  "LITE_HARNESS_PLUGIN_IMAGE", "LITE_HARNESS_PLUGIN_IDLE_MS", "LITE_HARNESS_PLUGIN_RPC_TIMEOUT_MS",
+  "LITE_HARNESS_PLUGIN_INVOCATION_TIMEOUT_MS", "LITE_HARNESS_PLUGIN_CLEANUP_RETRY_MS",
+  "LITE_HARNESS_PLUGIN_CLEANUP_ATTEMPTS", "LITE_HARNESS_PLUGIN_CLEANUP_TIMEOUT_MS",
+  "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_BASE_MS", "LITE_HARNESS_PLUGIN_CRASH_BACKOFF_MAX_MS",
+  "LITE_HARNESS_MEMORY_CONTEXT_ENTRIES", "LITE_HARNESS_MEMORY_CONTEXT_BYTES",
+  "LITE_HARNESS_SNAPSHOT_COMPACTION_CONCURRENCY", "LITE_HARNESS_SNAPSHOT_MAX_LOAD_PER_CPU",
+  "LITE_HARNESS_SNAPSHOT_MIN_FREE_BYTES", "LITE_HARNESS_CACHE_GC_INTERVAL_MS",
+  "LITE_HARNESS_CACHE_QUOTA_BYTES", "LITE_HARNESS_CACHE_MAX_ENTRIES", "LITE_HARNESS_CACHE_MAX_ENTRY_BYTES",
+  "LITE_HARNESS_CACHE_MAX_FILES",
+  "LITE_HARNESS_APP_CALLBACK_URL", "LITE_HARNESS_WEBHOOK_REPLY_URL", "LITE_HARNESS_WEBHOOK_ACCOUNT",
+  "LITE_HARNESS_WEBHOOK_SENDER", "LITE_HARNESS_WEBHOOK_APP_ID", "LITE_HARNESS_WEBHOOK_TENANT_ID",
+  "LITE_HARNESS_WEBHOOK_USER_ID", "LITE_HARNESS_WEBHOOK_AGENT_ID", "LITE_HARNESS_WEBHOOK_WORKSPACE_ID",
+  "LITE_HARNESS_WEBHOOK_SESSION_PREFIX", "LITE_HARNESS_SCHEDULES_JSON",
+]);
+
+const GATEWAY_ENVIRONMENT_KEYS = new Set([
+  "LITE_HARNESS_MANAGER_SOCKET", "LITE_HARNESS_APP_ID", "LITE_HARNESS_TENANT_ID", "LITE_HARNESS_USER_ID",
+  "LITE_HARNESS_HOST", "LITE_HARNESS_PORT", "LITE_HARNESS_AUTH_FAILURE_LIMIT", "LITE_HARNESS_AUTH_FAILURE_WINDOW_MS",
+]);
+
+const MANAGER_SECRET_KEYS = new Set([
+  "LITE_HARNESS_INTERNAL_TOKEN", "LITE_HARNESS_PROVIDER_API_KEY", "LITE_HARNESS_SNAPSHOT_KEY",
+  "LITE_HARNESS_APP_CALLBACK_SECRET", "LITE_HARNESS_WEBHOOK_SECRET", "LITE_HARNESS_WEBHOOK_REPLY_SECRET",
+]);
+const GATEWAY_SECRET_KEYS = new Set(["LITE_HARNESS_INTERNAL_TOKEN", "LITE_HARNESS_APP_TOKEN"]);
+const HOST_ENVIRONMENT_KEYS = ["PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP", "SYSTEMROOT", "COMSPEC"] as const;
+
+export interface ValidatedInstallationConfiguration {
+  schemaVersion: typeof LITE_CONFIG_SCHEMA_VERSION;
+  dataDir: string;
+  environment: Readonly<Record<string, string>>;
+}
+
+export interface InstallationConfigurationOptions {
+  /** Allow a first-run install to materialize an explicit development/fake profile. */
+  developmentDefaults?: boolean;
+}
 
 export interface ValidatedManagerConfiguration {
   schemaVersion: typeof LITE_CONFIG_SCHEMA_VERSION;
@@ -155,6 +255,135 @@ export function loadLauncherConfiguration(
   });
 }
 
+export function loadInstallationConfiguration(
+  environment: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+  platform: NodeJS.Platform = process.platform,
+  options: InstallationConfigurationOptions = {},
+): ValidatedInstallationConfiguration {
+  validateVersion(environment);
+  const dataDir = resolveDataDir(environment, cwd);
+  let durableEnvironment = collectInstallationEnvironment(environment);
+  const hasProvider = durableEnvironment.LITE_HARNESS_PROVIDER !== undefined;
+  const hasRuntime = durableEnvironment.LITE_HARNESS_RUNTIME !== undefined;
+  const hasMode = durableEnvironment.LITE_HARNESS_MODE !== undefined;
+  if (options.developmentDefaults && !hasProvider && !hasRuntime && !hasMode) {
+    durableEnvironment = {
+      ...durableEnvironment,
+      LITE_HARNESS_PROVIDER: "fake",
+      LITE_HARNESS_RUNTIME: "fake",
+      LITE_HARNESS_MODE: "development",
+    };
+  }
+  const validationEnvironment = {
+    ...durableEnvironment,
+    LITE_HARNESS_DATA_DIR: dataDir,
+    LITE_HARNESS_INTERNAL_TOKEN: "installation-validation-internal-token",
+    LITE_HARNESS_APP_TOKEN: "installation-validation-app-token",
+  };
+  loadManagerConfiguration(validationEnvironment, cwd, platform);
+  loadGatewayConfiguration(validationEnvironment, cwd, platform);
+  return Object.freeze({
+    schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
+    dataDir,
+    environment: Object.freeze(durableEnvironment),
+  });
+}
+
+export function readInstallationConfiguration(
+  dataDir: string,
+  platform: NodeJS.Platform = process.platform,
+): ValidatedInstallationConfiguration {
+  const resolvedDataDir = resolve(dataDir);
+  const path = join(resolvedDataDir, LITE_INSTALLATION_CONFIGURATION_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`Installed Lite-Harness configuration is missing at ${path}; run \'pnpm lite service install\'`);
+    }
+    throw new Error("Installed Lite-Harness configuration is unreadable");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Installed Lite-Harness configuration must be an object");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.schemaVersion !== LITE_CONFIG_SCHEMA_VERSION || typeof record.dataDir !== "string" ||
+      !record.environment || typeof record.environment !== "object" || Array.isArray(record.environment)) {
+    throw new Error("Installed Lite-Harness configuration has an unsupported shape");
+  }
+  const persistedDataDir = resolve(record.dataDir);
+  if (persistedDataDir !== resolvedDataDir) throw new Error("Installed Lite-Harness configuration data directory does not match its location");
+  const environment: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(record.environment as Record<string, unknown>)) {
+    if (!(LITE_INSTALLATION_ENVIRONMENT_KEYS as readonly string[]).includes(name) || typeof value !== "string") {
+      throw new Error("Installed Lite-Harness configuration contains an unsupported environment entry");
+    }
+    validateDurableEnvironmentValue(name, value);
+    environment[name] = value;
+  }
+  return loadInstallationConfiguration({ ...environment, LITE_HARNESS_DATA_DIR: resolvedDataDir }, resolvedDataDir, platform);
+}
+
+export function writeInstallationConfiguration(configuration: ValidatedInstallationConfiguration): string {
+  const path = join(configuration.dataDir, LITE_INSTALLATION_CONFIGURATION_FILE);
+  mkdirSync(configuration.dataDir, { recursive: true, mode: 0o700 });
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  const content = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(temporaryPath, content, { encoding: "utf8", mode: 0o600 });
+  try { chmodSync(temporaryPath, 0o600); } catch { /* Windows has no POSIX mode bits. */ }
+  renameSync(temporaryPath, path);
+  return path;
+}
+
+export type LiteHarnessRole = "manager" | "gateway";
+
+export function buildRoleEnvironment(
+  role: LiteHarnessRole,
+  configuration: ValidatedInstallationConfiguration,
+  overrides: NodeJS.ProcessEnv = process.env,
+  secrets: NodeJS.ProcessEnv = overrides,
+): NodeJS.ProcessEnv {
+  const roleKeys = role === "manager" ? MANAGER_ENVIRONMENT_KEYS : GATEWAY_ENVIRONMENT_KEYS;
+  const secretKeys = role === "manager" ? MANAGER_SECRET_KEYS : GATEWAY_SECRET_KEYS;
+  const environment: NodeJS.ProcessEnv = {
+    LITE_HARNESS_CONFIG_VERSION: String(LITE_CONFIG_SCHEMA_VERSION),
+    LITE_HARNESS_DATA_DIR: configuration.dataDir,
+  };
+  for (const name of roleKeys) {
+    const value = overrides[name] ?? configuration.environment[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  for (const name of secretKeys) {
+    const value = secrets[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  for (const name of HOST_ENVIRONMENT_KEYS) {
+    const value = overrides[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  return environment;
+}
+
+function collectInstallationEnvironment(environment: NodeJS.ProcessEnv): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const name of LITE_INSTALLATION_ENVIRONMENT_KEYS) {
+    const value = environment[name];
+    if (value !== undefined) {
+      validateDurableEnvironmentValue(name, value);
+      result[name] = value;
+    }
+  }
+  return result;
+}
+
+function validateDurableEnvironmentValue(name: string, value: string): void {
+  if (value.length > 1024 * 1024 || /[\0\r\n]/.test(value)) {
+    throw new Error(`Installation environment value ${name} is invalid`);
+  }
+}
+
 function validateVersion(environment: NodeJS.ProcessEnv): void {
   const configured = environment.LITE_HARNESS_CONFIG_VERSION?.trim();
   if (configured !== undefined && configured !== String(LITE_CONFIG_SCHEMA_VERSION)) {
@@ -171,7 +400,10 @@ function resolveDataDir(environment: NodeJS.ProcessEnv, cwd: string): string {
 
 function resolveSocketPath(environment: NodeJS.ProcessEnv, dataDir: string, platform: NodeJS.Platform): string {
   const configured = environment.LITE_HARNESS_MANAGER_SOCKET?.trim();
-  const path = configured || (platform === "win32" ? "\\\\.\\pipe\\lite-harness-manager" : join(dataDir, "manager.sock"));
+  const installationId = createHash("sha256").update(resolve(dataDir).toLowerCase(), "utf8").digest("hex").slice(0, 16);
+  const path = configured || (platform === "win32"
+    ? `\\\\.\\pipe\\lite-harness-manager-${installationId}`
+    : join(dataDir, "manager.sock"));
   if (platform === "win32") {
     if (!path.startsWith("\\\\.\\pipe\\") || path.length > 240) throw new Error("LITE_HARNESS_MANAGER_SOCKET must be a bounded local Windows named pipe");
     return path;

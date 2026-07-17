@@ -2,32 +2,47 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join, resolve } from "node:path";
 import { OsSecretStore } from "@lite-harness/credential-store";
 import { RedactedStreamBuffer, RotatingLogSink } from "@lite-harness/operations";
-import { loadLauncherConfiguration } from "@lite-harness/config";
+import {
+  buildRoleEnvironment,
+  loadInstallationConfiguration,
+  loadLauncherConfiguration,
+  readInstallationConfiguration,
+  type ValidatedInstallationConfiguration,
+} from "@lite-harness/config";
 
 const root = resolve(import.meta.dirname, "../../..");
 const dataDirArgument = process.argv.indexOf("--data-dir");
 const requestedDataDir = dataDirArgument >= 0 && process.argv[dataDirArgument + 1]
   ? resolve(process.argv[dataDirArgument + 1] as string)
   : process.env.LITE_HARNESS_DATA_DIR;
-const { dataDir } = loadLauncherConfiguration({
-  ...process.env,
-  ...(requestedDataDir ? { LITE_HARNESS_DATA_DIR: requestedDataDir } : {}),
-});
+const launchEnvironment = requestedDataDir === undefined
+  ? process.env
+  : withEnvironmentOverride(process.env, "LITE_HARNESS_DATA_DIR", requestedDataDir);
+const { dataDir } = loadLauncherConfiguration(launchEnvironment);
+let installation: ValidatedInstallationConfiguration;
+try {
+  installation = readInstallationConfiguration(dataDir);
+} catch (error) {
+  if (!(error instanceof Error) || !error.message.includes("configuration is missing")) throw error;
+  installation = loadInstallationConfiguration(launchEnvironment);
+}
 const secrets = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
-const internalToken = process.env.LITE_HARNESS_INTERNAL_TOKEN ?? await secrets.get("service.internal-token");
-const appToken = process.env.LITE_HARNESS_APP_TOKEN ?? await secrets.get("service.app-token");
+const internalToken = launchEnvironment.LITE_HARNESS_INTERNAL_TOKEN ?? await secrets.get("service.internal-token");
+const appToken = launchEnvironment.LITE_HARNESS_APP_TOKEN ?? await secrets.get("service.app-token");
 if (!internalToken || !appToken) throw new Error("Service tokens are missing; run `pnpm lite service install`");
 
-const environment = {
-  ...process.env,
-  LITE_HARNESS_DATA_DIR: dataDir,
+const managerSecrets: NodeJS.ProcessEnv = {
   LITE_HARNESS_INTERNAL_TOKEN: internalToken,
-  LITE_HARNESS_APP_TOKEN: appToken,
+  ...explicitEnvironmentSecrets(launchEnvironment),
 };
+
 const logs = new RotatingLogSink(join(dataDir, "logs", "lite-harness.jsonl"));
 const children = [
-  start("manager", applicationEntry("manager")),
-  start("gateway", applicationEntry("gateway")),
+  start("manager", applicationEntry("manager"), buildRoleEnvironment("manager", installation, launchEnvironment, managerSecrets)),
+  start("gateway", applicationEntry("gateway"), buildRoleEnvironment("gateway", installation, launchEnvironment, {
+    LITE_HARNESS_INTERNAL_TOKEN: internalToken,
+    LITE_HARNESS_APP_TOKEN: appToken,
+  })),
 ];
 let stopping = false;
 
@@ -43,7 +58,7 @@ for (const child of children) {
 process.once("SIGINT", stopAll);
 process.once("SIGTERM", stopAll);
 
-function start(name: string, entry: string): { name: string; process: ChildProcess } {
+function start(name: string, entry: string, environment: NodeJS.ProcessEnv): { name: string; process: ChildProcess } {
   const stderrRelay = new RedactedStreamBuffer((text) => process.stderr.write(text));
   const child = spawn(process.execPath, extname(entry) === ".ts" ? ["--import", "tsx", entry] : [entry], {
     cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
@@ -65,10 +80,29 @@ function start(name: string, entry: string): { name: string; process: ChildProce
   return { name, process: child };
 }
 
+function withEnvironmentOverride(environment: NodeJS.ProcessEnv, name: string, value: string): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  for (const [key, current] of Object.entries(environment)) if (current !== undefined) result[key] = current;
+  result[name] = value;
+  return result;
+}
+
 function applicationEntry(name: "manager" | "gateway"): string {
   return extname(import.meta.filename) === ".ts"
     ? join(root, "apps", name, "src", "main.ts")
     : join(root, "dist", "apps", name, "main.js");
+}
+
+function explicitEnvironmentSecrets(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  for (const name of [
+    "LITE_HARNESS_PROVIDER_API_KEY", "LITE_HARNESS_SNAPSHOT_KEY", "LITE_HARNESS_APP_CALLBACK_SECRET",
+    "LITE_HARNESS_WEBHOOK_SECRET", "LITE_HARNESS_WEBHOOK_REPLY_SECRET",
+  ]) {
+    const value = environment[name];
+    if (value !== undefined) result[name] = value;
+  }
+  return result;
 }
 
 function stopAll(): void {

@@ -16,7 +16,7 @@ export interface ServiceInstallOptions {
   runner?: ServiceCommandRunner;
 }
 
-export interface ServiceCommandResult { code: number; stdout: string }
+export interface ServiceCommandResult { code: number; stdout: string; stderr?: string }
 export type ServiceCommandRunner = (command: string, args: readonly string[]) => Promise<ServiceCommandResult>;
 
 export interface RenderedService {
@@ -375,7 +375,30 @@ export async function installUserService(options: ServiceInstallOptions): Promis
   }
   const result = await runner(rendered.command, rendered.args);
   if (result.code !== 0) throw new Error("User service installation failed");
+  if ((options.platform ?? process.platform) === "win32") {
+    const started = await runner("schtasks.exe", ["/Run", "/TN", "Lite-Harness"]);
+    if (started.code !== 0) throw new Error("Windows user task installation succeeded but could not start Lite-Harness");
+  }
   return rendered;
+}
+
+export async function startUserService(options: ServiceInstallOptions): Promise<{ started: boolean; detail: string }> {
+  const runner = options.runner ?? runServiceCommand;
+  const [command, args] = serviceControlCommand(options.platform ?? process.platform, "start");
+  const result = await runner(command, args);
+  if (result.code !== 0) throw new Error("User service start failed");
+  return { started: true, detail: result.stdout.trim() || command };
+}
+
+export async function stopUserService(options: ServiceInstallOptions): Promise<{ stopped: boolean; detail: string }> {
+  const runner = options.runner ?? runServiceCommand;
+  const [command, args] = serviceControlCommand(options.platform ?? process.platform, "stop");
+  const result = await runner(command, args);
+  const output = `${result.stdout}\n${result.stderr ?? ""}`;
+  if (result.code !== 0 && !/not found|does not exist|not running/i.test(output)) {
+    throw new Error("User service stop failed");
+  }
+  return { stopped: result.code === 0, detail: output.trim() || command };
 }
 
 export async function uninstallUserService(options: ServiceInstallOptions): Promise<boolean> {
@@ -386,7 +409,8 @@ export async function uninstallUserService(options: ServiceInstallOptions): Prom
     : platform === "darwin" ? ["launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}`, rendered.path]] as const
     : ["schtasks.exe", ["/Delete", "/TN", "Lite-Harness", "/F"]] as const;
   const result = await runner(command[0], command[1]);
-  if (result.code !== 0 && !/not found|does not exist/i.test(result.stdout)) throw new Error("User service removal failed");
+  const output = `${result.stdout}\n${result.stderr ?? ""}`;
+  if (result.code !== 0 && !/not found|does not exist/i.test(output)) throw new Error("User service removal failed");
   await rm(rendered.path, { force: true });
   if (platform === "linux") await runner("systemctl", ["--user", "daemon-reload"]);
   return result.code === 0;
@@ -400,7 +424,20 @@ export async function userServiceStatus(options: ServiceInstallOptions): Promise
     : platform === "darwin" ? ["launchctl", ["print", `gui/${process.getuid?.() ?? 0}/${SERVICE_ID}`]] as const
     : ["schtasks.exe", ["/Query", "/TN", "Lite-Harness"]] as const;
   const result = await runner(command[0], command[1]);
-  return { active: result.code === 0, detail: result.stdout.trim() || (result.code === 0 ? rendered.path : "inactive") };
+  const output = `${result.stdout}\n${result.stderr ?? ""}`.trim();
+  const active = result.code === 0 && (platform !== "win32" || /(?:^|\n)\s*status\s*:\s*running\s*$/im.test(output) || /\brunning\b/i.test(output));
+  return { active, detail: output || (active ? rendered.path : "inactive") };
+}
+
+function serviceControlCommand(platform: NodeJS.Platform, action: "start" | "stop"): [string, readonly string[]] {
+  if (platform === "linux") return ["systemctl", ["--user", action, "lite-harness.service"]];
+  if (platform === "darwin") {
+    const target = `gui/${process.getuid?.() ?? 0}/${SERVICE_ID}`;
+    return action === "start"
+      ? ["launchctl", ["kickstart", target]]
+      : ["launchctl", ["kill", "SIGTERM", target]];
+  }
+  return ["schtasks.exe", [action === "start" ? "/Run" : "/End", "/TN", "Lite-Harness"]];
 }
 
 async function runServiceCommand(command: string, args: readonly string[]): Promise<ServiceCommandResult> {
@@ -410,7 +447,7 @@ async function runServiceCommand(command: string, args: readonly string[]): Prom
     const collect = (chunk: Buffer) => { bytes += chunk.length; if (bytes <= 1024 * 1024) chunks.push(chunk); else child.kill("SIGKILL"); };
     child.stdout.on("data", collect); child.stderr.on("data", collect);
     child.once("error", reject);
-    child.once("close", (code) => resolve({ code: bytes > 1024 * 1024 ? 1 : code ?? 1, stdout: Buffer.concat(chunks).toString("utf8") }));
+      child.once("close", (code) => resolve({ code: bytes > 1024 * 1024 ? 1 : code ?? 1, stdout: Buffer.concat(chunks).toString("utf8") }));
   });
 }
 

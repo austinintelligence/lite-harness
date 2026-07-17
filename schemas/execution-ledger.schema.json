@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lite-harness.invalid/schemas/execution-ledger.schema.json",
+  "title": "Lite-Harness implementation and evidence ledger",
+  "type": "object",
+  "required": ["schemaVersion", "branch", "startingCommit", "authority", "tiers", "entries", "verificationLanes"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "branch": { "const": "lite-main" },
+    "startingCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "candidateCommit": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40}$" },
+    "authority": {
+      "type": "object",
+      "required": ["architecturePlan", "requirementsLedger", "brief"],
+      "properties": {
+        "architecturePlan": { "type": "string", "minLength": 1 },
+        "requirementsLedger": { "type": "string", "minLength": 1 },
+        "brief": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "tiers": {
+      "type": "object",
+      "required": ["alpha", "preview", "beta", "future"],
+      "properties": {
+        "alpha": { "$ref": "#/$defs/tier" },
+        "preview": { "$ref": "#/$defs/tier" },
+        "beta": { "$ref": "#/$defs/tier" },
+        "future": { "$ref": "#/$defs/tier" }
+      },
+      "additionalProperties": false
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "verificationLanes": {
+      "type": "object",
+      "required": ["normalBranchCi", "candidateQualification", "externalEvidence"],
+      "properties": {
+        "normalBranchCi": { "$ref": "#/$defs/lane" },
+        "candidateQualification": { "$ref": "#/$defs/lane" },
+        "externalEvidence": { "$ref": "#/$defs/lane" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "tier": {
+      "type": "object",
+      "required": ["releaseRequired", "description"],
+      "properties": {
+        "releaseRequired": { "type": "boolean" },
+        "description": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "title", "tier", "status", "finding", "implementationPaths", "testIds", "evidenceArtifacts", "blockers"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9-]+$" },
+        "title": { "type": "string", "minLength": 1 },
+        "tier": { "enum": ["alpha", "preview", "beta", "future"] },
+        "status": { "enum": ["pending", "in-progress", "implemented", "verified", "blocked-external", "deferred"] },
+        "finding": { "type": "string", "minLength": 1 },
+        "implementationPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "testIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "ciJobs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evidenceArtifacts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "lane": {
+      "type": "object",
+      "required": ["purpose", "commands", "state", "claimsAllowed"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "commands": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "state": { "enum": ["not-run", "in-progress", "passed", "failed", "blocked"] },
+        "claimsAllowed": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

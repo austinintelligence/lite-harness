@@ -14,11 +14,23 @@ and config versions are validated before Manager opens durable state. Manager
 holds `<data-dir>/manager.lock`, refuses a live owner, reclaims only a proven
 dead owner, and removes only its own endpoint on shutdown.
 
-Use `pnpm lite service install` to store service tokens in the operating-system
-secret store and emit the platform service definition. Linux uses a systemd
-user unit, macOS uses a LaunchAgent, and Windows emits a startup task command.
-The command does not expose a provider credential in a unit file. Inspect the
-generated definition before enabling it on a shared machine.
+Run `pnpm lite init` once per data directory. It writes the versioned,
+non-secret `installation.json`, initializes the default owner/agent/workspace,
+stores service and snapshot references in the operating-system secret store,
+and prints the bootstrap client credential only on first initialization. The
+credential is never written to `installation.json`; store it securely and
+rotate it before sharing the machine. `pnpm lite start` installs and starts
+the user service when its definition is absent. `pnpm lite service install`
+can be used explicitly to inspect or reinstall that definition. Linux uses a
+systemd user unit, macOS uses a LaunchAgent, and Windows uses a least-privilege
+Task Scheduler task that is started after creation. Service definitions contain
+no provider credential or bearer token.
+
+`pnpm lite config get|set|list|validate` operates only on the durable
+non-secret allowlist. `pnpm lite status`, `logs`, `stop`, and `doctor` use the
+same persisted data directory and effective configuration as the services.
+The default Windows Manager pipe is derived from the canonical data-directory
+identity; an explicit `LITE_HARNESS_MANAGER_SOCKET` override remains supported.
 
 Operational probes:
 

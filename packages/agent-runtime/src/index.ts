@@ -1,6 +1,6 @@
 import type { InternalPrincipal, RunEventType, ToolCall, ToolDefinition, ToolResult } from "@lite-harness/contracts";
 import { createId } from "@lite-harness/domain";
-import { ProviderError, type ModelCapability, type ModelEvent, type ModelGateway, type ModelMessage } from "@lite-harness/provider-core";
+import { assertModelContextFits, ProviderError, type ModelCapability, type ModelEvent, type ModelGateway, type ModelMessage } from "@lite-harness/provider-core";
 import { authorizedWorkspaceArtifactPath, type ToolRuntime } from "@lite-harness/runtime";
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
@@ -22,12 +22,13 @@ export interface AgentContextCompiler {
     principal?: InternalPrincipal;
     modelId?: string;
     modelCapabilities?: readonly ModelCapability[];
+    modelContextWindow?: number;
   }): Promise<readonly ModelMessage[]>;
   snapshotForRun?(params: { runId: string; principal: InternalPrincipal }): Promise<{ skills: Array<{ name: string; digest: string }> }>;
 }
 
 export interface AgentPreparedState {
-  route?: { routePlanId: string; modelId: string; providerId: string; capabilities: readonly ModelCapability[] };
+  route?: { routePlanId: string; modelId: string; providerId: string; capabilities: readonly ModelCapability[]; contextWindow: number };
   tools: readonly ToolDefinition[];
   contextSnapshot: { skills: Array<{ name: string; digest: string }> };
 }
@@ -87,6 +88,9 @@ export class AgentRunner {
         }
       : undefined;
     const preparedRoute = modelContext ? await this.model.prepareRun?.(modelContext) : undefined;
+    const turnContext = modelContext && preparedRoute
+      ? { ...modelContext, contextWindow: preparedRoute.contextWindow }
+      : modelContext;
     if (params.runId) {
       await this.tools.prepareRun?.({
         runId: params.runId,
@@ -105,6 +109,7 @@ export class AgentRunner {
       ...(params.principal ? { principal: params.principal } : {}),
       ...(preparedRoute ? { modelId: preparedRoute.modelId } : {}),
       ...(preparedRoute ? { modelCapabilities: preparedRoute.capabilities } : {}),
+      ...(preparedRoute ? { modelContextWindow: preparedRoute.contextWindow } : {}),
     }) ?? [];
     const messages: ModelMessage[] = [
       ...(params.instructions?.trim() ? [{ role: "system" as const, content: params.instructions.trim() }] : []),
@@ -140,6 +145,7 @@ export class AgentRunner {
       params.signal?.throwIfAborted();
       const steering = params.takeSteering?.() ?? [];
       messages.push(...steering.map((message) => ({ ...message })));
+      if (preparedRoute) assertModelContextFits(messages, preparedRoute.contextWindow, advertisedTools);
       let assistantText = "";
       const toolCalls: ToolCall[] = [];
       let finishReason: "stop" | "tool_calls" | undefined;
@@ -147,7 +153,7 @@ export class AgentRunner {
       const stream = this.model.streamTurn({
         messages,
         ...(advertisedTools.length ? { tools: advertisedTools } : {}),
-        ...(modelContext ? { context: modelContext } : {}),
+        ...(turnContext ? { context: turnContext } : {}),
         ...(params.signal ? { signal: params.signal } : {}),
       })[Symbol.asyncIterator]();
       try {

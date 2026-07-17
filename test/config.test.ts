@@ -1,5 +1,16 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadGatewayConfiguration, loadManagerConfiguration, loadManagerIpcConfiguration } from "@lite-harness/config";
+import {
+  buildRoleEnvironment,
+  loadGatewayConfiguration,
+  loadInstallationConfiguration,
+  loadManagerConfiguration,
+  loadManagerIpcConfiguration,
+  readInstallationConfiguration,
+  writeInstallationConfiguration,
+} from "@lite-harness/config";
 
 const tokens = {
   LITE_HARNESS_INTERNAL_TOKEN: "internal-token-for-tests",
@@ -7,12 +18,61 @@ const tokens = {
 };
 
 describe("versioned application configuration", () => {
+  it("persists validated non-secret installation settings and builds isolated role environments", () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-installation-"));
+    try {
+      const installation = loadInstallationConfiguration({
+        ...tokens,
+        LITE_HARNESS_PROVIDER: "fake",
+        LITE_HARNESS_RUNTIME: "fake",
+        LITE_HARNESS_MODE: "development",
+        LITE_HARNESS_PROVIDER_API_KEY: "must-not-be-persisted",
+        LITE_HARNESS_PROVIDER_BASE_URL: "http://127.0.0.1:8645/v1",
+        LITE_HARNESS_MODEL: "fixture-model",
+        LITE_HARNESS_PORT: "4321",
+        LITE_HARNESS_ENABLE_MEMORY: "true",
+        LITE_HARNESS_WEBHOOK_SECRET: "must-not-be-persisted-either",
+      }, root, "win32");
+      const path = writeInstallationConfiguration(installation);
+      const persisted = readFileSync(path, "utf8");
+      expect(persisted).toContain("fixture-model");
+      expect(persisted).not.toContain("must-not-be-persisted");
+
+      const restored = readInstallationConfiguration(installation.dataDir, "win32");
+      const overrides = { LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_INTERNAL_TOKEN: tokens.LITE_HARNESS_INTERNAL_TOKEN, PATH: "fixture-path" };
+      const manager = buildRoleEnvironment("manager", restored, overrides, overrides);
+      const gateway = buildRoleEnvironment("gateway", restored, {
+        ...overrides, LITE_HARNESS_APP_TOKEN: tokens.LITE_HARNESS_APP_TOKEN,
+        LITE_HARNESS_PORT: "5432",
+      }, {
+        ...overrides, LITE_HARNESS_APP_TOKEN: tokens.LITE_HARNESS_APP_TOKEN,
+      });
+      expect(manager).toMatchObject({ LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_INTERNAL_TOKEN: tokens.LITE_HARNESS_INTERNAL_TOKEN, PATH: "fixture-path" });
+      expect(manager).not.toHaveProperty("LITE_HARNESS_APP_TOKEN");
+      expect(manager).not.toHaveProperty("LITE_HARNESS_WEBHOOK_SECRET");
+      expect(gateway).toMatchObject({ LITE_HARNESS_PORT: "5432", LITE_HARNESS_APP_TOKEN: tokens.LITE_HARNESS_APP_TOKEN });
+      expect(gateway).toHaveProperty("LITE_HARNESS_INTERNAL_TOKEN", tokens.LITE_HARNESS_INTERNAL_TOKEN);
+      expect(gateway).not.toHaveProperty("LITE_HARNESS_PROVIDER");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads local Manager IPC coordinates without requiring provider, runtime, or application credentials", () => {
-    expect(loadManagerIpcConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/state" }, "C:/fixture", "win32")).toMatchObject({
+    const first = loadManagerIpcConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/state" }, "C:/fixture", "win32");
+    const second = loadManagerIpcConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/other" }, "C:/fixture", "win32");
+    expect(first).toMatchObject({
       schemaVersion: 1,
       dataDir: "C:\\fixture\\state",
-      socketPath: expect.stringMatching(/^\\\\\.\\pipe\\/),
+      socketPath: expect.stringMatching(/^\\\\\.\\pipe\\lite-harness-manager-[a-f0-9]{16}$/),
     });
+    expect(second.socketPath).not.toBe(first.socketPath);
+  });
+
+  it("materializes explicit development defaults only for first-run service installation", () => {
+    const installation = loadInstallationConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/state" }, "C:/fixture", "win32", { developmentDefaults: true });
+    expect(installation.environment).toMatchObject({ LITE_HARNESS_PROVIDER: "fake", LITE_HARNESS_RUNTIME: "fake", LITE_HARNESS_MODE: "development" });
+    expect(() => loadInstallationConfiguration({ LITE_HARNESS_DATA_DIR: "C:/fixture/state" }, "C:/fixture", "win32")).toThrow(/LITE_HARNESS_PROVIDER/);
   });
 
   it("parses bounded core Manager and Gateway configuration", () => {

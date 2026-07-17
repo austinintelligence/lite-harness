@@ -37,8 +37,10 @@ describe("tool runtime policy", () => {
     const args = dockerMaintenanceHardeningArgs({ memory: "48m", cpus: "0.25", pidsLimit: 32 }, { user: "1000:1000" });
     expect(args).toEqual(expect.arrayContaining([
       "--network", "none", "--read-only", "--cap-drop", "ALL",
-      "--security-opt", "no-new-privileges=true", "--pids-limit", "32",
-      "--memory", "48m", "--cpus", "0.25", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+      "--security-opt", "no-new-privileges=true", "--security-opt", "seccomp=default", "--pids-limit", "32",
+      "--memory", "48m", "--memory-swap", "48m", "--cpus", "0.25", "--ulimit", "nofile=1024:1024",
+      "--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3",
+      "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
       "--user", "1000:1000",
     ]));
     expect(args).not.toContain("--privileged");
@@ -59,14 +61,15 @@ describe("tool runtime policy", () => {
     const inputs: string[] = [];
     let sequence = 0;
     let current = "";
+    let currentCreateArgs: string[] = [];
     let exists = false;
     const runner: DockerCommandRunner = async (args, options) => {
       if (args[0] === "volume") { volumes.push([...args]); return dockerOk("volume"); }
       if (args[0] === "run") { runs.push([...args]); return dockerOk(); }
       if (args[0] === "create") {
-        creates.push([...args]); current = (++sequence).toString(16).padStart(64, "a"); exists = true; return dockerOk(current);
+        creates.push([...args]); currentCreateArgs = [...args]; current = (++sequence).toString(16).padStart(64, "a"); exists = true; return dockerOk(current);
       }
-      if (args[0] === "start") { if (options?.input) inputs.push(options.input); return dockerOk("command output"); }
+      if (args[0] === "start") { if (options?.input) inputs.push(options.input); return dockerOk(currentCreateArgs.includes("lite-quota") ? "0 0" : "command output"); }
       if (args[0] === "container" && args[1] === "inspect") return exists ? dockerOk(args.includes("--format") ? "false|exited" : "{}") : dockerMissing();
       if (args[0] === "container" && args[1] === "wait") return dockerOk("0");
       if (args[0] === "container" && args[1] === "rm") { exists = false; return dockerOk(current); }
@@ -93,6 +96,10 @@ describe("tool runtime policy", () => {
       expect(inputs).toContain("printf safe");
       expect(volumes.some((args) => args[1] === "create")).toBe(true);
       expect(creates.every((args) => args.includes("--pull=never") && args.includes("none") && args.includes("--read-only") && args.includes("1000:1000"))).toBe(true);
+      expect(creates.every((args) => args.includes("--memory-swap") && args.includes("256m") &&
+        args.includes("nofile=1024:1024") && args.includes("seccomp=default") &&
+        args.includes("--log-driver") && args.includes("json-file") &&
+        args.includes("max-size=10m") && args.includes("max-file=3"))).toBe(true);
       expect(runs.length).toBeGreaterThan(0);
       expect(runs.every((args) => args.includes("--pull=never") && args.includes("none"))).toBe(true);
       const rendered = creates.map((args) => args.join(" ")).join("\n");
@@ -101,6 +108,54 @@ describe("tool runtime policy", () => {
         expect(rendered).toContain(token);
       }
       expect(store.listRuntimeContainers()).toEqual([]);
+    } finally { store.close(); }
+  });
+
+  it("DOCKER-002 applies a post-mutation quota boundary after a command and leaves no tool container behind", async () => {
+    const store = new SqliteRunStore(":memory:");
+    const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: [] };
+    store.createOrGetRun("run-quota", { agent: "coder", workspace: "workspace", input: "quota", idempotencyKey: "quota", principal });
+    let current = "";
+    let currentCreateArgs: string[] = [];
+    let exists = false;
+    let overQuota = false;
+    const runner: DockerCommandRunner = async (args) => {
+      if (args[0] === "volume" || args[0] === "run") return dockerOk("volume");
+      if (args[0] === "create") {
+        current = "e".repeat(64);
+        currentCreateArgs = [...args];
+        exists = true;
+        return dockerOk(current);
+      }
+      if (args[0] === "start") {
+        return currentCreateArgs.includes("lite-quota")
+          ? dockerOk(overQuota ? "2048 0" : "0 0")
+          : dockerOk("mutated");
+      }
+      if (args[0] === "container" && args[1] === "inspect") {
+        return exists ? dockerOk(args.includes("--format") ? "false|exited" : "{}") : dockerMissing();
+      }
+      if (args[0] === "container" && args[1] === "wait") return dockerOk("0");
+      if (args[0] === "container" && args[1] === "rm") { exists = false; return dockerOk(current); }
+      throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+    };
+    const runtime = new DockerToolRuntime({
+      image: `sha256:${"e".repeat(64)}`,
+      installationId: "installation",
+      containerStore: store,
+      commandRunner: runner,
+      workspaceQuotaBytes: 1024 * 1024,
+    });
+    const execute = () => runtime.execute({
+      runId: "run-quota", attemptId: "attempt", workspaceId: "workspace", principal,
+      call: { id: "call-shell", name: "shell_exec", arguments: { script: "printf changed", cwd: "." } },
+    });
+    try {
+      await expect(execute()).resolves.toMatchObject({ ok: true });
+      overQuota = true;
+      await expect(execute()).rejects.toThrow(/Workspace mutation exceeded/);
+      expect(store.listRuntimeContainers()).toEqual([]);
+      expect(exists).toBe(false);
     } finally { store.close(); }
   });
 

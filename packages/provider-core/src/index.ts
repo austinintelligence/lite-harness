@@ -29,6 +29,7 @@ export interface ModelRunContext {
   fencingToken: number;
   maxCostUsd?: number;
   requiredCapabilities?: readonly ModelCapability[];
+  contextWindow?: number;
 }
 
 export interface ModelGateway {
@@ -46,6 +47,7 @@ export interface PreparedModelRoute {
   modelId: string;
   providerId: string;
   capabilities: readonly ModelCapability[];
+  contextWindow: number;
 }
 
 export type ModelCapability =
@@ -221,7 +223,7 @@ export class SingleFlightCredentialBroker implements CredentialBroker {
     }
     let refresh = this.#refreshes.get(profileId);
     if (!refresh) {
-      refresh = this.source.refresh(profileId, current, signal).then((material) => {
+      refresh = this.source.refresh(profileId, current).then((material) => {
         if (!material.authorizationHeader.trim() || expiresSoon(material, 0)) {
           throw new ProviderError("credential_expired", `Credential refresh failed for profile: ${profileId}`, true);
         }
@@ -230,12 +232,33 @@ export class SingleFlightCredentialBroker implements CredentialBroker {
       }).finally(() => this.#refreshes.delete(profileId));
       this.#refreshes.set(profileId, refresh);
     }
-    return { ...await refresh };
+    void refresh.catch(() => undefined);
+    return { ...await awaitWithAbort(refresh, signal) };
   }
 
   revoke(profileId: string): void {
     this.#cache.delete(profileId);
   }
+}
+
+async function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return await promise;
+  signal.throwIfAborted();
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(signal.reason ?? new Error("Operation aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => { if (!settled) { settled = true; cleanup(); resolve(value); } },
+      (error) => { if (!settled) { settled = true; cleanup(); reject(error); } },
+    );
+  });
 }
 
 export class InMemoryCredentialBroker implements CredentialBroker {
@@ -374,6 +397,7 @@ export class RoutedModelGateway implements ModelGateway {
 
     const hasModelSpecificImages = params.messages.some((message) => message.imageDataUrls?.length);
     for (const [routeIndex, model] of routes.entries()) {
+      assertModelContextFits(params.messages, model.contextWindow, params.tools);
       if (routeIndex > 0 && hasModelSpecificImages) {
         throw new ProviderError(
           "context_recompile_required",
@@ -505,8 +529,37 @@ function normalizedRequiredCapabilities(value: readonly ModelCapability[] | unde
 function preparedRoute(plan: RoutePlan): PreparedModelRoute {
   return {
     routePlanId: plan.id, modelId: plan.selected.id, providerId: plan.selected.providerId,
-    capabilities: [...plan.selected.capabilities],
+    capabilities: [...plan.selected.capabilities], contextWindow: plan.selected.contextWindow,
   };
+}
+
+/**
+ * Uses the repository's canonical text estimate (one token per four characters)
+ * over the complete request envelope, including tool schemas and image data.
+ * This is intentionally conservative: an over-limit request is rejected before
+ * credentials are resolved or a provider adapter can perform I/O.
+ */
+export function estimateModelContextTokens(
+  messages: readonly ModelMessage[],
+  tools: readonly ToolDefinition[] = [],
+): number {
+  const request = JSON.stringify({ messages, tools });
+  return Math.ceil(request.length / 4);
+}
+
+export function assertModelContextFits(
+  messages: readonly ModelMessage[],
+  contextWindow: number,
+  tools: readonly ToolDefinition[] = [],
+): void {
+  const estimatedTokens = estimateModelContextTokens(messages, tools);
+  if (estimatedTokens > contextWindow) {
+    throw new ProviderError(
+      "context_limit_exceeded",
+      `Selected model context window ${contextWindow} tokens is smaller than the estimated request size of ${estimatedTokens} tokens`,
+      false,
+    );
+  }
 }
 
 /** Once true, retrying another route could duplicate billed or externally visible work. */

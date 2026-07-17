@@ -348,7 +348,7 @@ describe("production optional-system composition", () => {
           selectedModelId: "skill-model", selectedProviderId: "fixture",
           selectedCredentialProfileId: "fixture-profile", fallbackModelIds: [], createdAt: new Date().toISOString(),
         });
-        return { routePlanId, modelId: "skill-model", providerId: "fixture", capabilities: ["text", "tools"] };
+        return { routePlanId, modelId: "skill-model", providerId: "fixture", capabilities: ["text", "tools"], contextWindow: 128_000 };
       },
       async *streamTurn(params) {
         turns += 1;
@@ -480,7 +480,7 @@ describe("production optional-system composition", () => {
     const model = {
       prepareRun: async () => ({
         routePlanId: "route-vision", modelId: "vision-model", providerId: "fixture",
-        capabilities: ["text" as const, "vision" as const],
+        capabilities: ["text" as const, "vision" as const], contextWindow: 128_000,
       }),
       streamTurn: async function* (params: { messages: readonly ModelMessage[] }) {
         observed.push(params.messages.map((message) => ({ ...message })));

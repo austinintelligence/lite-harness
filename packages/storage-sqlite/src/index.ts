@@ -958,6 +958,16 @@ export class SqliteRunStore implements RunStore {
     return row ? toRunRecord(row) : undefined;
   }
 
+  listRuns(principal: ResourceOwner, limit = 100): RunRecord[] {
+    const boundedLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 1_000) : 100;
+    return (this.#database.prepare(
+      `SELECT * FROM runs
+       WHERE app_id = ? AND tenant_id = ? AND user_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+    ).all(principal.appId, principal.tenantId, principal.userId, boundedLimit) as unknown as RunRow[]).map(toRunRecord);
+  }
+
   listChildRuns(parentRunId: string): RunRecord[] {
     return (this.#database.prepare(
       "SELECT * FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC, id ASC",
@@ -1345,6 +1355,16 @@ export class SqliteRunStore implements RunStore {
     return (this.#database.prepare(
       "SELECT * FROM agent_profiles WHERE app_id = ? AND tenant_id = ? AND user_id = ? ORDER BY created_at",
     ).all(principal.appId, principal.tenantId, principal.userId) as unknown as AgentRow[]).map(toAgentProfile);
+  }
+
+  deleteAgentProfile(id: string, owner: ResourceOwner): boolean {
+    const result = this.#database.prepare(`
+      DELETE FROM agent_profiles
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?
+        AND NOT EXISTS (SELECT 1 FROM runs WHERE runs.agent_internal_id = agent_profiles.internal_id)
+        AND NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.agent_internal_id = agent_profiles.internal_id)
+    `).run(owner.appId, owner.tenantId, owner.userId, id);
+    return Number(result.changes) === 1;
   }
 
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord {

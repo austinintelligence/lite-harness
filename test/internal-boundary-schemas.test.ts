@@ -76,6 +76,63 @@ describe("authoritative boundary schemas", () => {
 
   });
 
+  it("lists runs only for the principal supplied on the versioned internal boundary", async () => {
+    const listRuns = vi.fn((principal: { appId: string; tenantId: string; userId: string }, limit: number) => [{
+      id: "run-owner", appId: principal.appId, tenantId: principal.tenantId, userId: principal.userId, limit,
+    }]);
+    const server = buildManagerServer({
+      runService: { listRuns } as unknown as RunService,
+      internalToken: "internal-run-list-token",
+      productionReadinessChecks: async () => ({}),
+    });
+    servers.push(server);
+    const response = await server.inject({
+      method: "GET",
+      url: "/internal/runs?limit=7",
+      headers: {
+        "x-lite-internal-token": "internal-run-list-token",
+        "x-lite-ipc-version": "1",
+        "x-lite-app-id": "app-owner",
+        "x-lite-tenant-id": "tenant-owner",
+        "x-lite-user-id": "user-owner",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      runs: [{ id: "run-owner", appId: "app-owner", tenantId: "tenant-owner", userId: "user-owner", limit: 7 }],
+      limit: 7,
+    });
+    expect(listRuns).toHaveBeenCalledWith(
+      { appId: "app-owner", tenantId: "tenant-owner", userId: "user-owner", scopes: [] },
+      7,
+    );
+  });
+
+  it("deletes only an owner-scoped agent through the internal CLI boundary", async () => {
+    const deleteAgentProfile = vi.fn(() => true);
+    const server = buildManagerServer({
+      runService: { deleteAgentProfile } as unknown as RunService,
+      internalToken: "internal-agent-delete-token",
+      productionReadinessChecks: async () => ({}),
+    });
+    servers.push(server);
+    const response = await server.inject({
+      method: "DELETE", url: "/internal/agents/agent-one",
+      headers: {
+        "x-lite-internal-token": "internal-agent-delete-token",
+        "x-lite-ipc-version": "1",
+        "x-lite-app-id": "app-one",
+        "x-lite-tenant-id": "tenant-one",
+        "x-lite-user-id": "user-one",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ deleted: true, agentId: "agent-one" });
+    expect(deleteAgentProfile).toHaveBeenCalledWith(
+      "agent-one", { appId: "app-one", tenantId: "tenant-one", userId: "user-one", scopes: [] },
+    );
+  });
+
   it("BD-035-REGRESSION rejects caller bytes and promotes only a reader-owned workspace path", async () => {
     const directory = mkdtempSync(join(tmpdir(), "lite-artifact-boundary-"));
     const principal = { appId: "app", tenantId: "tenant", userId: "user", scopes: ["artifacts:publish"] };

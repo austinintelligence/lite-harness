@@ -82,6 +82,24 @@ describe("provider plane", () => {
     );
   });
 
+  it("rejects an over-limit selected request before credential resolution or adapter I/O", async () => {
+    const model = { ...baseModel("small-model", "small-provider"), contextWindow: 16 };
+    let credentialResolutions = 0;
+    let adapterCalls = 0;
+    const gateway = new RoutedModelGateway(
+      new ModelRegistry([model]),
+      [{ providerId: model.providerId, async *stream() { adapterCalls += 1; yield { type: "completed", finishReason: "stop" }; } }],
+      { async resolve() { credentialResolutions += 1; return { authorizationHeader: "Bearer local-test" }; } },
+    );
+    await expect(async () => {
+      for await (const _event of gateway.streamTurn({ messages: [{ role: "user", content: "x".repeat(256) }] })) {
+        // The request must be rejected before this iterator reaches the adapter.
+      }
+    }).rejects.toMatchObject({ code: "context_limit_exceeded" });
+    expect(credentialResolutions).toBe(0);
+    expect(adapterCalls).toBe(0);
+  });
+
   it("falls back on retryable pre-side-effect failure", async () => {
     const registry = new ModelRegistry([
       baseModel("first", "preferred"),
@@ -235,6 +253,28 @@ describe("provider plane", () => {
     });
     const credentials = await Promise.all([broker.resolve("profile"), broker.resolve("profile"), broker.resolve("profile")]);
     expect(credentials.map((item) => item.authorizationHeader)).toEqual(["Bearer fresh", "Bearer fresh", "Bearer fresh"]);
+    expect(refreshes).toBe(1);
+  });
+
+  it("does not let one cancelled waiter abort the shared credential refresh", async () => {
+    let refreshes = 0;
+    let finishRefresh!: (value: { authorizationHeader: string; expiresAt: string }) => void;
+    const refreshDone = new Promise<{ authorizationHeader: string; expiresAt: string }>((resolve) => { finishRefresh = resolve; });
+    const broker = new SingleFlightCredentialBroker({
+      async load() { return { authorizationHeader: "Bearer stale", expiresAt: new Date(Date.now() + 1_000).toISOString() }; },
+      async refresh(_profile, _current, signal) {
+        expect(signal).toBeUndefined();
+        refreshes += 1;
+        return await refreshDone;
+      },
+    });
+    const cancelled = new AbortController();
+    const first = broker.resolve("profile", cancelled.signal);
+    const second = broker.resolve("profile");
+    cancelled.abort(new Error("first waiter cancelled"));
+    await expect(first).rejects.toThrow("first waiter cancelled");
+    finishRefresh({ authorizationHeader: "Bearer fresh", expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
+    await expect(second).resolves.toMatchObject({ authorizationHeader: "Bearer fresh" });
     expect(refreshes).toBe(1);
   });
 });

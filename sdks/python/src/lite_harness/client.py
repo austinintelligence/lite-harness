@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -224,31 +225,105 @@ class LiteHarnessClient:
     def list_workspaces(self) -> list[dict[str, Any]]:
         return self._json_operation("getV1Workspaces")["workspaces"]
 
-    def events(self, run_id: str, after: int = 0) -> Iterator[dict[str, Any]]:
-        query = urlencode({"after": after})
+    def events(
+        self,
+        run_id: str,
+        after: int = 0,
+        *,
+        reconnect_delay_ms: int = 250,
+        max_retries: int = 3,
+    ) -> Iterator[dict[str, Any]]:
+        """Replay a run's SSE stream with bounded, cursor-safe reconnects.
+
+        ``after`` remains the original public cursor argument.  Each reconnect
+        sends both the query cursor and ``Last-Event-ID`` so gateways that
+        implement either replay convention resume from the same event.
+        ``max_retries`` counts reconnect attempts after the initial request.
+        """
+        if not isinstance(after, int) or isinstance(after, bool) or after < 0:
+            raise LiteHarnessError(
+                "Event cursor must be a non-negative integer",
+                code="invalid_event_cursor",
+            )
+        if not isinstance(reconnect_delay_ms, int) or isinstance(reconnect_delay_ms, bool) or not 0 <= reconnect_delay_ms <= 60_000:
+            raise LiteHarnessError(
+                "Reconnect delay must be between 0 and 60000 milliseconds",
+                code="invalid_reconnect_delay",
+            )
+        if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 0:
+            raise LiteHarnessError(
+                "Maximum event stream retries must be a non-negative integer",
+                code="invalid_event_stream_retries",
+            )
+
+        cursor = after
+        retries = 0
+        while True:
+            request = self._event_request(run_id, cursor)
+            try:
+                with urlopen(request, timeout=self._timeout) as response:  # noqa: S310 - caller chooses the service URL
+                    for payload in _iter_sse_payloads(response):
+                        _validate_event_payload(payload, run_id)
+                        sequence = payload["sequence"]
+                        if sequence <= cursor:
+                            continue
+                        if sequence != cursor + 1:
+                            raise LiteHarnessError(
+                                f"Event stream sequence gap: expected {cursor + 1}, received {sequence}",
+                                code="event_sequence_gap",
+                            )
+                        cursor = sequence
+                        yield payload
+
+                run = self.get_run(run_id)
+                if (
+                    run.get("status") in _TERMINAL_RUN_STATUSES
+                    and isinstance(run.get("lastSequence"), int)
+                    and cursor >= run["lastSequence"]
+                ):
+                    return
+                # A clean HTTP EOF is still an interrupted stream. Route it
+                # through the same retryable path as a transport disconnect so
+                # it consumes the bounded reconnect budget instead of spinning
+                # indefinitely on a nonterminal run.
+                raise LiteHarnessError(
+                    "Event stream closed before the run reached a terminal state",
+                    code="event_stream_error",
+                    retryable=True,
+                )
+            except HTTPError as error:
+                stream_error = self._http_error(error)
+                if not _is_retryable_event_stream_error(stream_error):
+                    raise stream_error from error
+                error = stream_error
+            except (OSError, TimeoutError) as error:
+                if not _is_retryable_event_stream_error(error):
+                    raise
+            except LiteHarnessError as error:
+                if not _is_retryable_event_stream_error(error):
+                    raise
+
+            retries += 1
+            if retries > max_retries:
+                raise LiteHarnessError(
+                    f"Event stream retries exhausted after {max_retries} reconnects",
+                    code="event_stream_retry_exhausted",
+                )
+            if reconnect_delay_ms:
+                time.sleep(reconnect_delay_ms / 1000)
+
+    def _event_request(self, run_id: str, cursor: int) -> Request:
+        query = urlencode({"after": cursor})
         method, path = _operation_route("getV1RunsByRunIdEvents", runId=run_id)
-        request = Request(
+        return Request(
             self._url(f"{path.lstrip('/')}?{query}"),
             method=method,
-            headers={**self._headers(), "Accept": "text/event-stream"},
+            headers={
+                **self._headers(),
+                "Accept": "text/event-stream",
+                "Last-Event-ID": str(cursor),
+            },
         )
-        try:
-            with urlopen(request, timeout=self._timeout) as response:  # noqa: S310 - caller chooses the service URL
-                data_lines: list[str] = []
-                for raw in response:
-                    line = raw.decode("utf-8").rstrip("\r\n")
-                    if not line:
-                        if data_lines:
-                            payload = json.loads("\n".join(data_lines))
-                            data_lines.clear()
-                            if "runId" not in payload:
-                                raise LiteHarnessError(str(payload.get("message", "SSE stream error")))
-                            yield payload
-                        continue
-                    if line.startswith("data:"):
-                        data_lines.append(line[5:].lstrip())
-        except HTTPError as error:
-            raise self._http_error(error) from error
 
     def _json(
         self,
@@ -357,6 +432,56 @@ def _operation_route(operation_id: str, **path_params: str) -> tuple[str, str]:
     for name in names:
         path = path.replace("{" + name + "}", quote(path_params[name], safe=""))
     return method, path
+
+
+_TERMINAL_RUN_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"})
+
+
+def _iter_sse_payloads(response: Any) -> Iterator[dict[str, Any]]:
+    data_lines: list[str] = []
+    for raw in response:
+        line = raw.decode("utf-8").rstrip("\r\n")
+        if not line:
+            if data_lines:
+                try:
+                    payload = json.loads("\n".join(data_lines))
+                except json.JSONDecodeError as error:
+                    raise LiteHarnessError(
+                        "Event stream returned invalid JSON",
+                        code="invalid_event_stream_frame",
+                    ) from error
+                data_lines.clear()
+                if not isinstance(payload, dict):
+                    raise LiteHarnessError("Event stream returned an invalid frame", code="invalid_event_stream_frame")
+                yield payload
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+
+
+def _validate_event_payload(payload: dict[str, Any], run_id: str) -> None:
+    if isinstance(payload.get("message"), str) and not isinstance(payload.get("runId"), str):
+        raise LiteHarnessError(payload["message"], code="event_stream_error", retryable=True)
+    if payload.get("runId") != run_id:
+        if isinstance(payload.get("runId"), str):
+            raise LiteHarnessError("Event stream returned a different run", code="event_stream_run_mismatch")
+        raise LiteHarnessError("Event stream returned an invalid event", code="invalid_event_stream_frame")
+    sequence = payload.get("sequence")
+    if (
+        not isinstance(sequence, int)
+        or isinstance(sequence, bool)
+        or sequence < 1
+        or not isinstance(payload.get("type"), str)
+        or not isinstance(payload.get("payload"), dict)
+        or not isinstance(payload.get("createdAt"), str)
+    ):
+        raise LiteHarnessError("Event stream returned an invalid event", code="invalid_event_stream_frame")
+
+
+def _is_retryable_event_stream_error(error: BaseException) -> bool:
+    if isinstance(error, LiteHarnessError):
+        return error.code == "event_stream_error" or error.retryable or (error.status is not None and error.status >= 500)
+    return isinstance(error, (OSError, TimeoutError))
 
 
 _validate_operation_coverage()

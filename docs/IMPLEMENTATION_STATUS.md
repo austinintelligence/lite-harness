@@ -11,18 +11,27 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 ## Requirement ledger
 
-- Total required rows: 922
+- Total ledger rows: 922
+- Alpha-required rows: 828
 - Verified by current zero-skip evidence: 0
 - Declared verified in the ledger: 0
 - Declared in progress: 1
-- Currently blocked or unverified: 922
+- Currently blocked or unverified alpha rows: 828
+- Non-alpha rows retained in ledger: 94
+
+| Tier | Ledger rows | Alpha-required | Current evidence |
+| --- | ---: | ---: | ---: |
+| alpha | 828 | 828 | 0 |
+| preview | 44 | 0 | 0 |
+| beta | 25 | 0 | 0 |
+| future | 25 | 0 | 0 |
 
 | Kind | Total | Current evidence | Declared verified |
 | --- | ---: | ---: | ---: |
 | frozen-decision | 32 | 0 | 0 |
-| phase-exit | 13 | 0 | 0 |
+| phase-exit | 12 | 0 | 0 |
 | alpha-gate | 22 | 0 | 0 |
-| contract-requirement | 855 | 0 | 0 |
+| contract-requirement | 762 | 0 | 0 |
 
 ## Alpha gates
 

@@ -150,7 +150,7 @@ export class DockerToolRuntime implements ToolRuntime {
       if (usage.totalBytes - usage.existingBytes + contentBytes > quotaBytes) {
         throw new Error(`Workspace write exceeds the ${quotaBytes}-byte quota`);
       }
-      const result = await this.#runTool(
+      const result = await this.#runWorkspaceMutation(mount, params, () => this.#runTool(
         mount,
         [
           "sh",
@@ -162,7 +162,7 @@ export class DockerToolRuntime implements ToolRuntime {
         content,
         params,
         "write",
-      );
+      ));
       return commandResult(params.call.id, result, { path, bytes: contentBytes });
     }
 
@@ -182,17 +182,17 @@ export class DockerToolRuntime implements ToolRuntime {
     if (params.call.name === "shell_exec") {
       const script = boundedStringArgument(params.call, "script", 65_536);
       const cwd = workspaceDirectoryArgument(params.call, "cwd");
-      const result = await this.#runTool(
+      const result = await this.#runWorkspaceMutation(mount, params, () => this.#runTool(
         mount, ["bash", "--noprofile", "--norc", "-o", "pipefail", "-s"], script,
         params, "shell", this.#maxOutputBytes, false, cwd,
-      );
+      ));
       return commandResult(params.call.id, result, { cwd });
     }
 
     if (params.call.name === "process_exec") {
       const argv = stringArrayArgument(params.call, "argv", 1, 256);
       const cwd = workspaceDirectoryArgument(params.call, "cwd");
-      const result = await this.#runTool(mount, argv, undefined, params, "process", this.#maxOutputBytes, false, cwd);
+      const result = await this.#runWorkspaceMutation(mount, params, () => this.#runTool(mount, argv, undefined, params, "process", this.#maxOutputBytes, false, cwd));
       return commandResult(params.call.id, result, { cwd, executable: argv[0] });
     }
 
@@ -215,16 +215,19 @@ export class DockerToolRuntime implements ToolRuntime {
       const git = ["git", "-c", "core.hooksPath=/dev/null", "apply", "--whitespace=nowarn", "-"];
       const checked = await this.#runTool(mount, [...git.slice(0, -1), "--check", "-"], patch, params, "patch-check");
       if (checked.code !== 0) return commandResult(params.call.id, checked, { applied: false });
-      const applied = await this.#runTool(mount, git, patch, params, "patch-apply");
+      const applied = await this.#runWorkspaceMutation(mount, params, () => this.#runTool(mount, git, patch, params, "patch-apply"));
       return commandResult(params.call.id, applied, { applied: applied.code === 0 });
     }
 
     if (params.call.name === "git_exec") {
       const args = stringArrayArgument(params.call, "args", 1, 256);
       assertAllowedGitSubcommand(args[0] as string);
-      const result = await this.#runTool(mount, [
+      const runGit = () => this.#runTool(mount, [
         "git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "--no-optional-locks", ...args,
       ], undefined, params, "git");
+      const result = gitMutation(args[0] as string)
+        ? await this.#runWorkspaceMutation(mount, params, runGit)
+        : await runGit();
       return commandResult(params.call.id, result, { subcommand: args[0] });
     }
 
@@ -236,7 +239,7 @@ export class DockerToolRuntime implements ToolRuntime {
       const command = params.call.name === "package_run"
         ? [...executable, "pack", ...args]
         : [...executable, "run", optionalBoundedString(params.call.arguments.script, "script", 128) ?? (params.call.name === "test_run" ? "test" : "build"), "--", ...args];
-      const result = await this.#runTool(mount, command, undefined, params, params.call.name, this.#maxOutputBytes, false, cwd);
+      const result = await this.#runWorkspaceMutation(mount, params, () => this.#runTool(mount, command, undefined, params, params.call.name, this.#maxOutputBytes, false, cwd));
       return commandResult(params.call.id, result, { manager, cwd });
     }
 
@@ -442,6 +445,36 @@ export class DockerToolRuntime implements ToolRuntime {
     return { totalBytes: kilobytes * 1024, existingBytes };
   }
 
+  async #assertWorkspaceQuota(mount: WorkspaceMount, params: ToolExecutionContext): Promise<void> {
+    const quotaBytes = this.config.workspaceQuotaBytes ?? 1024 * 1024 * 1024;
+    const usage = await this.#workspaceUsage(mount, ".", params);
+    if (usage.totalBytes > quotaBytes) throw new Error(`Workspace mutation exceeded the ${quotaBytes}-byte quota; the operation was not accepted`);
+  }
+
+  async #runWorkspaceMutation(
+    mount: WorkspaceMount,
+    params: ToolExecutionContext,
+    operation: () => Promise<DockerCommandResult>,
+  ): Promise<DockerCommandResult> {
+    let result: DockerCommandResult | undefined;
+    let executionError: unknown;
+    try {
+      result = await operation();
+    } catch (error) {
+      executionError = error;
+    }
+    let quotaError: unknown;
+    try {
+      await this.#assertWorkspaceQuota(mount, params);
+    } catch (error) {
+      quotaError = error;
+    }
+    if (executionError && quotaError) throw new AggregateError([executionError, quotaError], "Workspace mutation and quota validation both failed");
+    if (executionError) throw executionError;
+    if (quotaError) throw quotaError;
+    return result!;
+  }
+
   #registeredPath(workspaceId: string, principal?: InternalPrincipal): string | undefined {
     const configured = this.config.resolveRegisteredWorkspace?.(workspaceId, principal);
     if (!configured) return undefined;
@@ -499,23 +532,7 @@ export class DockerToolRuntime implements ToolRuntime {
           ...label("attempt", params.attemptId),
           ...label("tool-call", params.call.id),
           "--interactive",
-          "--network",
-          "none",
-          "--read-only",
-          "--cap-drop",
-          "ALL",
-          "--security-opt",
-          "no-new-privileges",
-          "--pids-limit",
-          String(this.config.pidsLimit ?? 64),
-          "--memory",
-          this.config.memory ?? "256m",
-          "--cpus",
-          this.config.cpus ?? "1",
-          "--user",
-          "1000:1000",
-          "--tmpfs",
-          "/tmp:rw,noexec,nosuid,nodev,size=64m",
+          ...dockerMaintenanceHardeningArgs(this.config, { user: "1000:1000", tmpfsMode: "tool" }),
           "--workdir",
           workingDirectory === "." ? "/workspace" : `/workspace/${workingDirectory.replaceAll("\\", "/")}`,
           ...mountArgs(mount, readOnly),
@@ -609,16 +626,29 @@ export class DockerToolRuntime implements ToolRuntime {
     if (listed.code !== 0) throw new Error(`Could not list managed Docker containers: ${listed.stderr}`);
     const records = await store.listRuntimeContainers();
     const storedIds = new Set(records.map((record) => record.runtimeContainerId));
-    const containerIds = new Set([
-      ...records.map((record) => record.runtimeContainerId),
-      ...listed.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-    ]);
+    const listedIds = new Set(listed.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean));
     const failures: unknown[] = [];
     let reaped = 0;
-    for (const runtimeContainerId of containerIds) {
+    for (const record of records) {
+      const runtimeContainerId = record.runtimeContainerId;
+      try {
+        await inspectContainerState((args, options) => this.#run(args, options), runtimeContainerId);
+        // Manager has no reattach protocol for a process that owns an active
+        // container. A durable record therefore proves that the container was
+        // ours, not that it is safe to leave it running after Manager death.
+        // Reap active as well as terminal/STOPPING records; RunService marks
+        // the interrupted run ORPHANED and a deliberate retry can start clean.
+        await killAndReapContainer((args, options) => this.#run(args, options), runtimeContainerId);
+        await store.removeRuntimeContainer(runtimeContainerId);
+        reaped += 1;
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const runtimeContainerId of listedIds) {
+      if (storedIds.has(runtimeContainerId)) continue;
       try {
         await killAndReapContainer((args, options) => this.#run(args, options), runtimeContainerId);
-        if (storedIds.has(runtimeContainerId)) await store.removeRuntimeContainer(runtimeContainerId);
         reaped += 1;
       } catch (error) {
         failures.push(error);
@@ -693,6 +723,29 @@ export async function killAndReapContainer(
   }
 }
 
+async function inspectContainerState(
+  runner: DockerCommandRunner,
+  runtimeContainerId: string,
+): Promise<{ active: boolean }> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(runtimeContainerId)) {
+    throw new Error("Runtime container ID is invalid");
+  }
+  const inspect = await runner([
+    "container", "inspect", "--format", "{{.State.Running}}|{{.State.Status}}", runtimeContainerId,
+  ]);
+  if (inspect.code !== 0) {
+    if (isNoSuchContainer(inspect)) return { active: false };
+    throw new Error(`Could not inspect Docker tool container: ${inspect.stderr}`);
+  }
+  const [runningText, status] = inspect.stdout.trim().split("|");
+  if (runningText !== "true" && runningText !== "false") {
+    throw new Error("Docker tool container state was invalid");
+  }
+  return {
+    active: runningText === "true" || status === "running" || status === "restarting" || status === "paused",
+  };
+}
+
 async function killAndReapWithRetry(
   runner: DockerCommandRunner,
   runtimeContainerId: string,
@@ -731,19 +784,28 @@ function labelDigest(value: string): string {
 
 export function dockerMaintenanceHardeningArgs(
   config: Pick<DockerRuntimeConfig, "memory" | "cpus" | "pidsLimit">,
-  options: { user?: string; capabilities?: readonly string[] } = {},
+  options: { user?: string; capabilities?: readonly string[]; tmpfsMode?: "tool" | "maintenance" } = {},
 ): string[] {
   const capabilities = options.capabilities ?? [];
+  const memory = config.memory ?? "256m";
   return [
     "--network", "none",
     "--read-only",
     "--cap-drop", "ALL",
     ...capabilities.flatMap((capability) => ["--cap-add", capability]),
     "--security-opt", "no-new-privileges=true",
+    "--security-opt", "seccomp=default",
     "--pids-limit", String(config.pidsLimit ?? 64),
-    "--memory", config.memory ?? "256m",
+    "--memory", memory,
+    "--memory-swap", memory,
     "--cpus", config.cpus ?? "1",
-    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+    "--ulimit", "nofile=1024:1024",
+    "--log-driver", "json-file",
+    "--log-opt", "max-size=10m",
+    "--log-opt", "max-file=3",
+    "--tmpfs", options.tmpfsMode === "tool"
+      ? "/tmp:rw,noexec,nosuid,nodev,size=64m"
+      : "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
     ...(options.user ? ["--user", options.user] : []),
   ];
 }
@@ -1002,6 +1064,10 @@ function packageManagerArgument(value: unknown): "pnpm" | "npm" | "yarn" {
 function assertAllowedGitSubcommand(value: string): void {
   const allowed = new Set(["status", "diff", "log", "show", "branch", "rev-parse", "add", "commit", "restore", "rm", "mv", "apply"]);
   if (!allowed.has(value)) throw new Error(`Git subcommand is not allowed: ${value}`);
+}
+
+function gitMutation(value: string): boolean {
+  return new Set(["add", "commit", "restore", "rm", "mv", "apply"]).has(value);
 }
 
 function volumeName(workspaceId: string): string {

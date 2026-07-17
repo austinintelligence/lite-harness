@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { validateWorkflowStructure } from "../scripts/check-workflows.mjs";
 import { candidateEvidenceProducer, requiredExternalGateAuthorities } from "../scripts/assemble-ci-evidence.mjs";
 import {
   isAuthenticationFailure,
@@ -91,10 +92,8 @@ describe("external provider evidence producer", () => {
     const ci = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
     expect(manifest.scripts["evidence:provider"]).toBe("tsx scripts/evidence-provider.ts");
-    expect(workflow).toContain("provider-live-evidence:");
+    expect(validateWorkflowStructure(workflow, "external-provider-evidence.yml")).toEqual([]);
     expect(workflow).toContain("environment: provider-live");
-    expect(workflow).toContain("- all");
-    expect(workflow).toContain("inputs.gate == 'all' || inputs.gate == matrix.gate");
     expect(workflow).toContain("runs-on: [self-hosted, provider-live]");
     expect(workflow).toContain("LITE_HARNESS_OPENAI_API_KEY");
     expect(workflow).toContain("LITE_HARNESS_ANTHROPIC_API_KEY");

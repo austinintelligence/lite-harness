@@ -9,13 +9,32 @@ import { InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 import {
   LocalWorkspaceSnapshotStore, ManagedWorkspaceLifecycle, StaticSnapshotKeyProvider,
-  workspaceSnapshotIdentity, type SnapshotKeyProvider, type WorkspaceLifecycleRuntime, type WorkspaceLifecycleStore,
+  SnapshotCompactorQueue, workspaceSnapshotIdentity, type SnapshotKeyProvider, type WorkspaceLifecycleRuntime, type WorkspaceLifecycleStore,
 } from "@lite-harness/workspace";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("automatic workspace snapshot lifecycle", () => {
+  it("coalesces pending checkpoints per workspace and bounds compaction concurrency", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-snapshot-queue-")); roots.push(root);
+    let active = 0; let maximumActive = 0; let executions = 0;
+    const queue = new SnapshotCompactorQueue(root, async (workspaceId) => {
+      active += 1; maximumActive = Math.max(maximumActive, active); executions += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return { workspaceId, sha256: "a".repeat(64), plaintextBytes: 1, createdAt: new Date().toISOString(), path: join(root, workspaceId) };
+    }, { maxConcurrent: 1, minFreeBytes: 0 });
+    const records = await Promise.all([
+      queue.enqueue("same"), queue.enqueue("same"), queue.enqueue("other"),
+    ]);
+    expect(records[0]).toEqual(records[1]);
+    expect(executions).toBe(2);
+    expect(maximumActive).toBe(1);
+    queue.close();
+    await expect(queue.enqueue("closed")).rejects.toThrow(/closed/);
+  });
+
   it("A10-STATE-MACHINE restores cold state before use and deletes warm data only after a verified checkpoint", async () => {
     const store = new SqliteRunStore(temporary("state.sqlite"));
     const snapshots = new LocalWorkspaceSnapshotStore(temporary("snapshots"), new StaticSnapshotKeyProvider(Buffer.alloc(32, 7)));

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { validateWorkflowStructure } from "./check-workflows.mjs";
 import { writePolicyEvidence } from "./evidence-lib.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -13,10 +14,11 @@ const required = [
   "docs/adr/README.md", "docs/adr/RESEARCH.md", "docs/adr/0001-node-typescript-stack.md",
   "docs/adr/0032-behavior-defined-compatibility.md", "docs/adr/0052-alpha-scope-and-preview-boundaries.md",
   "docs/requirements/alpha-ledger.yaml", "docs/requirements/defect-ledger.yaml",
+  "docs/execution-ledger.json",
   "docs/requirements/BASELINE_DRIFT.md",
   "evidence/baseline/0bcdb123335e5883d66287643b22ab707d2893bb/drift.json",
   "docs/performance-baseline.json", "docs/pxpipe-evaluation.json", "docs/pxpipe-paired-evaluation.json",
-  "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json",
+  "schemas/alpha-ledger.schema.json", "schemas/defect-ledger.schema.json", "schemas/release-evidence.schema.json", "schemas/execution-ledger.schema.json",
   "evidence/baseline/f9d522289b500174e4e387b6078f907ea4ac56fa/baseline.json",
   ".github/workflows/ci.yml", ".github/workflows/images.yml", ".gitattributes", ".gitignore",
   "docker/tool-runtime/Dockerfile", "docker/tool-runtime/.dockerignore",
@@ -98,6 +100,12 @@ try {
 const ciWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 const externalWorkflow = readFileSync(resolve(root, ".github/workflows/external-platform-evidence.yml"), "utf8");
 const providerWorkflow = readFileSync(resolve(root, ".github/workflows/external-provider-evidence.yml"), "utf8");
+for (const [filename, workflow] of [
+  ["external-platform-evidence.yml", externalWorkflow],
+  ["external-provider-evidence.yml", providerWorkflow],
+]) {
+  for (const failure of validateWorkflowStructure(workflow, filename)) failures.push(`workflow policy: ${failure}`);
+}
 for (const command of [
   "pnpm verify", "pnpm audit --prod --audit-level high", "pnpm generate:sbom",
   "pnpm check:secrets", "pnpm check:provenance", "pnpm check:release", "pnpm check:truth-structure", "pnpm check:evidence",

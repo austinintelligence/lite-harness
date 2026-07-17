@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, readFile, rename, rm, stat as statFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export interface SecretStore {
   get(key: string, signal?: AbortSignal): Promise<string | undefined>;
+  getOrCreate(key: string, createValue: () => string, signal?: AbortSignal): Promise<{ value: string; created: boolean }>;
   set(key: string, value: string, signal?: AbortSignal): Promise<void>;
   delete(key: string, signal?: AbortSignal): Promise<boolean>;
 }
@@ -28,7 +29,7 @@ export class OsSecretStore implements SecretStore {
     validateKey(key);
     const platform = this.options.platform ?? process.platform;
     if (platform === "win32") {
-      return await this.#withWindowsLock(async () => {
+        return await this.#withWindowsLock(async () => {
         const encrypted = (await this.#readWindows())[key];
         if (!encrypted) return undefined;
         const result = await this.#runner("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", DPAPI_UNPROTECT], encrypted, signal);
@@ -45,14 +46,37 @@ export class OsSecretStore implements SecretStore {
     return result.stdout.replace(/[\r\n]+$/, "");
   }
 
+  async getOrCreate(key: string, createValue: () => string, signal?: AbortSignal): Promise<{ value: string; created: boolean }> {
+    validateKey(key);
+    const platform = this.options.platform ?? process.platform;
+    if (platform === "win32") {
+      return await this.#withWindowsLock(async () => {
+        const values = await this.#readWindows();
+        const encrypted = values[key];
+        if (encrypted) return { value: await this.#unprotectWindows(encrypted, signal), created: false };
+        const value = createValue();
+        validateValue(value);
+        values[key] = await this.#protectWindows(value, signal);
+        await this.#writeWindows(values);
+        return { value, created: true };
+      });
+    }
+    const existing = await this.get(key, signal);
+    if (existing !== undefined) return { value: existing, created: false };
+    const value = createValue();
+    validateValue(value);
+    await this.set(key, value, signal);
+    return { value, created: true };
+  }
+
   async set(key: string, value: string, signal?: AbortSignal): Promise<void> {
     validateKey(key); validateValue(value);
     const platform = this.options.platform ?? process.platform;
     if (platform === "win32") {
       await this.#withWindowsLock(async () => {
-        const result = await this.#runner("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", DPAPI_PROTECT], Buffer.from(value).toString("base64"), signal);
-        if (result.code !== 0 || !result.stdout.trim()) throw new Error("Windows DPAPI credential encryption failed");
-        const values = await this.#readWindows(); values[key] = result.stdout.trim(); await this.#writeWindows(values);
+        const values = await this.#readWindows();
+        values[key] = await this.#protectWindows(value, signal);
+        await this.#writeWindows(values);
       });
       return;
     }
@@ -101,6 +125,28 @@ export class OsSecretStore implements SecretStore {
     }
   }
 
+  async #protectWindows(value: string, signal?: AbortSignal): Promise<string> {
+    const result = await this.#runner(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", DPAPI_PROTECT],
+      Buffer.from(value).toString("base64"),
+      signal,
+    );
+    if (result.code !== 0 || !result.stdout.trim()) throw new Error("Windows DPAPI credential encryption failed");
+    return result.stdout.trim();
+  }
+
+  async #unprotectWindows(encrypted: string, signal?: AbortSignal): Promise<string> {
+    const result = await this.#runner(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", DPAPI_UNPROTECT],
+      encrypted,
+      signal,
+    );
+    if (result.code !== 0) throw new Error("Windows DPAPI credential decryption failed");
+    return Buffer.from(result.stdout.trim(), "base64").toString("utf8");
+  }
+
   async #writeWindows(values: Record<string, string>): Promise<void> {
     const path = this.#windowsPath();
     await mkdir(dirname(path), { recursive: true });
@@ -125,16 +171,73 @@ export class OsSecretStore implements SecretStore {
   }
 
   async #withWindowsLock<T>(operation: () => Promise<T>): Promise<T> {
+    const lockPath = `${this.#windowsPath()}.lock`;
+    await mkdir(dirname(lockPath), { recursive: true });
     const predecessor = this.#windowsTail;
     let release!: () => void;
     this.#windowsTail = new Promise<void>((resolve) => { release = resolve; });
     await predecessor;
-    try { return await operation(); } finally { release(); }
+    let lock: Awaited<ReturnType<typeof openFile>> | undefined;
+    try {
+      lock = await this.#acquireWindowsLock(lockPath);
+      return await operation();
+    }
+    finally {
+      release();
+      if (lock) {
+        await lock.close();
+        await rm(lockPath, { force: true });
+      }
+    }
+  }
+
+  async #acquireWindowsLock(lockPath: string): Promise<Awaited<ReturnType<typeof openFile>>> {
+    const deadline = Date.now() + 30_000;
+    while (true) {
+      try {
+        const lock = await openFile(lockPath, "wx", 0o600);
+        await lock.writeFile(`${process.pid}\n`, "utf8");
+        return lock;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        try {
+          const metadata = await statFile(lockPath);
+          if (Date.now() - metadata.mtimeMs > 30_000) {
+            let ownerPid: number | undefined;
+            try {
+              const rawOwner = (await readFile(lockPath, "utf8")).trim();
+              const parsedOwner = Number(rawOwner);
+              if (Number.isSafeInteger(parsedOwner) && parsedOwner > 0) ownerPid = parsedOwner;
+            } catch (readError) {
+              if ((readError as NodeJS.ErrnoException).code !== "ENOENT") throw readError;
+            }
+            if (ownerPid === undefined || !processIsAlive(ownerPid)) {
+              await rm(lockPath, { force: true });
+              continue;
+            }
+          }
+        } catch (metadataError) {
+          if ((metadataError as NodeJS.ErrnoException).code !== "ENOENT") throw metadataError;
+          continue;
+        }
+        if (Date.now() >= deadline) throw new Error("Windows credential index lock acquisition timed out");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
   }
 }
 
-const DPAPI_PROTECT = "$v=[Console]::In.ReadToEnd().Trim();$b=[Convert]::FromBase64String($v);$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
-const DPAPI_UNPROTECT = "$v=[Console]::In.ReadToEnd().Trim();$b=[Convert]::FromBase64String($v);$p=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+const DPAPI_PROTECT = "Add-Type -AssemblyName System.Security;$v=[Console]::In.ReadToEnd().Trim();$b=[Convert]::FromBase64String($v);$p=[System.Security.Cryptography.ProtectedData]::Protect($b,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
+const DPAPI_UNPROTECT = "Add-Type -AssemblyName System.Security;$v=[Console]::In.ReadToEnd().Trim();$b=[Convert]::FromBase64String($v);$p=[System.Security.Cryptography.ProtectedData]::Unprotect($b,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
 
 async function runCommand(command: string, args: readonly string[], input?: string, signal?: AbortSignal): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {

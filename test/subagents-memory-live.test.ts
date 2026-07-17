@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import { RunService } from "@lite-harness/control-plane";
 import { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
+import { configureProductionOptionalSystems } from "../apps/manager/src/optional-systems.js";
 import { BrokeredToolRuntime, InMemoryToolRuntime } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
@@ -93,5 +94,34 @@ describe("live memory and brokered tools", () => {
     await expect(broker.execute({ workspaceId: "w", call: { id: "two", name: "read_file", arguments: {} } }))
       .resolves.toMatchObject({ content: "fallback" });
     expect(fallback.execute).toHaveBeenCalledOnce();
+  });
+
+  it("assembles bounded owner-scoped durable memory into model context", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-memory-context-")); cleanup.push(directory);
+    const memory = new SqliteMemoryStore(join(directory, "memory.db"));
+    const entry = memory.add("tenant", "workspace", "The blue canary requires the health gate before deployment.");
+    const runtime = new BrokeredToolRuntime(new InMemoryToolRuntime());
+    const systems = await configureProductionOptionalSystems({
+      dataDir: directory, modelId: "model", runtime, memoryStore: memory,
+      environment: { LITE_HARNESS_MEMORY_CONTEXT_ENTRIES: "2", LITE_HARNESS_MEMORY_CONTEXT_BYTES: "4096" },
+    });
+    try {
+      const observed: Array<readonly { role: string; content: string }[]> = [];
+      const model = {
+        streamTurn: async function* (params: { messages: readonly { role: "system" | "user" | "assistant" | "tool"; content: string }[] }) {
+          observed.push(params.messages);
+          yield { type: "completed" as const, finishReason: "stop" as const };
+        },
+      };
+      await new AgentRunner(model, runtime, 1, systems.context).run({
+        input: "blue canary", workspaceId: "workspace",
+        principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] }, onEvent: () => undefined,
+      });
+      expect(observed[0]?.[0]).toMatchObject({ role: "system", content: expect.stringContaining(entry.id) });
+      expect(observed[0]?.[0]?.content).toContain("reference only");
+    } finally {
+      await systems.stop();
+      memory.close();
+    }
   });
 });

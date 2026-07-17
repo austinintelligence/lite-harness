@@ -132,6 +132,7 @@ function isSameOrDescendant(candidate: string, root: string, separator: string):
 
 export interface SnapshotKeyProvider {
   getKey(workspaceId: string): Promise<Buffer>;
+  metadata?(): { keyVersion: 1; keyScope: "static" | "workspace-derived" };
 }
 
 export class StaticSnapshotKeyProvider implements SnapshotKeyProvider {
@@ -142,6 +143,25 @@ export class StaticSnapshotKeyProvider implements SnapshotKeyProvider {
   async getKey(): Promise<Buffer> {
     return Buffer.from(this.key);
   }
+
+  metadata(): { keyVersion: 1; keyScope: "static" } { return { keyVersion: 1, keyScope: "static" }; }
+}
+
+/** Derives an isolated snapshot data key without persisting the raw workspace key. */
+export class DerivedSnapshotKeyProvider implements SnapshotKeyProvider {
+  readonly #rootKey: Buffer;
+
+  constructor(rootKey: Buffer) {
+    if (rootKey.length !== 32) throw new Error("Snapshot root key must be exactly 32 bytes");
+    this.#rootKey = Buffer.from(rootKey);
+  }
+
+  async getKey(workspaceId: string): Promise<Buffer> {
+    if (!workspaceId.trim() || workspaceId.length > 512 || /[\0\r\n]/.test(workspaceId)) throw new Error("Snapshot workspace identity is invalid");
+    return Buffer.from(hkdfSync("sha256", this.#rootKey, Buffer.from("lite-harness-snapshot-salt-v1"), Buffer.from(`workspace:${workspaceId}`), 32));
+  }
+
+  metadata(): { keyVersion: 1; keyScope: "workspace-derived" } { return { keyVersion: 1, keyScope: "workspace-derived" }; }
 }
 
 export interface SnapshotRecord {
@@ -160,12 +180,15 @@ interface SnapshotHeader {
   sha256: string;
   nonce: string;
   algorithm: "aes-256-gcm+gzip";
+  keyVersion?: 1;
+  keyScope?: "static" | "workspace-derived";
 }
 
 export class LocalWorkspaceSnapshotStore {
   constructor(
     private readonly root: string,
     private readonly keys: SnapshotKeyProvider,
+    private readonly legacyKeys?: SnapshotKeyProvider,
     private readonly maxArchiveBytes = 512 * 1024 * 1024,
   ) {}
 
@@ -173,6 +196,7 @@ export class LocalWorkspaceSnapshotStore {
     if (archive.length > this.maxArchiveBytes) throw new Error("Workspace snapshot exceeds the archive limit");
     const key = await this.keys.getKey(workspaceId);
     const nonce = randomBytes(12);
+    const keyMetadata = this.keys.metadata?.();
     const header: SnapshotHeader = {
       schemaVersion: 2,
       workspaceId,
@@ -181,6 +205,7 @@ export class LocalWorkspaceSnapshotStore {
       sha256: Buffer.from(await webcrypto.subtle.digest("SHA-256", archive as unknown as BufferSource)).toString("hex"),
       nonce: nonce.toString("base64"),
       algorithm: "aes-256-gcm+gzip",
+      ...(keyMetadata ?? {}),
     };
     const paths = this.#paths(workspaceId);
     await mkdir(dirname(paths.current), { recursive: true });
@@ -230,7 +255,7 @@ export class LocalWorkspaceSnapshotStore {
     const descriptor = await readSnapshotDescriptor(path, this.maxArchiveBytes);
     const header = descriptor.header;
     if (header.workspaceId !== workspaceId) throw new Error("Snapshot identity or version is invalid");
-    const key = await this.keys.getKey(workspaceId);
+    const key = await this.#keyForHeader(workspaceId, header);
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(header.nonce, "base64"));
     decipher.setAAD(snapshotAssociatedData(header));
     decipher.setAuthTag(descriptor.tag);
@@ -245,6 +270,14 @@ export class LocalWorkspaceSnapshotStore {
       throw new Error("Snapshot content verification failed");
     }
     return archive;
+  }
+
+  async #keyForHeader(workspaceId: string, header: SnapshotHeader): Promise<Buffer> {
+    // Snapshots written before key metadata was introduced used the static root
+    // key. Production now derives a workspace-scoped key, so retain an explicit
+    // legacy provider for a safe, authenticated upgrade path.
+    if (header.keyScope === "workspace-derived") return this.keys.getKey(workspaceId);
+    return this.legacyKeys?.getKey(workspaceId) ?? this.keys.getKey(workspaceId);
   }
 
   async #verifySnapshotBeforeRotation(workspaceId: string, path: string, expectedSha256: string): Promise<void> {
@@ -332,7 +365,12 @@ export class ManagedWorkspaceLifecycle {
     private readonly store: WorkspaceLifecycleStore,
     private readonly runtime: WorkspaceLifecycleRuntime,
     private readonly snapshots: LocalWorkspaceSnapshotStore,
+    private readonly compactor?: SnapshotCompactorQueue,
   ) {}
+
+  close(): void {
+    this.compactor?.close();
+  }
 
   async prepare(run: WorkspaceLifecycleOwner, signal?: AbortSignal): Promise<{ restored: boolean; recoveredFromPrevious: boolean }> {
     signal?.throwIfAborted();
@@ -380,8 +418,13 @@ export class ManagedWorkspaceLifecycle {
     this.#transition(run, "IN_USE", "SNAPSHOTTING");
     const principal = lifecyclePrincipal(run);
     try {
-      const archive = await this.runtime.exportWorkspace(run.workspaceId, principal, options.signal);
-      const snapshot = await this.snapshots.create(workspaceSnapshotIdentity(run), archive);
+      const snapshotJob = async () => {
+        const archive = await this.runtime.exportWorkspace(run.workspaceId, principal, options.signal);
+        return await this.snapshots.create(workspaceSnapshotIdentity(run), archive);
+      };
+      const snapshot = this.compactor
+        ? await this.compactor.enqueue(workspaceSnapshotIdentity(run), snapshotJob)
+        : await snapshotJob();
       if (options.makeCold) {
         await this.runtime.removeWorkspace(run.workspaceId, principal);
         this.#transition(run, "SNAPSHOTTING", "COLD");
@@ -488,7 +531,9 @@ function validateSnapshotHeader(value: unknown, maxArchiveBytes: number): Snapsh
       typeof record.createdAt !== "string" || !Number.isFinite(Date.parse(record.createdAt)) ||
       !Number.isSafeInteger(record.plaintextBytes) || (record.plaintextBytes as number) < 0 ||
       (record.plaintextBytes as number) > maxArchiveBytes || typeof record.sha256 !== "string" ||
-      !/^[a-f0-9]{64}$/.test(record.sha256) || nonce.length !== 12 || record.algorithm !== "aes-256-gcm+gzip") {
+       !/^[a-f0-9]{64}$/.test(record.sha256) || nonce.length !== 12 || record.algorithm !== "aes-256-gcm+gzip" ||
+       (record.keyVersion !== undefined && record.keyVersion !== 1) ||
+       (record.keyScope !== undefined && record.keyScope !== "static" && record.keyScope !== "workspace-derived")) {
     throw new Error("Snapshot identity or version is invalid");
   }
   return normalizeSnapshotHeader(record as unknown as SnapshotHeader);
@@ -503,6 +548,8 @@ function normalizeSnapshotHeader(header: SnapshotHeader): SnapshotHeader {
     sha256: header.sha256,
     nonce: header.nonce,
     algorithm: "aes-256-gcm+gzip",
+    ...(header.keyVersion === undefined ? {} : { keyVersion: header.keyVersion }),
+    ...(header.keyScope === undefined ? {} : { keyScope: header.keyScope }),
   };
 }
 
@@ -543,9 +590,16 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
+interface SnapshotQueueEntry {
+  snapshot: (workspaceId: string) => Promise<SnapshotRecord>;
+  waiters: Array<{ resolve(value: SnapshotRecord): void; reject(error: unknown): void }>;
+}
+
 export class SnapshotCompactorQueue {
-  readonly #pending = new Map<string, Array<{ resolve(value: SnapshotRecord): void; reject(error: unknown): void }>>();
+  readonly #pending = new Map<string, SnapshotQueueEntry>();
+  readonly #active = new Map<string, SnapshotQueueEntry>();
   #running = 0;
+  #closed = false;
 
   constructor(
     private readonly root: string,
@@ -553,35 +607,49 @@ export class SnapshotCompactorQueue {
     private readonly options: { maxConcurrent?: number; maxLoadPerCpu?: number; minFreeBytes?: number } = {},
   ) {}
 
-  enqueue(workspaceId: string): Promise<SnapshotRecord> {
+  enqueue(workspaceId: string, snapshot = this.snapshot): Promise<SnapshotRecord> {
     return new Promise((resolve, reject) => {
-      const waiters = this.#pending.get(workspaceId) ?? [];
-      waiters.push({ resolve, reject });
-      this.#pending.set(workspaceId, waiters);
+      if (this.#closed) {
+        reject(new Error("Snapshot compaction queue is closed"));
+        return;
+      }
+      const entry = this.#active.get(workspaceId) ?? this.#pending.get(workspaceId) ?? { snapshot, waiters: [] };
+      entry.waiters.push({ resolve, reject });
+      if (this.#active.get(workspaceId) !== entry) this.#pending.set(workspaceId, entry);
       this.#drain();
     });
   }
 
   get pendingCount(): number { return this.#pending.size; }
 
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    const error = new Error("Snapshot compaction queue is closed");
+    for (const entry of this.#pending.values()) entry.waiters.forEach((waiter) => waiter.reject(error));
+    this.#pending.clear();
+  }
+
   #drain(): void {
+    if (this.#closed) return;
     const max = this.options.maxConcurrent ?? 1;
     while (this.#running < max && this.#pending.size > 0) {
-      const entry = this.#pending.entries().next().value as [string, Array<{ resolve(value: SnapshotRecord): void; reject(error: unknown): void }>];
+      const entry = this.#pending.entries().next().value as [string, SnapshotQueueEntry];
       this.#pending.delete(entry[0]); this.#running += 1;
-      void this.#run(entry[0]).then(
-        (record) => entry[1].forEach((waiter) => waiter.resolve(record)),
-        (error) => entry[1].forEach((waiter) => waiter.reject(error)),
-      ).finally(() => { this.#running -= 1; this.#drain(); });
+      this.#active.set(entry[0], entry[1]);
+      void this.#run(entry[0], entry[1].snapshot).then(
+        (record) => entry[1].waiters.forEach((waiter) => waiter.resolve(record)),
+        (error) => entry[1].waiters.forEach((waiter) => waiter.reject(error)),
+      ).finally(() => { this.#active.delete(entry[0]); this.#running -= 1; this.#drain(); });
     }
   }
 
-  async #run(workspaceId: string): Promise<SnapshotRecord> {
+  async #run(workspaceId: string, snapshot: (workspaceId: string) => Promise<SnapshotRecord>): Promise<SnapshotRecord> {
     const disk = statfsSync(this.root);
     if (disk.bavail * disk.bsize < (this.options.minFreeBytes ?? 1024 * 1024 * 1024)) throw new Error("Snapshot deferred because disk space is low");
     const cpuCount = Math.max(1, availableParallelism());
     if (loadavg()[0] / cpuCount > (this.options.maxLoadPerCpu ?? 4)) throw new Error("Snapshot deferred because host load is high");
-    return await this.snapshot(workspaceId);
+    return await snapshot(workspaceId);
   }
 }
 

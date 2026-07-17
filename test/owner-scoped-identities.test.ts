@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { InMemoryToolRuntime } from "@lite-harness/runtime";
+import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { dockerWorkspaceVolumeName } from "@lite-harness/runtime-docker";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
@@ -27,12 +28,22 @@ describe("owner-scoped resource identities", () => {
 
     expect(store.listAgentProfiles(firstOwner).map((record) => record.id)).toEqual(["shared-agent"]);
     expect(store.listAgentProfiles(secondOwner).map((record) => record.id)).toEqual(["shared-agent"]);
+    store.createAgentProfile({
+      id: "unused-agent", version: 1, appId: firstOwner.appId, tenantId: firstOwner.tenantId, userId: firstOwner.userId,
+      name: "Unused", instructions: "", modelCapabilities: ["text"], allowedTools: [], defaultBudget: DEFAULT_RUN_BUDGET, createdAt: new Date().toISOString(),
+    });
+    expect(store.deleteAgentProfile("unused-agent", firstOwner)).toBe(true);
+    expect(store.getAgentProfile("unused-agent", firstOwner)).toBeUndefined();
+    expect(store.getAgentProfile("shared-agent", firstOwner)).toBeDefined();
     expect(store.listWorkspaces(firstOwner).map((record) => record.id)).toEqual(["shared-workspace"]);
     expect(store.listWorkspaces(secondOwner).map((record) => record.id)).toEqual(["shared-workspace"]);
     expect(store.getSession("shared-session", firstOwner)).toMatchObject({ userId: "user-one" });
     expect(store.getSession("shared-session", secondOwner)).toMatchObject({ userId: "user-two" });
     expect(store.listSessionMessages("shared-session", firstOwner)).toMatchObject([{ content: "first input" }]);
     expect(store.listSessionMessages("shared-session", secondOwner)).toMatchObject([{ content: "second input" }]);
+    expect(store.listRuns(firstOwner).map((record) => record.id)).toEqual(["run-owner-one"]);
+    expect(store.listRuns(secondOwner).map((record) => record.id)).toEqual(["run-owner-two"]);
+    expect(store.listRuns(firstOwner, 0).map((record) => record.id)).toEqual(["run-owner-one"]);
     store.close();
 
     const database = new DatabaseSync(path, { readOnly: true });

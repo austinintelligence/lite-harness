@@ -66,6 +66,31 @@ describe("AgentRunner", () => {
     expect(compiledAllowedTools).toEqual(["read_file"]);
   });
 
+  it("rejects an over-limit selected route before model streaming and carries its context window to compilation", async () => {
+    let streamCalls = 0;
+    let compiledContextWindow: number | undefined;
+    const model: ModelGateway = {
+      prepareRun: async () => ({
+        routePlanId: "route-small", modelId: "small-model", providerId: "fixture",
+        capabilities: ["text"], contextWindow: 16,
+      }),
+      async *streamTurn() {
+        streamCalls += 1;
+        yield { type: "completed", finishReason: "stop" };
+      },
+    };
+    await expect(new AgentRunner(model, new InMemoryToolRuntime(), 1, {
+      compile: async (params) => { compiledContextWindow = params.modelContextWindow; return []; },
+    }).run({
+      input: "x".repeat(256), workspaceId: "context-limit", runId: "run-context-limit",
+      attemptId: "attempt-context-limit", fencingToken: 1,
+      principal: { appId: "app", tenantId: "tenant", userId: "user", scopes: [] },
+      onEvent: () => undefined,
+    })).rejects.toMatchObject({ code: "context_limit_exceeded" });
+    expect(compiledContextWindow).toBe(16);
+    expect(streamCalls).toBe(0);
+  });
+
   it("BD-035-REGRESSION exposes a fenced agent-created artifact ID through the durable event stream", async () => {
     const workspace = new InMemoryToolRuntime();
     let fenceChecks = 0;

@@ -42,6 +42,7 @@ export interface RunStore {
     request: InternalStartRunRequest,
   ): { run: RunRecord; created: boolean };
   getRun(id: string): RunRecord | undefined;
+  listRuns(principal: ResourceOwner, limit?: number): RunRecord[];
   listChildRuns(parentRunId: string): RunRecord[];
   appendEvent(params: AppendRunEvent): RunEvent;
   listEvents(runId: string, after?: number, limit?: number): RunEvent[];
@@ -77,6 +78,8 @@ export interface RunStore {
   createAgentProfile(record: AgentProfileRecord): AgentProfileRecord;
   getAgentProfile(id: string, owner: ResourceOwner): AgentProfileRecord | undefined;
   listAgentProfiles(principal: ResourceOwner): AgentProfileRecord[];
+  deleteAgentProfile(id: string, owner: ResourceOwner): boolean;
+  deleteAgentProfile(id: string, owner: ResourceOwner): boolean;
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord;
   getWorkspace(id: string, owner: ResourceOwner): WorkspaceRecord | undefined;
   listWorkspaces(principal: ResourceOwner): WorkspaceRecord[];

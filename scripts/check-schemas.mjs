@@ -12,6 +12,7 @@ const schemas = [
   readJson("schemas/release-evidence.schema.json"),
   readJson("schemas/alpha-ledger.schema.json"),
   readJson("schemas/defect-ledger.schema.json"),
+  readJson("schemas/execution-ledger.schema.json"),
 ];
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
@@ -19,6 +20,7 @@ for (const schema of schemas) ajv.addSchema(schema);
 const documents = [
   ["schemas/alpha-ledger.schema.json", "docs/requirements/alpha-ledger.yaml"],
   ["schemas/defect-ledger.schema.json", "docs/requirements/defect-ledger.yaml"],
+  ["schemas/execution-ledger.schema.json", "docs/execution-ledger.json"],
   ["schemas/release-evidence.schema.json", "evidence/baseline/f9d522289b500174e4e387b6078f907ea4ac56fa/baseline.json"],
 ];
 const failures = [];

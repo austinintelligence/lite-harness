@@ -3,9 +3,9 @@
   "$id": "https://lite-harness.invalid/schemas/alpha-ledger.schema.json",
   "title": "Lite-Harness alpha requirement ledger",
   "type": "object",
-  "required": ["schemaVersion", "baseline", "requirements"],
+  "required": ["schemaVersion", "baseline", "tiers", "requirements"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "generatedFromFrozenContract": { "const": true },
     "baseline": {
       "type": "object",
@@ -17,15 +17,27 @@
       },
       "additionalProperties": false
     },
+    "tiers": {
+      "type": "object",
+      "required": ["alpha", "preview", "beta", "future"],
+      "properties": {
+        "alpha": { "$ref": "#/$defs/tierDefinition" },
+        "preview": { "$ref": "#/$defs/tierDefinition" },
+        "beta": { "$ref": "#/$defs/tierDefinition" },
+        "future": { "$ref": "#/$defs/tierDefinition" }
+      },
+      "additionalProperties": false
+    },
     "requirements": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "kind", "required", "title", "text", "owner", "source", "implementationPaths", "testIds", "ciJob", "evidenceArtifacts", "status", "blockers"],
+        "required": ["id", "kind", "tier", "required", "title", "text", "owner", "source", "implementationPaths", "testIds", "ciJob", "evidenceArtifacts", "status", "blockers"],
         "properties": {
           "id": { "type": "string", "pattern": "^(?:D[0-3][0-9]|P(?:0[0-9]|1[0-2])|A(?:0[1-9]|1[0-9]|2[0-2])|R(?:0[7-9]|[12][0-9]|3[0-2]|34)-[0-9]{4})$" },
           "kind": { "enum": ["frozen-decision", "phase-exit", "alpha-gate", "contract-requirement"] },
-          "required": { "const": true },
+          "tier": { "enum": ["alpha", "preview", "beta", "future"] },
+          "required": { "type": "boolean" },
           "title": { "type": "string", "minLength": 1 },
           "text": { "type": "string", "minLength": 1 },
           "owner": { "type": "string", "minLength": 1 },
@@ -60,6 +72,17 @@
         },
         "additionalProperties": false
       }
+    }
+  },
+  "$defs": {
+    "tierDefinition": {
+      "type": "object",
+      "required": ["releaseRequired", "description"],
+      "properties": {
+        "releaseRequired": { "type": "boolean" },
+        "description": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

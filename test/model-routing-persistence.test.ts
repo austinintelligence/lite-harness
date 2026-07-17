@@ -67,9 +67,10 @@ describe("capability-derived durable model routing", () => {
       }); },
     };
     const compiledFor: Array<string | undefined> = [];
+    const compiledContextWindows: Array<number | undefined> = [];
     const service = new RunService(store, new AgentRunner(
       new RoutedModelGateway(registry, adapters, credentials, hooks), new InMemoryToolRuntime(), 8,
-      { compile: async (params) => { compiledFor.push(params.modelId); timeline.push(`compile:${params.modelId}`); return []; } },
+      { compile: async (params) => { compiledFor.push(params.modelId); compiledContextWindows.push(params.modelContextWindow); timeline.push(`compile:${params.modelId}`); return []; } },
     ));
     const created = service.createRun({
       agent: "vision-agent", workspace: "workspace", input: "inspect", idempotencyKey: "route-once",
@@ -79,6 +80,7 @@ describe("capability-derived durable model routing", () => {
     const attempt = store.listRunAttempts(created.runId)[0];
     expect(called).toEqual(["vision-model"]);
     expect(compiledFor).toEqual(["vision-model"]);
+    expect(compiledContextWindows).toEqual([128_000]);
     expect(timeline).toEqual([
       "route:vision-provider:vision-model:vision-provider-credential:direct",
       "compile:vision-model",

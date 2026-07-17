@@ -78,6 +78,9 @@ const runtime = new ArtifactPublishingRuntime(
   16 * 1024 * 1024,
   validateExecutionLease,
 );
+const memoryStore = configuration.memoryEnabled
+  ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
+  : undefined;
 const modelGateway = resolveModelGateway(
   configuration.provider,
   createDelegatedWorkspaceResolver(store),
@@ -93,6 +96,7 @@ const optionalSystems = await configureProductionOptionalSystems({
   ...(baseRuntime instanceof DockerToolRuntime ? { dockerRuntime: baseRuntime } : {}),
   workspaceStore: store,
   snapshotKey: snapshotRootKey,
+  ...(memoryStore ? { memoryStore } : {}),
   featureFlags: {
     contextOptimization: configuration.contextOptimizationEnabled,
     plugins: configuration.pluginsEnabled,
@@ -129,9 +133,6 @@ const runSnapshotConfiguration = {
 };
 const integrationModule = process.env.LITE_HARNESS_WEBHOOK_SECRET ? await import("@lite-harness/integrations") : undefined;
 const integrationStore = integrationModule ? new integrationModule.SqliteIntegrationStore(join(dataDir, "integrations.db")) : undefined;
-const memoryStore = configuration.memoryEnabled
-  ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
-  : undefined;
 const service = new RunService(store, new AgentRunner(modelGateway, runtime, 8, optionalSystems.context), {
   requiresApproval: configuration.approvalsRequired
     ? () => true

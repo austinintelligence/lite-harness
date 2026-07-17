@@ -7,6 +7,7 @@ import {
   LocalArtifactStore,
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
+  DerivedSnapshotKeyProvider,
   rejectSensitiveRegisteredRoot,
   StaticSnapshotKeyProvider,
   validateRegisteredBindRoot,
@@ -19,6 +20,33 @@ afterEach(() => {
 });
 
 describe("workspace durability", () => {
+  it("derives different stable snapshot keys for different workspace identities", async () => {
+    const provider = new DerivedSnapshotKeyProvider(Buffer.alloc(32, 7));
+    const first = await provider.getKey("workspace-a");
+    const second = await provider.getKey("workspace-b");
+    const repeat = await provider.getKey("workspace-a");
+    expect(first).not.toEqual(second);
+    expect(first).toEqual(repeat);
+  });
+
+  it("restores pre-derived-key snapshots through the explicit legacy static-key fallback", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-snapshot-upgrade-"));
+    directories.push(directory);
+    const rootKey = Buffer.alloc(32, 6);
+    const legacyStaticKey = { getKey: async (_workspaceId: string) => Buffer.from(rootKey) };
+    const legacy = new LocalWorkspaceSnapshotStore(directory, legacyStaticKey);
+    await legacy.create("workspace-upgrade", Buffer.from("legacy archive"));
+
+    const upgraded = new LocalWorkspaceSnapshotStore(
+      directory,
+      new DerivedSnapshotKeyProvider(rootKey),
+      new StaticSnapshotKeyProvider(rootKey),
+    );
+    await expect(upgraded.restore("workspace-upgrade")).resolves.toMatchObject({
+      archive: Buffer.from("legacy archive"), recoveredFromPrevious: false,
+    });
+  });
+
   it("BD-034-REGRESSION rejects sensitive registered bind roots with portable rules", () => {
     for (const [path, home] of [
       ["/", "/home/alice"],

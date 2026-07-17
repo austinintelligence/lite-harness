@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "branch": "lite-main",
+  "startingCommit": "786b8621f90dcde9300da25a8ca92e684e5938a9",
+  "candidateCommit": null,
+  "authority": {
+    "architecturePlan": "LITE_HARNESS_ARCHITECTURE_PLAN.md",
+    "requirementsLedger": "docs/requirements/alpha-ledger.yaml",
+    "brief": "C:/Users/drper/.codex/attachments/2d0a0768-2d54-4213-8b72-895f50553e96/pasted-text-1.txt"
+  },
+  "tiers": {
+    "alpha": { "releaseRequired": true, "description": "Required for the local alpha candidate and normal branch CI." },
+    "preview": { "releaseRequired": false, "description": "Retained in the ledger with explicit non-alpha status and no release claim." },
+    "beta": { "releaseRequired": false, "description": "Future beta scope retained for traceability; it cannot make the alpha verdict pass." },
+    "future": { "releaseRequired": false, "description": "Deferred scope retained for planning and does not affect alpha qualification." }
+  },
+  "entries": [
+    {
+      "id": "WF-001",
+      "title": "External evidence matrix gates are step-scoped and statically checked",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "GitHub Actions matrix job-level if expressions cannot safely filter matrix entries in the required reusable evidence workflows.",
+      "implementationPaths": [".github/workflows/external-platform-evidence.yml", ".github/workflows/external-provider-evidence.yml", "scripts/check-workflows.mjs", "scripts/check-release.mjs"],
+      "testIds": ["external-evidence-workflow-structure", "provider-evidence-workflow-structure"],
+      "ciJobs": ["repository-readiness"],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Structural validation passes locally without actionlint; the CI job installs actionlint before invoking the check."
+    },
+    {
+      "id": "LEDGER-001",
+      "title": "Alpha, preview, beta, and future requirements remain auditable",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The historical 922-row contract did not distinguish alpha release obligations from retained non-alpha scope.",
+      "implementationPaths": ["schemas/alpha-ledger.schema.json", "scripts/requirements-lib.mjs", "scripts/generate-requirements.mjs", "scripts/check-requirements.mjs", "scripts/generate-status.mjs", "scripts/generate-blockers.mjs", "docs/requirements/alpha-ledger.yaml", "docs/execution-ledger.json"],
+      "testIds": ["requirements-tiering"],
+      "ciJobs": ["repository-readiness"],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Current extracted counts are alpha 828, preview 44, beta 25, future 25; only alpha rows drive release verification."
+    },
+    {
+      "id": "CFG-001",
+      "title": "Installation configuration is durable and non-secret",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The installed launcher previously depended on the parent process environment and had no durable non-secret configuration file.",
+      "implementationPaths": ["packages/config/src/index.ts", "apps/launcher/src/main.ts", "apps/cli/src/main.ts", "docs/OPERATIONS.md"],
+      "testIds": ["config-installation-persistence"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Provider keys, snapshot keys, tokens, and webhook secrets are excluded from installation.json and remain OS-store/environment inputs."
+    },
+    {
+      "id": "CFG-002",
+      "title": "Role launch environments are isolated",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "Manager and Gateway children previously inherited the complete parent environment, risking secret and role-boundary leakage.",
+      "implementationPaths": ["packages/config/src/index.ts", "apps/launcher/src/main.ts"],
+      "testIds": ["config-role-environment-isolation"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "The launcher now passes explicit role allowlists plus only the role token."
+    },
+    {
+      "id": "CFG-003",
+      "title": "Windows IPC identity is installation-scoped",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The Windows default named pipe was a machine-global static path, allowing installations to collide.",
+      "implementationPaths": ["packages/config/src/index.ts", "test/config.test.ts"],
+      "testIds": ["config-installation-scoped-pipe"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": []
+    },
+    {
+      "id": "CFG-004",
+      "title": "Windows user service install starts and status verifies running state",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "Windows task installation created a task without starting it, and status considered any successful query active.",
+      "implementationPaths": ["packages/operations/src/index.ts", "apps/cli/src/main.ts", "test/operations.test.ts"],
+      "testIds": ["operations-service-lifecycle"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "The implementation adds schtasks /Run and parses a Running status."
+    },
+    {
+      "id": "CTX-001",
+      "title": "Context-window limits are enforced before provider I/O",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "Model contextWindow metadata was propagated but oversized requests were not rejected before credential resolution or network access.",
+      "implementationPaths": ["packages/provider-core/src/index.ts", "packages/agent-runtime/src/index.ts"],
+      "testIds": ["provider-context-limit", "agent-context-limit", "model-route-context-window"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "The deterministic estimator is intentionally conservative and produces context_limit_exceeded before adapter streaming."
+    },
+    {
+      "id": "SDK-001",
+      "title": "Python SDK event streams reconnect with cursors and terminal closure",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The Python SDK event iterator did not provide bounded reconnect, Last-Event-ID, duplicate suppression, gap detection, or terminal-run closure parity.",
+      "implementationPaths": ["sdks/python/src/lite_harness/client.py", "sdks/python/tests/test_client.py"],
+      "testIds": ["python-sdk-event-reconnect"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Retry budget is bounded across the iterator lifetime; deterministic focused tests passed in the worker slice."
+    },
+    {
+      "id": "DOCKER-001",
+      "title": "All Docker tool and maintenance containers use the central hardening policy",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The Docker runtime lacked explicit swap, nofile, log-rotation, and default-seccomp policy across inline and maintenance container creation.",
+      "implementationPaths": ["packages/runtime-docker/src/index.ts", "test/runtime.test.ts"],
+      "testIds": ["docker-hardening-policy", "docker-lifecycle-reconciliation"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "No Docker daemon claim is made by this ledger."
+    },
+    {
+      "id": "DOCKER-002",
+      "title": "Workspace mutations enforce an honest quota boundary",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "Quota preflight covered write_file but shell, process, package, Git, and patch operations could grow the workspace without an aggregate postcondition or rollback boundary.",
+      "implementationPaths": ["packages/runtime-docker/src/index.ts", "packages/runtime/src/index.ts"],
+      "testIds": ["docker-quota-postcondition"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "All mutation-capable Docker coding tools pass through a central post-operation quota wrapper; the command result is preserved when within quota and quota violations fail closed after cleanup."
+    },
+    {
+      "id": "DOCKER-003",
+      "title": "Startup reconciliation distinguishes active durable attempts from orphans",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "Startup reconciliation must not leave an active container running after Manager death without a reattach protocol; it must reap owned containers and let run recovery mark the interrupted run ORPHANED.",
+      "implementationPaths": ["packages/runtime-docker/src/index.ts", "packages/storage-sqlite/src/index.ts", "apps/manager/src/main.ts"],
+      "testIds": ["docker-lifecycle-reconciliation"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Owned CREATED/RUNNING, STOPPING, exited, and unlinked labeled containers are reaped at Manager startup because no reattach protocol exists; RunService then marks interrupted runs ORPHANED."
+    },
+    {
+      "id": "OPTIONAL-001",
+      "title": "Snapshot compaction and cache garbage collection are wired into Manager lifecycle",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "SnapshotCompactorQueue and cache GC implementations exist but were not connected in optional-systems manager composition.",
+      "implementationPaths": ["apps/manager/src/optional-systems.ts", "packages/workspace/src/index.ts"],
+      "testIds": ["workspace-snapshot-compactor", "optional-systems-manager"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "Queue coalescing, bounded concurrency, closed-queue behavior, derived snapshot keys, and Manager lifecycle wiring have focused deterministic coverage; Docker-backed evidence remains external."
+    },
+    {
+      "id": "EVIDENCE-001",
+      "title": "Local verification and external evidence remain separate claims",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "A local branch run cannot prove direct provider, rootless-platform, or external naming/signing evidence.",
+      "implementationPaths": [".github/workflows/ci.yml", ".github/workflows/external-platform-evidence.yml", ".github/workflows/external-provider-evidence.yml", "scripts/check-workflows.mjs", "scripts/check-release.mjs"],
+      "testIds": ["external-evidence-workflow-structure", "provider-evidence-workflow-structure"],
+      "ciJobs": ["candidate-evidence-truth", "external-platform-evidence", "external-provider-evidence"],
+      "evidenceArtifacts": [],
+      "blockers": ["External gates require their actual GitHub runner/provider credentials and must not be fabricated locally."],
+      "notes": "The final verdict may only name those gates as blocked-external after all local gates pass."
+    },
+    {
+      "id": "EVIDENCE-002",
+      "title": "Direct provider conformance remains an external gate",
+      "tier": "alpha",
+      "status": "blocked-external",
+      "finding": "Live direct OpenAI/Anthropic/Codex conformance cannot be established from deterministic fake-provider tests or the local Hermes proxy alone.",
+      "implementationPaths": ["test/hermes-provider.live.test.ts", "scripts/evidence-provider.ts", ".github/workflows/external-provider-evidence.yml"],
+      "testIds": ["hermes-provider-live-contract"],
+      "ciJobs": ["provider-live-evidence"],
+      "evidenceArtifacts": [],
+      "blockers": ["Requires authorized external provider credentials and the provider workflow run."],
+      "notes": "Never inspect or expose upstream OAuth credentials."
+    },
+    {
+      "id": "CLI-001",
+      "title": "The documented alpha CLI surface is complete and journey-tested",
+      "tier": "alpha",
+      "status": "implemented",
+      "finding": "The current CLI exposes doctor, credentials, plugins, workspaces, migration, and service helpers but not the full init/config/run/control journey listed in the alpha brief.",
+      "implementationPaths": ["apps/cli/src/main.ts", "apps/manager/src/server.ts", "docs/API.md"],
+      "testIds": ["cli-local-init-config", "cli-surface-route-aliases"],
+      "ciJobs": [],
+      "evidenceArtifacts": [],
+      "blockers": [],
+      "notes": "CLI aliases now cover the frozen init/config/service/agent/workspace/run/events/approval/provider/model/plugin/prune/archive journey; local init/config and route inventory tests are deterministic, while real Docker and external provider evidence remain separate gates."
+    }
+  ],
+  "verificationLanes": {
+    "normalBranchCi": {
+      "purpose": "Fast deterministic branch confidence and structural truth checks.",
+      "commands": ["pnpm verify", "pnpm check:workflows", "pnpm check:requirements"],
+      "state": "blocked",
+      "claimsAllowed": ["local deterministic implementation evidence; default requirement evidence remains blocked until CI captures the current candidate"]
+    },
+    "candidateQualification": {
+      "purpose": "One clean candidate commit with compiled artifacts, package/image checks, and release truth.",
+      "commands": ["pnpm release:check", "pnpm check:schemas -- --referenced-evidence", "pnpm check:secrets -- --include evidence --evidence", "pnpm check:provenance"],
+      "state": "blocked",
+      "claimsAllowed": ["VERIFIED_LOCAL_ALPHA_CANDIDATE only when all required local gates pass; current checked-in evidence is stale and Docker/external lanes are unavailable locally"]
+    },
+    "externalEvidence": {
+      "purpose": "Provider and platform evidence from the configured external workflows.",
+      "commands": ["pnpm evidence:external --gate all", "pnpm evidence:provider --gate all"],
+      "state": "blocked",
+      "claimsAllowed": ["blocked-external only with an explicit blocker and no invented artifact"]
+    }
+  }
+}

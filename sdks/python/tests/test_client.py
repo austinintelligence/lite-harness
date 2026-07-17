@@ -21,6 +21,20 @@ class Response(io.BytesIO):
         self.close()
 
 
+class DisconnectingResponse(Response):
+    def __iter__(self):
+        yield from io.BytesIO(self.getvalue())
+        raise OSError("fixture disconnect")
+
+
+def event(run_id: str, sequence: int, event_type: str) -> dict[str, object]:
+    return {"runId": run_id, "sequence": sequence, "type": event_type, "payload": {}, "createdAt": "2026-01-01T00:00:00Z"}
+
+
+def sse(*events: dict[str, object]) -> bytes:
+    return "".join(f"data: {json.dumps(item)}\n\n" for item in events).encode()
+
+
 class ClientTests(unittest.TestCase):
     def test_authenticated_openapi_operation_inventory_has_method_path_and_verb_coverage(self):
         expected = tuple(
@@ -96,10 +110,93 @@ class ClientTests(unittest.TestCase):
 
     @patch("lite_harness.client.urlopen")
     def test_replays_sse_data_frames(self, open_url):
-        event = {"runId": "run_1", "sequence": 1, "type": "run.accepted", "payload": {}}
-        open_url.return_value = Response(f"event: run.accepted\ndata: {json.dumps(event)}\n\n".encode())
+        event = {"runId": "run_1", "sequence": 1, "type": "run.accepted", "payload": {}, "createdAt": "2026-01-01T00:00:00Z"}
+        open_url.side_effect = [
+            Response(sse(event)),
+            Response(json.dumps({"status": "SUCCEEDED", "lastSequence": 1}).encode()),
+        ]
         client = LiteHarnessClient("http://127.0.0.1:3210", "token")
         self.assertEqual(list(client.events("run_1")), [event])
+
+    @patch("lite_harness.client.urlopen")
+    def test_reconnects_after_disconnect_with_sequence_cursor_and_last_event_id(self, open_url):
+        first = event("run_1", 1, "run.accepted")
+        second = event("run_1", 2, "run.succeeded")
+        open_url.side_effect = [
+            DisconnectingResponse(sse(first)),
+            Response(sse(second)),
+            Response(json.dumps({"status": "SUCCEEDED", "lastSequence": 2}).encode()),
+        ]
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        self.assertEqual(list(client.events("run_1", reconnect_delay_ms=0, max_retries=2)), [first, second])
+        stream_requests = [call.args[0] for call in open_url.call_args_list[:2]]
+        self.assertEqual([request.full_url for request in stream_requests], [
+            "http://127.0.0.1:3210/v1/runs/run_1/events?after=0",
+            "http://127.0.0.1:3210/v1/runs/run_1/events?after=1",
+        ])
+        self.assertEqual([request.headers["Last-event-id"] for request in stream_requests], ["0", "1"])
+
+    @patch("lite_harness.client.urlopen")
+    def test_suppresses_duplicate_replay_frames(self, open_url):
+        first = event("run_1", 1, "run.accepted")
+        second = event("run_1", 2, "run.succeeded")
+        open_url.side_effect = [
+            Response(sse(first)),
+            Response(json.dumps({"status": "RUNNING", "lastSequence": 2}).encode()),
+            Response(sse(first, second)),
+            Response(json.dumps({"status": "SUCCEEDED", "lastSequence": 2}).encode()),
+        ]
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        self.assertEqual(list(client.events("run_1", reconnect_delay_ms=0, max_retries=2)), [first, second])
+        stream_requests = [call.args[0] for call in open_url.call_args_list if "/events?" in call.args[0].full_url]
+        self.assertEqual([request.full_url for request in stream_requests], [
+            "http://127.0.0.1:3210/v1/runs/run_1/events?after=0",
+            "http://127.0.0.1:3210/v1/runs/run_1/events?after=1",
+        ])
+
+    @patch("lite_harness.client.urlopen")
+    def test_rejects_sequence_gap_without_retry(self, open_url):
+        open_url.return_value = Response(sse(event("run_1", 1, "run.accepted"), event("run_1", 3, "run.succeeded")))
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        with self.assertRaises(LiteHarnessError) as raised:
+            list(client.events("run_1", reconnect_delay_ms=0))
+        self.assertEqual(raised.exception.code, "event_sequence_gap")
+        self.assertEqual(open_url.call_count, 1)
+
+    @patch("lite_harness.client.urlopen")
+    def test_stops_when_terminal_run_has_no_unread_events(self, open_url):
+        accepted = event("run_1", 1, "run.accepted")
+        open_url.side_effect = [
+            Response(sse(accepted)),
+            Response(json.dumps({"status": "FAILED", "lastSequence": 1}).encode()),
+        ]
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        self.assertEqual(list(client.events("run_1", reconnect_delay_ms=0)), [accepted])
+        self.assertEqual(open_url.call_count, 2)
+
+    @patch("lite_harness.client.urlopen", side_effect=OSError("fixture disconnect"))
+    def test_bounds_reconnect_retries(self, open_url):
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        with self.assertRaises(LiteHarnessError) as raised:
+            list(client.events("run_1", reconnect_delay_ms=0, max_retries=2))
+        self.assertEqual(raised.exception.code, "event_stream_retry_exhausted")
+        self.assertEqual(open_url.call_count, 3)
+
+    @patch("lite_harness.client.urlopen")
+    def test_bounds_clean_eof_reconnects_for_nonterminal_run(self, open_url):
+        status = Response(json.dumps({"status": "RUNNING", "lastSequence": 0}).encode())
+        open_url.side_effect = [Response(b""), status, Response(b""), Response(json.dumps({"status": "RUNNING", "lastSequence": 0}).encode()), Response(b""), Response(json.dumps({"status": "RUNNING", "lastSequence": 0}).encode())]
+        client = LiteHarnessClient("http://127.0.0.1:3210", "token")
+
+        with self.assertRaises(LiteHarnessError) as raised:
+            list(client.events("run_1", reconnect_delay_ms=0, max_retries=2))
+        self.assertEqual(raised.exception.code, "event_stream_retry_exhausted")
+        self.assertEqual(open_url.call_count, 6)
 
     @patch("lite_harness.client.urlopen")
     def test_preserves_versioned_error_fields(self, open_url):

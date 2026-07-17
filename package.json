@@ -29,6 +29,7 @@
     "check:provenance": "node scripts/check-provenance.mjs",
     "check:release": "node scripts/check-release.mjs",
     "check:images": "node scripts/check-image-workflow.mjs",
+    "check:workflows": "node scripts/check-workflows.mjs",
     "check:doctor": "node scripts/check-doctor.mjs",
     "check:observability": "node scripts/check-observability.mjs",
     "check:status-truth": "node scripts/check-status-truth.mjs",

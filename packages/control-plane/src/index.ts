@@ -24,7 +24,7 @@ import {
   type AgentRuntimeEvent,
   type ModelMessage,
 } from "@lite-harness/agent-runtime";
-import { assertRunTransition, createId, type RunStore } from "@lite-harness/domain";
+import { assertRunTransition, createId, type ResourceOwner, type RunStore } from "@lite-harness/domain";
 
 export interface WorkspaceRunLifecycle {
   prepare(run: RunRecord, signal?: AbortSignal): Promise<{ restored: boolean; recoveredFromPrevious: boolean }>;
@@ -143,6 +143,10 @@ export class RunService {
     return this.store.getRun(runId);
   }
 
+  listRuns(principal: ResourceOwner, limit = 100): RunRecord[] {
+    return this.store.listRuns(principal, limit);
+  }
+
   listChildRuns(parentRunId: string): RunRecord[] {
     return this.store.listChildRuns(parentRunId);
   }
@@ -213,6 +217,10 @@ export class RunService {
 
   listAgentProfiles(principal: { appId: string; tenantId: string; userId: string }): AgentProfileRecord[] {
     return this.store.listAgentProfiles(principal);
+  }
+
+  deleteAgentProfile(agentId: string, owner: { appId: string; tenantId: string; userId: string }): boolean {
+    return this.store.deleteAgentProfile(agentId, owner);
   }
 
   createWorkspace(record: WorkspaceRecord): WorkspaceRecord {

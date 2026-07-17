@@ -135,6 +135,43 @@ describe("durable Docker tool lifecycle", () => {
     }
   });
 
+  it("reaps an active durable container after Manager restart when no reattach protocol exists", async () => {
+    const store = runStore("run-restart");
+    const runtimeContainerId = "d".repeat(64);
+    let exists = true;
+    try {
+      store.recordRuntimeContainer({
+        runtimeContainerId, containerName: "lite-harness-tool-restart", runId: "run-restart",
+        attemptId: "attempt-restart", workspaceIdentity: "workspace-digest", toolCallId: "call-restart",
+        state: "RUNNING", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+      const commands: string[][] = [];
+      const runner: DockerCommandRunner = async (args) => {
+        commands.push([...args]);
+        if (args[0] === "ps") return ok(runtimeContainerId);
+        if (args[0] === "container" && args[1] === "inspect") return exists
+          ? ok(args.includes("--format") ? "true|running" : "{}")
+          : missing();
+        if (args[0] === "container" && args[1] === "kill") return ok(runtimeContainerId);
+        if (args[0] === "container" && args[1] === "wait") return ok("137");
+        if (args[0] === "container" && args[1] === "rm") { exists = false; return ok(runtimeContainerId); }
+        throw new Error(`Unexpected fake Docker command: ${args.join(" ")}`);
+      };
+      const runtime = new DockerToolRuntime({
+        image, installationId: "installation-one", containerStore: store, commandRunner: runner,
+      });
+
+      await expect(runtime.reconcileContainers()).resolves.toBe(1);
+      expect(commands.map((args) => args.slice(0, 2).join(" "))).toEqual([
+        "ps --all", "container inspect", "container inspect", "container kill", "container wait", "container rm", "container inspect",
+      ]);
+      expect(store.listRuntimeContainers()).toHaveLength(0);
+      expect(exists).toBe(false);
+    } finally {
+      store.close();
+    }
+  });
+
   it("removes an already-exited container without waiting on a stale Docker event", async () => {
     const commands: string[][] = [];
     let exists = true;

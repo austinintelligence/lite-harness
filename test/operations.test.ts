@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installUserService, RedactedStreamBuffer, redactServiceLog, renderUserService, RotatingLogSink } from "@lite-harness/operations";
+import { installUserService, RedactedStreamBuffer, redactServiceLog, renderUserService, RotatingLogSink, startUserService, stopUserService, userServiceStatus } from "@lite-harness/operations";
 
 const cleanup: string[] = [];
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -36,6 +36,23 @@ describe("cross-platform user services", () => {
       ["systemctl", ["--user", "daemon-reload"]],
       ["systemctl", ["--user", "enable", "--now", "lite-harness.service"]],
     ]);
+  });
+
+  it("starts the Windows task after installation and does not treat Ready as Running", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lite-service-win-")); cleanup.push(home);
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => ({
+      code: 0, stdout: args[0] === "/Query" ? "Status: Ready" : "ok",
+    }));
+    await installUserService({ root: "C:\\Lite", dataDir: join(home, "data"), nodePath: "C:\\node.exe", platform: "win32", home, runner });
+    expect(runner.mock.calls.map((call) => call[1])).toEqual([
+      ["/Create", "/TN", "Lite-Harness", "/XML", join(home, "data", "lite-harness-task.xml"), "/F"],
+      ["/Run", "/TN", "Lite-Harness"],
+    ]);
+    expect((await userServiceStatus({ root: "C:\\Lite", dataDir: join(home, "data"), platform: "win32", home, runner })).active).toBe(false);
+    const running = vi.fn(async () => ({ code: 0, stdout: "Status: Running" }));
+    expect((await userServiceStatus({ root: "C:\\Lite", dataDir: join(home, "data"), platform: "win32", home, runner: running })).active).toBe(true);
+    await expect(stopUserService({ root: "C:\\Lite", dataDir: join(home, "data"), platform: "win32", home, runner: async () => ({ code: 1, stdout: "", stderr: "ERROR: task is not running" }) })).resolves.toMatchObject({ stopped: false });
+    await expect(startUserService({ root: "C:\\Lite", dataDir: join(home, "data"), platform: "win32", home, runner: async (_command, args) => ({ code: args[0] === "/Run" ? 0 : 1, stdout: "started" }) })).resolves.toMatchObject({ started: true });
   });
 
   it("redacts credentials from durable service logs and launcher relay text", () => {

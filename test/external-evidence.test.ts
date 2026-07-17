@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { requiredExternalGateAuthorities } from "../scripts/assemble-ci-evidence.mjs";
 import { externalPlatformGates, externalPlatformGateNames, validateExternalPlatform } from "../scripts/evidence-external.mjs";
+import { validateWorkflowStructure } from "../scripts/check-workflows.mjs";
 
 describe("external platform evidence producer", () => {
   it("declares every required platform lane with a dedicated runner contract", () => {
@@ -36,18 +37,19 @@ describe("external platform evidence producer", () => {
     const workflow = readFileSync(".github/workflows/external-platform-evidence.yml", "utf8");
     const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
     expect(manifest.scripts["evidence:external"]).toBe("node scripts/evidence-external.mjs");
-    expect(workflow).toContain("rootless-product-evidence:");
-    expect(workflow).toContain("pnpm evidence:external --gate");
-    expect(workflow).toContain("linuxRootless");
-    expect(workflow).toContain("windows11DockerDesktopWsl2");
+    expect(validateWorkflowStructure(workflow, "external-platform-evidence.yml")).toEqual([]);
     expect(workflow).toContain("evidencePath: evidence/external/linux-rootful.json");
     expect(workflow).toContain("--evidence ${{ matrix.evidencePath }}");
-    expect(workflow).toContain("workflow_call:");
-    expect(workflow).toContain("- all");
-    expect(workflow).toContain("inputs.gate == 'all' || inputs.gate == matrix.gate");
     expect(ciWorkflow).toContain("external_platform_gate");
     expect(ciWorkflow).toContain("uses: ./.github/workflows/external-platform-evidence.yml");
     expect(ciWorkflow).toContain("--include-external");
+  });
+
+  it("rejects matrix filtering at job scope and requires step-level gate filtering", () => {
+    const broken = `jobs:\n  rootless-product-evidence:\n    if: \${{ inputs.gate == matrix.gate }}\n    strategy:\n      matrix:\n        include:\n          - gate: linuxRootful\n    steps:\n      - run: pnpm evidence:external --gate \${{ matrix.gate }}`;
+    expect(validateWorkflowStructure(broken, "external-platform-evidence.yml")).toContain(
+      "external-platform-evidence.yml: matrix filtering must not use matrix in a job-level if",
+    );
   });
 
   it("refuses to run locally before touching Docker", () => {

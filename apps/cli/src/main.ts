@@ -1,39 +1,61 @@
 import { randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { accessSync, constants, existsSync, mkdirSync, statfsSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, statfsSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { loadManagerConfiguration, loadManagerIpcConfiguration } from "@lite-harness/config";
 import {
+  loadInstallationConfiguration,
+  loadManagerConfiguration,
+  loadManagerIpcConfiguration,
+  buildRoleEnvironment,
+  LITE_INSTALLATION_ENVIRONMENT_KEYS,
+  readInstallationConfiguration,
+  writeInstallationConfiguration,
+} from "@lite-harness/config";
+import {
+  DEFAULT_RUN_BUDGET,
   isGatewayReadiness,
   LITE_IPC_PROTOCOL_VERSION,
   LITE_IPC_VERSION_HEADER,
   PRODUCTION_READINESS_DEPENDENCY_KEYS,
 } from "@lite-harness/contracts";
 import { OsSecretStore } from "@lite-harness/credential-store";
-import { installUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
+import { installUserService, renderUserService, startUserService, stopUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
 import type { PluginPermissions } from "@lite-harness/plugin-core";
 import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
 import { SQLITE_SCHEMA_VERSION, SqliteRunStore } from "@lite-harness/storage-sqlite";
-import { LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
+import { DerivedSnapshotKeyProvider, LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
 
 const [command = "help", subcommand, argument, extraArgument, fifthArgument] = process.argv.slice(2);
+const remainingArguments = process.argv.slice(6);
 const dataDir = process.env.LITE_HARNESS_DATA_DIR ?? join(process.cwd(), ".lite-harness");
+let installedConfiguration: Awaited<ReturnType<typeof readInstallationConfiguration>> | undefined;
+try { installedConfiguration = readInstallationConfiguration(dataDir); } catch { /* doctor reports missing/invalid configuration below. */ }
+const effectiveEnvironment: NodeJS.ProcessEnv = {
+  ...(installedConfiguration?.environment ?? {}),
+  ...process.env,
+  LITE_HARNESS_DATA_DIR: dataDir,
+};
 
-if (command === "doctor") {
+if (command === "help" || command === "--help") {
+  process.stdout.write(`Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  agent create|list|get|show|delete\n  workspace create|list|get|import|export|delete\n  run start|list|get|show|events|cancel|retry\n  events [watch] <run-id> | cancel <run-id>\n  approve|reject <approval-id>\n  provider list|login|configure|models\n  plugin list|inspect|install|enable|disable|upgrade|rollback\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  service install|status|uninstall\n`);
+} else if (command === "doctor") {
   mkdirSync(dataDir, { recursive: true });
   let dataDirectoryWritable = true;
   try { accessSync(dataDir, constants.R_OK | constants.W_OK); } catch { dataDirectoryWritable = false; }
-  const docker = await inspectDocker(process.env.LITE_HARNESS_DOCTOR_DOCKER_COMMAND?.trim() || "docker");
+  const docker = await inspectDocker(effectiveEnvironment.LITE_HARNESS_DOCTOR_DOCKER_COMMAND?.trim() || "docker");
   const disk = statfsSync(dataDir);
   const freeBytes = disk.bavail * disk.bsize;
   const minimumFreeBytes = doctorMinimumFreeBytes(process.env.LITE_HARNESS_DOCTOR_MIN_FREE_BYTES);
   const database = databaseIntegrityCheck(join(dataDir, "lite-harness.db"));
   let configuration: { ok: boolean; schemaVersion?: number; dataDir?: string; provider?: string; runtime?: string; mode?: string; error?: string };
   try {
-    const validated = loadManagerConfiguration({ ...process.env, LITE_HARNESS_DATA_DIR: dataDir });
+    const validated = loadManagerConfiguration({
+      ...effectiveEnvironment,
+      LITE_HARNESS_INTERNAL_TOKEN: effectiveEnvironment.LITE_HARNESS_INTERNAL_TOKEN ?? "doctor-validation-internal-token",
+    });
     configuration = {
       ok: true, schemaVersion: validated.schemaVersion, dataDir: validated.dataDir,
       provider: validated.provider, runtime: validated.runtime, mode: validated.mode,
@@ -41,7 +63,7 @@ if (command === "doctor") {
   } catch (error) {
     configuration = { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
-  const configuredProfile = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${process.env.LITE_HARNESS_PROVIDER ?? "fake"}_default`;
+  const configuredProfile = effectiveEnvironment.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${effectiveEnvironment.LITE_HARNESS_PROVIDER ?? "fake"}_default`;
   let osCredential: { available: boolean; providerConfigured: boolean; snapshotKeyConfigured: boolean; error?: string } = {
     available: true, providerConfigured: false, snapshotKeyConfigured: false,
   };
@@ -56,14 +78,14 @@ if (command === "doctor") {
     osCredential = { available: false, providerConfigured: false, snapshotKeyConfigured: false,
       error: error instanceof Error ? error.message : String(error) };
   }
-  const environmentSnapshotKey = process.env.LITE_HARNESS_SNAPSHOT_KEY;
+  const environmentSnapshotKey = effectiveEnvironment.LITE_HARNESS_SNAPSHOT_KEY;
   const snapshotKeyValid = environmentSnapshotKey
     ? validBase64Key(environmentSnapshotKey)
     : osCredential.snapshotKeyConfigured;
-  const runtimeImage = process.env.LITE_HARNESS_RUNTIME_IMAGE;
-  const mode = process.env.LITE_HARNESS_MODE ?? "development";
-  const runtime = process.env.LITE_HARNESS_RUNTIME ?? "fake";
-  const provider = process.env.LITE_HARNESS_PROVIDER ?? "fake";
+  const runtimeImage = effectiveEnvironment.LITE_HARNESS_RUNTIME_IMAGE;
+  const mode = effectiveEnvironment.LITE_HARNESS_MODE ?? "development";
+  const runtime = effectiveEnvironment.LITE_HARNESS_RUNTIME ?? "fake";
+  const provider = effectiveEnvironment.LITE_HARNESS_PROVIDER ?? "fake";
   const runtimeImageCheck = inspectRuntimeImage(runtimeImage, runtime === "docker" || mode === "production");
   const gateway = await inspectGatewayReadiness(process.env.LITE_HARNESS_DOCTOR_GATEWAY_URL, mode === "production");
   const report = {
@@ -75,7 +97,7 @@ if (command === "doctor") {
     snapshotKey: { ok: snapshotKeyValid, source: environmentSnapshotKey ? "environment" : osCredential.snapshotKeyConfigured ? "os" : "missing" },
     credentials: {
       osStoreAvailable: osCredential.available,
-      providerConfigured: Boolean(process.env.LITE_HARNESS_PROVIDER_API_KEY) || osCredential.providerConfigured || (process.env.LITE_HARNESS_PROVIDER ?? "fake") === "fake",
+      providerConfigured: Boolean(effectiveEnvironment.LITE_HARNESS_PROVIDER_API_KEY) || osCredential.providerConfigured || provider === "fake",
       ...(osCredential.error ? { error: osCredential.error } : {}),
     },
     runtimeImage: runtimeImageCheck,
@@ -100,6 +122,248 @@ if (command === "doctor") {
     mode !== "production" || osCredential.available,
   ];
   process.exitCode = requiredChecks.every(Boolean) ? 0 : 1;
+} else if (command === "init") {
+  const installation = loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
+  mkdirSync(installation.dataDir, { recursive: true });
+  writeInstallationConfiguration(installation);
+  const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+  const appCredential = await credentials.getOrCreate("service.app-token", () => `lhr_app_${randomBytes(32).toString("base64url")}`);
+  await credentials.getOrCreate("service.internal-token", () => randomBytes(32).toString("hex"));
+  await credentials.getOrCreate("snapshot.root", () => randomBytes(32).toString("base64"));
+  await credentials.getOrCreate("browser.profile-root", () => randomBytes(32).toString("base64"));
+  const appToken = appCredential.value;
+  const newClientCredential = appCredential.created;
+  const principal = {
+    appId: installation.environment.LITE_HARNESS_APP_ID ?? "app_local",
+    tenantId: installation.environment.LITE_HARNESS_TENANT_ID ?? "tenant_local",
+    userId: installation.environment.LITE_HARNESS_USER_ID ?? "user_local",
+  };
+  const agentId = installation.environment.LITE_HARNESS_DEFAULT_AGENT_ID ?? "default";
+  const workspaceId = installation.environment.LITE_HARNESS_DEFAULT_WORKSPACE_ID ?? "default";
+  const database = new SqliteRunStore(join(installation.dataDir, "lite-harness.db"));
+  try {
+    if (!database.getAgentProfile(agentId, principal)) {
+      database.createAgentProfile({
+        id: agentId, version: 1, ...principal, name: "Default agent", instructions: "",
+        modelCapabilities: ["text", "tools"], allowedTools: ["read_file", "write_file"],
+        defaultBudget: DEFAULT_RUN_BUDGET, createdAt: new Date().toISOString(),
+      });
+    }
+    if (!database.getWorkspace(workspaceId, principal)) {
+      const now = new Date().toISOString();
+      database.createWorkspace({ id: workspaceId, ...principal, mode: "managed", state: "WARM", createdAt: now, updatedAt: now });
+    }
+  } finally { database.close(); }
+  process.stdout.write(`${JSON.stringify({
+    initialized: true, dataDir: installation.dataDir, environment: installation.environment,
+    owner: principal, defaultAgentId: agentId, defaultWorkspaceId: workspaceId,
+    ...(newClientCredential
+      ? { clientCredential: appToken, clientCredentialWarning: "Shown once. Store it securely; revoke/rotate it by replacing the service app credential and restarting Gateway." }
+      : { clientCredential: null, clientCredentialAlreadyExists: true }),
+  }, null, 2)}\n`);
+} else if (command === "config" && ["get", "set", "unset", "list", "validate"].includes(subcommand ?? "")) {
+  if (subcommand === "validate") {
+    try {
+      const installation = readInstallationConfiguration(dataDir);
+      process.stdout.write(`${JSON.stringify({ valid: true, dataDir: installation.dataDir, environment: installation.environment }, null, 2)}\n`);
+    } catch (error) {
+      process.stdout.write(`${JSON.stringify({ valid: false, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`);
+      process.exitCode = 1;
+    }
+  } else {
+    const installation = installedConfiguration ?? loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
+    if (subcommand === "list") {
+      process.stdout.write(`${JSON.stringify({ dataDir: installation.dataDir, environment: installation.environment }, null, 2)}\n`);
+    } else if (subcommand === "get") {
+      if (!argument) throw new Error("Usage: config get <LITE_HARNESS_SETTING>");
+      if (!(LITE_INSTALLATION_ENVIRONMENT_KEYS as readonly string[]).includes(argument)) throw new Error("Only durable non-secret LITE_HARNESS_* settings can be read");
+      process.stdout.write(`${JSON.stringify({ name: argument, value: installation.environment[argument] ?? null })}\n`);
+    } else {
+      if (!argument || (subcommand === "set" && extraArgument === undefined)) throw new Error(`Usage: config ${subcommand} <LITE_HARNESS_SETTING>${subcommand === "set" ? " <value>" : ""}`);
+      if (!(LITE_INSTALLATION_ENVIRONMENT_KEYS as readonly string[]).includes(argument)) throw new Error("Only durable non-secret LITE_HARNESS_* settings can be changed");
+      const environment = { ...installation.environment };
+      if (subcommand === "set") environment[argument] = extraArgument as string;
+      else delete environment[argument];
+      const validated = loadInstallationConfiguration({ ...environment, LITE_HARNESS_DATA_DIR: installation.dataDir }, installation.dataDir, process.platform);
+      writeInstallationConfiguration(validated);
+      process.stdout.write(`${JSON.stringify({ updated: true, name: argument, value: validated.environment[argument] ?? null })}\n`);
+    }
+  }
+} else if (command === "start" || command === "stop" || command === "status") {
+  const service = serviceOptions();
+  const result = command === "start"
+    ? !existsSync(renderUserService({ ...service, platform: process.platform }).path)
+      ? { ...(await installUserService(service)), started: true, installed: true }
+      : await startUserService(service)
+    : command === "stop"
+      ? await stopUserService(service)
+      : await userServiceStatus(service);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+} else if (command === "logs") {
+  const path = join(dataDir, "logs", "lite-harness.jsonl");
+  if (!existsSync(path)) {
+    process.stdout.write(`${JSON.stringify({ path, lines: [] }, null, 2)}\n`);
+  } else {
+    const count = argument === undefined ? 100 : Number(argument);
+    if (!Number.isSafeInteger(count) || count < 1 || count > 10_000) throw new Error("logs line count must be between 1 and 10000");
+    const lines = readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean).slice(-count);
+    process.stdout.write(`${JSON.stringify({ path, lines }, null, 2)}\n`);
+  }
+} else if (command === "token" && ["create", "list", "revoke"].includes(subcommand ?? "")) {
+  const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const registry = readTokenRegistry(dataDir);
+  if (subcommand === "list") {
+    const tokens = [];
+    for (const item of registry) tokens.push({ ...item, configured: Boolean(await credentials.get(`token.${item.id}`)) });
+    process.stdout.write(`${JSON.stringify({ tokens }, null, 2)}\n`);
+  } else {
+    if (!argument || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(argument)) throw new Error("Token id must be a bounded identifier");
+    if (subcommand === "create") {
+      const token = randomBytes(32).toString("base64url");
+      await credentials.set(`token.${argument}`, token);
+      writeTokenRegistry(dataDir, [...registry.filter((item) => item.id !== argument), { id: argument, createdAt: new Date().toISOString() }]);
+      process.stdout.write(`${JSON.stringify({ id: argument, token, warning: "The token is shown once; store it securely." }, null, 2)}\n`);
+    } else {
+      const deleted = await credentials.delete(`token.${argument}`);
+      writeTokenRegistry(dataDir, registry.filter((item) => item.id !== argument));
+      process.stdout.write(`${JSON.stringify({ id: argument, revoked: deleted })}\n`);
+    }
+  }
+} else if (command === "agent" && ["create", "list", "get", "show", "delete"].includes(subcommand ?? "")) {
+  const principal = cliPrincipal();
+  const headers = principalHeaders(principal);
+  if (subcommand === "list") {
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", "/internal/agents", undefined, headers), null, 2)}\n`);
+  } else if (subcommand === "get" || subcommand === "show") {
+    if (!argument) throw new Error(`Usage: agent ${subcommand} <agent-id>`);
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/agents/${encodeURIComponent(argument)}`, undefined, headers), null, 2)}\n`);
+  } else if (subcommand === "delete") {
+    if (!argument) throw new Error("Usage: agent delete <agent-id>");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("DELETE", `/internal/agents/${encodeURIComponent(argument)}`, undefined, headers), null, 2)}\n`);
+  } else {
+    if (!argument) throw new Error("Usage: agent create <name>");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/agents", {
+      name: argument, principal,
+      ...(process.env.LITE_HARNESS_AGENT_INSTRUCTIONS ? { instructions: process.env.LITE_HARNESS_AGENT_INSTRUCTIONS } : {}),
+      ...(process.env.LITE_HARNESS_AGENT_TOOLS_JSON ? { allowedTools: JSON.parse(process.env.LITE_HARNESS_AGENT_TOOLS_JSON) } : {}),
+    }, headers), null, 2)}\n`);
+  }
+} else if ((command === "workspace" && ["create", "list", "get"].includes(subcommand ?? "")) || (command === "workspaces" && subcommand === "list")) {
+  const principal = cliPrincipal();
+  const headers = principalHeaders(principal);
+  if (subcommand === "list") process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", "/internal/workspaces", undefined, headers), null, 2)}\n`);
+  else if (subcommand === "get") {
+    if (!argument) throw new Error("Usage: workspace get <workspace-id>");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/workspaces/${encodeURIComponent(argument)}`, undefined, headers), null, 2)}\n`);
+  } else {
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/workspaces", { ...(argument ? { id: argument } : {}), principal }, headers), null, 2)}\n`);
+  }
+} else if (command === "run" && ["start", "list", "get", "show", "events", "cancel", "retry"].includes(subcommand ?? "")) {
+  const principal = cliPrincipal();
+  const headers = principalHeaders(principal);
+  if (subcommand === "list") {
+    const limit = argument ?? "100";
+    if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 1_000) throw new Error("Usage: run list [limit] (1-1000)");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/runs?limit=${encodeURIComponent(limit)}`, undefined, headers), null, 2)}\n`);
+  } else if (subcommand === "start") {
+    if (!argument || !extraArgument) throw new Error("Usage: run start <agent-id> <workspace-id> <input>");
+    const input = [fifthArgument, ...remainingArguments].filter((item): item is string => Boolean(item)).join(" ").trim();
+    if (!input) throw new Error("Run input is required");
+    process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/runs", {
+      agent: argument, workspace: extraArgument, input, principal,
+      session: process.env.LITE_HARNESS_SESSION_ID,
+      idempotencyKey: process.env.LITE_HARNESS_IDEMPOTENCY_KEY ?? `cli-${randomBytes(12).toString("hex")}`,
+    }, headers), null, 2)}\n`);
+  } else {
+    if (!argument) throw new Error(`Usage: run ${subcommand} <run-id>`);
+    if (subcommand === "get" || subcommand === "show") process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/runs/${encodeURIComponent(argument)}`, undefined, headers), null, 2)}\n`);
+    else if (subcommand === "events") {
+      const after = extraArgument ?? "0";
+      const waitMs = fifthArgument ?? "0";
+      process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/runs/${encodeURIComponent(argument)}/events?after=${encodeURIComponent(after)}&wait_ms=${encodeURIComponent(waitMs)}`, undefined, headers), null, 2)}\n`);
+    } else if (subcommand === "cancel") process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", `/internal/runs/${encodeURIComponent(argument)}/cancel`, undefined, headers), null, 2)}\n`);
+    else {
+      const previous = await managerPluginRequest<{ id: string; agentId: string; workspaceId: string; sessionId?: string; input: string; budget: Record<string, unknown> }>("GET", `/internal/runs/${encodeURIComponent(argument)}`, undefined, headers);
+      process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/runs", {
+        agent: previous.agentId, workspace: previous.workspaceId, ...(previous.sessionId ? { session: previous.sessionId } : {}),
+        input: previous.input, budget: previous.budget, principal,
+        idempotencyKey: `retry:${previous.id}:${randomBytes(8).toString("hex")}`,
+      }, headers), null, 2)}\n`);
+    }
+  }
+} else if ((command === "approve" || command === "reject") && subcommand) {
+  process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", `/internal/approvals/${encodeURIComponent(subcommand)}/resolve`, { approved: command === "approve" }, principalHeaders(cliPrincipal())), null, 2)}\n`);
+} else if (command === "events") {
+  const runId = subcommand === "watch" ? argument : subcommand;
+  if (!runId) throw new Error("Usage: events [watch] <run-id> [after] [wait-ms]");
+  const after = subcommand === "watch" ? extraArgument ?? "0" : argument ?? "0";
+  const waitMs = subcommand === "watch" ? fifthArgument ?? "0" : extraArgument ?? "0";
+  process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", `/internal/runs/${encodeURIComponent(runId)}/events?after=${encodeURIComponent(after)}&wait_ms=${encodeURIComponent(waitMs)}`, undefined, principalHeaders(cliPrincipal())), null, 2)}\n`);
+} else if (command === "cancel" && subcommand) {
+  process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", `/internal/runs/${encodeURIComponent(subcommand)}/cancel`, undefined, principalHeaders(cliPrincipal())), null, 2)}\n`);
+} else if ((command === "providers" || command === "provider") && ["list", "login", "configure", "models"].includes(subcommand ?? "")) {
+  if (subcommand === "list") {
+    process.stdout.write(`${JSON.stringify({ selected: effectiveEnvironment.LITE_HARNESS_PROVIDER ?? "fake", credentialStore: effectiveEnvironment.LITE_HARNESS_CREDENTIAL_STORE ?? "environment", providers: ["fake", "openai", "openai-compatible", "anthropic", "codex", "claude"] }, null, 2)}\n`);
+  } else if (subcommand === "models") {
+    let catalog: unknown[] = [];
+    if (effectiveEnvironment.LITE_HARNESS_MODEL_CATALOG) {
+      try { catalog = JSON.parse(effectiveEnvironment.LITE_HARNESS_MODEL_CATALOG) as unknown[]; } catch { throw new Error("LITE_HARNESS_MODEL_CATALOG is invalid JSON"); }
+    }
+    process.stdout.write(`${JSON.stringify({ selected: effectiveEnvironment.LITE_HARNESS_MODEL ?? null, models: catalog }, null, 2)}\n`);
+  } else if (subcommand === "login") {
+    if (!argument) throw new Error("Usage: providers login <id>");
+    const secret = (await readStandardInput()).replace(/[\r\n]+$/, "");
+    if (!secret) throw new Error("Pipe the provider credential to stdin");
+    await new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") }).set(`${argument}_default`, secret);
+    process.stdout.write(`${JSON.stringify({ provider: argument, profileId: `${argument}_default`, configured: true })}\n`);
+  } else {
+    if (!argument) throw new Error("Usage: providers configure <id> [base-url] [model]");
+    const updates: Record<string, string> = { LITE_HARNESS_PROVIDER: argument };
+    if (extraArgument) updates.LITE_HARNESS_PROVIDER_BASE_URL = extraArgument;
+    if (fifthArgument) updates.LITE_HARNESS_MODEL = fifthArgument;
+    const validated = persistConfigurationPatch(updates);
+    process.stdout.write(`${JSON.stringify({ configured: true, environment: validated.environment }, null, 2)}\n`);
+  }
+} else if (command === "models" && subcommand === "list") {
+  let catalog: unknown[] = [];
+  if (effectiveEnvironment.LITE_HARNESS_MODEL_CATALOG) {
+    try { catalog = JSON.parse(effectiveEnvironment.LITE_HARNESS_MODEL_CATALOG) as unknown[]; } catch { throw new Error("LITE_HARNESS_MODEL_CATALOG is invalid JSON"); }
+  }
+  process.stdout.write(`${JSON.stringify({ selected: effectiveEnvironment.LITE_HARNESS_MODEL ?? null, models: catalog }, null, 2)}\n`);
+} else if ((command === "plugins" || command === "plugin") && subcommand === "list") {
+  process.stdout.write(`${JSON.stringify(await managerPluginRequest("GET", "/internal/plugins"), null, 2)}\n`);
+} else if (command === "integrations" && subcommand === "list") {
+  process.stdout.write(`${JSON.stringify({ integrations: effectiveEnvironment.LITE_HARNESS_WEBHOOK_ACCOUNT ? [{ kind: "webhook", accountId: effectiveEnvironment.LITE_HARNESS_WEBHOOK_ACCOUNT }] : [] }, null, 2)}\n`);
+} else if (command === "browser" && subcommand === "doctor") {
+  process.stdout.write(`${JSON.stringify({ configuredImage: effectiveEnvironment.LITE_HARNESS_BROWSER_IMAGE ?? null, privateNetworksAllowed: effectiveEnvironment.LITE_HARNESS_BROWSER_ALLOW_PRIVATE === "true", status: "configuration-only" }, null, 2)}\n`);
+} else if (command === "prune") {
+  process.stdout.write(`${JSON.stringify({ pruned: [], status: "manager-gc-required", message: "No destructive prune was performed; Manager-owned snapshot/cache GC must be active." })}\n`);
+} else if ((command === "export" && subcommand) || (command === "workspace" && subcommand === "export" && argument)) {
+  const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
+  const workspaceId = command === "workspace" ? argument! : subcommand!;
+  const archivePath = command === "workspace" ? extraArgument ?? `${workspaceId}.tar` : argument ?? `${workspaceId}.tar`;
+  writeFileSync(archivePath, await runtime.exportWorkspace(workspaceId, cliPrincipal()));
+  process.stdout.write(`${JSON.stringify({ workspaceId, path: resolve(archivePath), exported: true })}\n`);
+} else if ((command === "import" && subcommand) || (command === "workspace" && subcommand === "import" && argument)) {
+  const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
+  const workspaceId = command === "workspace" ? argument! : subcommand!;
+  const archivePath = command === "workspace" ? extraArgument ?? `${workspaceId}.tar` : argument ?? `${workspaceId}.tar`;
+  await runtime.importWorkspace(workspaceId, readFileSync(archivePath), cliPrincipal());
+  process.stdout.write(`${JSON.stringify({ workspaceId, path: resolve(archivePath), imported: true })}\n`);
+} else if (command === "gateway" || command === "manager") {
+  const installation = installedConfiguration ?? loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
+  const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+  const internalToken = effectiveEnvironment.LITE_HARNESS_INTERNAL_TOKEN ?? await credentials.get("service.internal-token");
+  const appToken = effectiveEnvironment.LITE_HARNESS_APP_TOKEN ?? await credentials.get("service.app-token");
+  if (!internalToken || (command === "gateway" && !appToken)) throw new Error("Installed service tokens are missing; run `pnpm lite init` then `pnpm lite service install`");
+  const roleEnvironment = buildRoleEnvironment(command, installation, effectiveEnvironment, {
+    LITE_HARNESS_INTERNAL_TOKEN: internalToken,
+    ...(appToken ? { LITE_HARNESS_APP_TOKEN: appToken } : {}),
+  });
+  const entry = join(resolve(import.meta.dirname, "../../.."), "apps", command, "src", "main.ts");
+  const child = spawn(process.execPath, ["--import", "tsx", entry], { cwd: resolve(import.meta.dirname, "../../.."), env: roleEnvironment, stdio: "inherit", windowsHide: true });
+  await new Promise<void>((resolveProcess, rejectProcess) => { child.once("error", rejectProcess); child.once("exit", () => resolveProcess()); });
+  process.exitCode = child.exitCode ?? 1;
 } else if (command === "workspace" && subcommand === "register") {
   if (!argument || !extraArgument) throw new Error("Usage: workspace register <id> <absolute-path>");
   const registeredPath = validateRegisteredBindRoot(extraArgument);
@@ -128,9 +392,11 @@ if (command === "doctor") {
     const removed = await runtime.removeWorkspace(argument, principal);
     process.stdout.write(`${JSON.stringify({ workspaceId: argument, removed })}\n`);
   } else {
+    const rootKey = await snapshotKey();
     const snapshots = new LocalWorkspaceSnapshotStore(
       join(dataDir, "snapshots"),
-      new StaticSnapshotKeyProvider(await snapshotKey()),
+      new DerivedSnapshotKeyProvider(rootKey),
+      new StaticSnapshotKeyProvider(rootKey),
     );
     if (subcommand === "snapshot") {
       const record = await snapshots.create(argument, await runtime.exportWorkspace(argument, principal));
@@ -166,7 +432,7 @@ if (command === "doctor") {
   const report = inspectOpenClawRoot(argument);
   const importedSkills = extraArgument === "--apply" ? importOpenClawSkills(report, dataDir) : [];
   process.stdout.write(`${JSON.stringify({ mode: extraArgument === "--apply" ? "apply" : "inspect", report, importedSkills }, null, 2)}\n`);
-} else if (command === "plugin" && ["inspect", "install", "enable", "disable", "uninstall", "doctor", "migrate", "rollback"].includes(subcommand ?? "")) {
+} else if (command === "plugin" && ["inspect", "install", "list", "enable", "disable", "uninstall", "doctor", "migrate", "upgrade", "rollback"].includes(subcommand ?? "")) {
   if (subcommand === "inspect") {
     if (!argument) throw new Error("Usage: plugin inspect <manifest-path>");
     process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", "/internal/plugins/inspect", { path: argument }), null, 2)}\n`);
@@ -187,8 +453,8 @@ if (command === "doctor") {
       ? `/internal/plugins/${encodeURIComponent(coordinate.id)}/${encodeURIComponent(coordinate.version)}/enable`
       : `/internal/plugins/${encodeURIComponent(coordinate.id)}/${encodeURIComponent(coordinate.version)}/disable`;
     process.stdout.write(`${JSON.stringify(await managerPluginRequest("POST", path), null, 2)}\n`);
-  } else if (subcommand === "migrate") {
-    if (!argument || !extraArgument || !fifthArgument) throw new Error("Usage: plugin migrate <package-directory> <from> <to>");
+  } else if (subcommand === "migrate" || subcommand === "upgrade") {
+    if (!argument || !extraArgument || !fifthArgument) throw new Error(`Usage: plugin ${subcommand} <package-directory> <from> <to>`);
     const inspection = await managerPluginRequest<{ manifest: { id: string; version: string } }>(
       "POST", "/internal/plugins/inspect", { path: argument },
     );
@@ -215,25 +481,25 @@ if (command === "doctor") {
   }
 } else if (command === "service" && ["install", "status", "uninstall"].includes(subcommand ?? "")) {
   const root = resolve(import.meta.dirname, "../../..");
-  const service = { root, dataDir };
   if (subcommand === "install") {
-    const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
-    if (!await credentials.get("service.internal-token")) {
-      await credentials.set("service.internal-token", randomBytes(32).toString("hex"));
-    }
-    if (!await credentials.get("service.app-token")) {
-      await credentials.set("service.app-token", randomBytes(32).toString("hex"));
-    }
+    const installation = loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
+    const service = { root, dataDir: installation.dataDir };
+    const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+    await credentials.getOrCreate("service.internal-token", () => randomBytes(32).toString("hex"));
+    await credentials.getOrCreate("service.app-token", () => randomBytes(32).toString("hex"));
+    writeInstallationConfiguration(installation);
     const installed = await installUserService(service);
     process.stdout.write(`${JSON.stringify({ installed: true, path: installed.path })}\n`);
   } else if (subcommand === "uninstall") {
+    const service = { root, dataDir: installedConfiguration?.dataDir ?? dataDir };
     process.stdout.write(`${JSON.stringify({ removed: await uninstallUserService(service) })}\n`);
   } else {
+    const service = { root, dataDir: installedConfiguration?.dataDir ?? dataDir };
     process.stdout.write(`${JSON.stringify(await userServiceStatus(service))}\n`);
   }
 } else {
   process.stdout.write(
-    "Lite-Harness\n\nCommands:\n  doctor\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin rollback <id>\n  plugin doctor\n  service install|status|uninstall\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n",
+    "Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  agent create|list|get\n  workspace create|list|get\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n  workspaces list\n  run start|list|get|events|cancel|retry\n  approve|reject <approval-id>\n  events|cancel <run-id>\n  providers list|login|configure\n  models list\n  plugins list\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin rollback <id>\n  plugin doctor\n  service install|status|uninstall\n",
   );
 }
 
@@ -364,7 +630,7 @@ async function inspectGatewayReadiness(url: string | undefined, required: boolea
 
 async function snapshotKey(): Promise<Buffer> {
   const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
-  const value = process.env.LITE_HARNESS_SNAPSHOT_KEY?.trim() || await credentials.get("snapshot.root");
+  const value = effectiveEnvironment.LITE_HARNESS_SNAPSHOT_KEY?.trim() || await credentials.get("snapshot.root");
   if (!value) throw new Error("Configure LITE_HARNESS_SNAPSHOT_KEY or run `pnpm lite keygen-store`");
   const key = Buffer.from(value, "base64");
   if (key.length !== 32) throw new Error("LITE_HARNESS_SNAPSHOT_KEY must be a base64-encoded 32-byte key");
@@ -372,9 +638,62 @@ async function snapshotKey(): Promise<Buffer> {
 }
 
 function requiredEnvironment(name: string): string {
-  const value = process.env[name]?.trim();
+  const value = effectiveEnvironment[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function cliPrincipal(): { appId: string; tenantId: string; userId: string; scopes: string[] } {
+  return {
+    appId: effectiveEnvironment.LITE_HARNESS_APP_ID?.trim() || "app_local",
+    tenantId: effectiveEnvironment.LITE_HARNESS_TENANT_ID?.trim() || "tenant_local",
+    userId: effectiveEnvironment.LITE_HARNESS_USER_ID?.trim() || "user_local",
+    scopes: [],
+  };
+}
+
+function principalHeaders(principal: { appId: string; tenantId: string; userId: string }): Record<string, string> {
+  return {
+    "x-lite-app-id": principal.appId,
+    "x-lite-tenant-id": principal.tenantId,
+    "x-lite-user-id": principal.userId,
+  };
+}
+
+function serviceOptions(): { root: string; dataDir: string } {
+  return { root: resolve(import.meta.dirname, "../../.."), dataDir: installedConfiguration?.dataDir ?? dataDir };
+}
+
+function persistConfigurationPatch(updates: Record<string, string>): Awaited<ReturnType<typeof loadInstallationConfiguration>> {
+  const installation = installedConfiguration ?? loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
+  for (const name of Object.keys(updates)) {
+    if (!(LITE_INSTALLATION_ENVIRONMENT_KEYS as readonly string[]).includes(name)) throw new Error(`Configuration setting is not durable or is secret: ${name}`);
+  }
+  const validated = loadInstallationConfiguration({
+    ...installation.environment,
+    ...updates,
+    LITE_HARNESS_DATA_DIR: installation.dataDir,
+  }, installation.dataDir, process.platform);
+  writeInstallationConfiguration(validated);
+  return validated;
+}
+
+type TokenMetadata = { id: string; createdAt: string };
+
+function readTokenRegistry(root: string): TokenMetadata[] {
+  const path = join(root, "token-registry.json");
+  if (!existsSync(path)) return [];
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (!Array.isArray(parsed) || !parsed.every((item) => item && typeof item === "object" &&
+      typeof (item as { id?: unknown }).id === "string" && typeof (item as { createdAt?: unknown }).createdAt === "string")) {
+    throw new Error("Token registry is malformed");
+  }
+  return parsed as TokenMetadata[];
+}
+
+function writeTokenRegistry(root: string, entries: TokenMetadata[]): void {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "token-registry.json"), `${JSON.stringify(entries, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
 function pluginCoordinate(value: string | undefined, operation: string): { id: string; version: string } {
@@ -386,10 +705,10 @@ function pluginCoordinate(value: string | undefined, operation: string): { id: s
   return { id, version };
 }
 
-async function managerPluginRequest<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-  const configuration = loadManagerIpcConfiguration({ ...process.env, LITE_HARNESS_DATA_DIR: dataDir });
+async function managerPluginRequest<T = unknown>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const configuration = loadManagerIpcConfiguration(effectiveEnvironment);
   const credentials = new OsSecretStore({ windowsPath: join(configuration.dataDir, "credentials.dpapi.json") });
-  const internalToken = process.env.LITE_HARNESS_INTERNAL_TOKEN?.trim() || await credentials.get("service.internal-token");
+  const internalToken = effectiveEnvironment.LITE_HARNESS_INTERNAL_TOKEN?.trim() || await credentials.get("service.internal-token");
   if (!internalToken) throw new Error("Manager plugin commands require LITE_HARNESS_INTERNAL_TOKEN or an installed service token");
   const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
   return await new Promise<T>((resolveRequest, rejectRequest) => {
@@ -406,6 +725,7 @@ async function managerPluginRequest<T = unknown>(method: string, path: string, b
       headers: {
         [LITE_IPC_VERSION_HEADER]: LITE_IPC_PROTOCOL_VERSION,
         "x-lite-internal-token": internalToken,
+        ...extraHeaders,
         ...(payload ? { "content-type": "application/json", "content-length": String(payload.length) } : {}),
       },
     }, (response) => {

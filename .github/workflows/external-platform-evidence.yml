@@ -28,7 +28,6 @@ permissions:
 jobs:
   rootless-product-evidence:
     name: ${{ matrix.gate }}
-    if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,18 +54,24 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
         with:
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
         with:
           node-version: 24
       - run: corepack enable
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
       - run: corepack prepare pnpm@11.7.0 --activate
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
       - run: pnpm install --frozen-lockfile
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
       - name: Run declared external lane
         run: pnpm evidence:external --gate ${{ matrix.gate }} --evidence ${{ matrix.evidencePath }}
+        if: ${{ inputs.gate == 'all' || inputs.gate == matrix.gate }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ always() }}
+        if: ${{ always() && (inputs.gate == 'all' || inputs.gate == matrix.gate) }}
         with:
           name: external-${{ matrix.gate }}
           path: ${{ matrix.evidencePath }}

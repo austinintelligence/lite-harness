@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { isLoopbackHttpUrl } from "@lite-harness/contracts";
 
@@ -87,7 +87,7 @@ const GATEWAY_ENVIRONMENT_KEYS = new Set([
 
 const MANAGER_SECRET_KEYS = new Set([
   "LITE_HARNESS_INTERNAL_TOKEN", "LITE_HARNESS_PROVIDER_API_KEY", "LITE_HARNESS_SNAPSHOT_KEY",
-  "LITE_HARNESS_APP_CALLBACK_SECRET", "LITE_HARNESS_WEBHOOK_SECRET", "LITE_HARNESS_WEBHOOK_REPLY_SECRET",
+  "LITE_HARNESS_CREDENTIAL_RECOVERY_KEY", "LITE_HARNESS_APP_CALLBACK_SECRET", "LITE_HARNESS_WEBHOOK_SECRET", "LITE_HARNESS_WEBHOOK_REPLY_SECRET",
 ]);
 const GATEWAY_SECRET_KEYS = new Set(["LITE_HARNESS_INTERNAL_TOKEN", "LITE_HARNESS_APP_TOKEN"]);
 const HOST_ENVIRONMENT_KEYS = ["PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP", "SYSTEMROOT", "COMSPEC"] as const;
@@ -160,7 +160,7 @@ export function loadManagerIpcConfiguration(
   platform: NodeJS.Platform = process.platform,
 ): ValidatedManagerIpcConfiguration {
   validateVersion(environment);
-  const dataDir = resolveDataDir(environment, cwd);
+  const dataDir = resolveDataDir(environment, cwd, platform);
   return Object.freeze({
     schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
     dataDir,
@@ -174,7 +174,7 @@ export function loadManagerConfiguration(
   platform: NodeJS.Platform = process.platform,
 ): ValidatedManagerConfiguration {
   validateVersion(environment);
-  const dataDir = resolveDataDir(environment, cwd);
+  const dataDir = resolveDataDir(environment, cwd, platform);
   const provider = requiredIdentifier(environment, "LITE_HARNESS_PROVIDER");
   const runtime = requiredEnum(environment, "LITE_HARNESS_RUNTIME", ["fake", "docker"] as const);
   const mode = requiredEnum(environment, "LITE_HARNESS_MODE", ["development", "production"] as const, "production");
@@ -221,7 +221,7 @@ export function loadGatewayConfiguration(
   platform: NodeJS.Platform = process.platform,
 ): ValidatedGatewayConfiguration {
   validateVersion(environment);
-  const dataDir = resolveDataDir(environment, cwd);
+  const dataDir = resolveDataDir(environment, cwd, platform);
   const rawHost = environment.LITE_HARNESS_HOST?.trim() || "127.0.0.1";
   if (rawHost !== "127.0.0.1" && rawHost !== "::1") {
     throw new Error("Alpha Gateway binding is loopback-only; LITE_HARNESS_HOST must be 127.0.0.1 or ::1");
@@ -247,11 +247,12 @@ export function loadGatewayConfiguration(
 export function loadLauncherConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
+  platform: NodeJS.Platform = process.platform,
 ): ValidatedLauncherConfiguration {
   validateVersion(environment);
   return Object.freeze({
     schemaVersion: LITE_CONFIG_SCHEMA_VERSION,
-    dataDir: resolveDataDir(environment, cwd),
+    dataDir: resolveDataDir(environment, cwd, platform),
   });
 }
 
@@ -262,7 +263,7 @@ export function loadInstallationConfiguration(
   options: InstallationConfigurationOptions = {},
 ): ValidatedInstallationConfiguration {
   validateVersion(environment);
-  const dataDir = resolveDataDir(environment, cwd);
+  const dataDir = resolveDataDir(environment, cwd, platform);
   let durableEnvironment = collectInstallationEnvironment(environment);
   const hasProvider = durableEnvironment.LITE_HARNESS_PROVIDER !== undefined;
   const hasRuntime = durableEnvironment.LITE_HARNESS_RUNTIME !== undefined;
@@ -294,8 +295,9 @@ export function readInstallationConfiguration(
   dataDir: string,
   platform: NodeJS.Platform = process.platform,
 ): ValidatedInstallationConfiguration {
-  const resolvedDataDir = resolve(dataDir);
-  const path = join(resolvedDataDir, LITE_INSTALLATION_CONFIGURATION_FILE);
+  const pathModule = platformPath(platform);
+  const resolvedDataDir = pathModule.resolve(dataDir);
+  const path = pathModule.join(resolvedDataDir, LITE_INSTALLATION_CONFIGURATION_FILE);
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
@@ -313,7 +315,7 @@ export function readInstallationConfiguration(
       !record.environment || typeof record.environment !== "object" || Array.isArray(record.environment)) {
     throw new Error("Installed Lite-Harness configuration has an unsupported shape");
   }
-  const persistedDataDir = resolve(record.dataDir);
+  const persistedDataDir = pathModule.resolve(record.dataDir);
   if (persistedDataDir !== resolvedDataDir) throw new Error("Installed Lite-Harness configuration data directory does not match its location");
   const environment: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(record.environment as Record<string, unknown>)) {
@@ -391,26 +393,32 @@ function validateVersion(environment: NodeJS.ProcessEnv): void {
   }
 }
 
-function resolveDataDir(environment: NodeJS.ProcessEnv, cwd: string): string {
+function resolveDataDir(environment: NodeJS.ProcessEnv, cwd: string, platform: NodeJS.Platform = process.platform): string {
   const configured = environment.LITE_HARNESS_DATA_DIR?.trim();
-  const path = resolve(configured || join(cwd, ".lite-harness"));
-  if (!isAbsolute(path)) throw new Error("LITE_HARNESS_DATA_DIR must resolve to an absolute path");
+  const pathModule = platformPath(platform);
+  const path = pathModule.resolve(configured || pathModule.join(cwd, ".lite-harness"));
+  if (!pathModule.isAbsolute(path)) throw new Error("LITE_HARNESS_DATA_DIR must resolve to an absolute path");
   return path;
 }
 
 function resolveSocketPath(environment: NodeJS.ProcessEnv, dataDir: string, platform: NodeJS.Platform): string {
   const configured = environment.LITE_HARNESS_MANAGER_SOCKET?.trim();
-  const installationId = createHash("sha256").update(resolve(dataDir).toLowerCase(), "utf8").digest("hex").slice(0, 16);
+  const pathModule = platformPath(platform);
+  const installationId = createHash("sha256").update(pathModule.resolve(dataDir).toLowerCase(), "utf8").digest("hex").slice(0, 16);
   const path = configured || (platform === "win32"
     ? `\\\\.\\pipe\\lite-harness-manager-${installationId}`
-    : join(dataDir, "manager.sock"));
+    : pathModule.join(dataDir, "manager.sock"));
   if (platform === "win32") {
     if (!path.startsWith("\\\\.\\pipe\\") || path.length > 240) throw new Error("LITE_HARNESS_MANAGER_SOCKET must be a bounded local Windows named pipe");
     return path;
   }
-  if (!isAbsolute(path)) throw new Error("LITE_HARNESS_MANAGER_SOCKET must be an absolute Unix socket path");
+  if (!pathModule.isAbsolute(path)) throw new Error("LITE_HARNESS_MANAGER_SOCKET must be an absolute Unix socket path");
   if (Buffer.byteLength(path) > 100) throw new Error("LITE_HARNESS_MANAGER_SOCKET exceeds the portable Unix socket path limit");
   return path;
+}
+
+function platformPath(platform: NodeJS.Platform): typeof posix | typeof win32 {
+  return platform === "win32" ? win32 : posix;
 }
 
 function requiredSecret(environment: NodeJS.ProcessEnv, name: string): string {

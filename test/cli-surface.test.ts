@@ -42,6 +42,7 @@ function runCli(dataDir: string, ...args: string[]): Record<string, any> {
       LITE_HARNESS_MODE: "development",
       LITE_HARNESS_PROVIDER: "fake",
       LITE_HARNESS_RUNTIME: "fake",
+      LITE_HARNESS_CREDENTIAL_RECOVERY_KEY: "ci-only-lite-harness-recovery-key",
     },
     encoding: "utf8",
   });

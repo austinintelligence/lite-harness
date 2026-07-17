@@ -24,7 +24,7 @@ describe("automatic workspace snapshot lifecycle", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       active -= 1;
       return { workspaceId, sha256: "a".repeat(64), plaintextBytes: 1, createdAt: new Date().toISOString(), path: join(root, workspaceId) };
-    }, { maxConcurrent: 1, minFreeBytes: 0 });
+    }, { maxConcurrent: 1, maxLoadPerCpu: Number.MAX_SAFE_INTEGER, minFreeBytes: 0 });
     const records = await Promise.all([
       queue.enqueue("same"), queue.enqueue("same"), queue.enqueue("other"),
     ]);

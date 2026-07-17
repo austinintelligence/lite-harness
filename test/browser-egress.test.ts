@@ -38,6 +38,7 @@ describe("external browser egress boundary", () => {
     expect(create).toEqual(expect.arrayContaining(["--internal", "--driver", "bridge"]));
     const internalNetwork = create?.at(-1);
     expect(proxyRun).toEqual(expect.arrayContaining(["--pull=never", "--network", internalNetwork, "--cap-drop", "ALL", "--read-only"]));
+    expect(proxyRun).not.toContain("seccomp=default");
     expect(externalConnects).toHaveLength(1);
     expect(externalConnects[0]).toEqual(["network", "connect", "bridge", expect.stringMatching(/^lite-browser-egress-/)]);
     expect(processSpec?.args).toEqual(expect.arrayContaining(["--pull=never", "--network", internalNetwork, "--cap-drop", "ALL"]));

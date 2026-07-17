@@ -20,7 +20,7 @@ import {
   LITE_IPC_VERSION_HEADER,
   PRODUCTION_READINESS_DEPENDENCY_KEYS,
 } from "@lite-harness/contracts";
-import { OsSecretStore } from "@lite-harness/credential-store";
+import { createCredentialStore } from "@lite-harness/credential-store";
 import { installUserService, renderUserService, startUserService, stopUserService, uninstallUserService, userServiceStatus } from "@lite-harness/operations";
 import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migration-openclaw";
 import type { PluginPermissions } from "@lite-harness/plugin-core";
@@ -68,7 +68,7 @@ if (command === "help" || command === "--help") {
     available: true, providerConfigured: false, snapshotKeyConfigured: false,
   };
   try {
-    const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+    const credentials = createCredentialStore(dataDir, effectiveEnvironment);
     osCredential = {
       available: true,
       providerConfigured: Boolean(await credentials.get(configuredProfile)),
@@ -126,7 +126,7 @@ if (command === "help" || command === "--help") {
   const installation = loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
   mkdirSync(installation.dataDir, { recursive: true });
   writeInstallationConfiguration(installation);
-  const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(installation.dataDir, effectiveEnvironment);
   const appCredential = await credentials.getOrCreate("service.app-token", () => `lhr_app_${randomBytes(32).toString("base64url")}`);
   await credentials.getOrCreate("service.internal-token", () => randomBytes(32).toString("hex"));
   await credentials.getOrCreate("snapshot.root", () => randomBytes(32).toString("base64"));
@@ -210,7 +210,7 @@ if (command === "help" || command === "--help") {
     process.stdout.write(`${JSON.stringify({ path, lines }, null, 2)}\n`);
   }
 } else if (command === "token" && ["create", "list", "revoke"].includes(subcommand ?? "")) {
-  const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(dataDir, effectiveEnvironment);
   const registry = readTokenRegistry(dataDir);
   if (subcommand === "list") {
     const tokens = [];
@@ -314,7 +314,7 @@ if (command === "help" || command === "--help") {
     if (!argument) throw new Error("Usage: providers login <id>");
     const secret = (await readStandardInput()).replace(/[\r\n]+$/, "");
     if (!secret) throw new Error("Pipe the provider credential to stdin");
-    await new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") }).set(`${argument}_default`, secret);
+    await createCredentialStore(dataDir, effectiveEnvironment).set(`${argument}_default`, secret);
     process.stdout.write(`${JSON.stringify({ provider: argument, profileId: `${argument}_default`, configured: true })}\n`);
   } else {
     if (!argument) throw new Error("Usage: providers configure <id> [base-url] [model]");
@@ -352,7 +352,7 @@ if (command === "help" || command === "--help") {
   process.stdout.write(`${JSON.stringify({ workspaceId, path: resolve(archivePath), imported: true })}\n`);
 } else if (command === "gateway" || command === "manager") {
   const installation = installedConfiguration ?? loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
-  const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(installation.dataDir, effectiveEnvironment);
   const internalToken = effectiveEnvironment.LITE_HARNESS_INTERNAL_TOKEN ?? await credentials.get("service.internal-token");
   const appToken = effectiveEnvironment.LITE_HARNESS_APP_TOKEN ?? await credentials.get("service.app-token");
   if (!internalToken || (command === "gateway" && !appToken)) throw new Error("Installed service tokens are missing; run `pnpm lite init` then `pnpm lite service install`");
@@ -410,13 +410,13 @@ if (command === "help" || command === "--help") {
 } else if (command === "keygen") {
   process.stdout.write(`${randomBytes(32).toString("base64")}\n`);
 } else if (command === "keygen-store") {
-  const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(dataDir, effectiveEnvironment);
   await credentials.set("snapshot.root", randomBytes(32).toString("base64"));
   await credentials.set("browser.profile-root", randomBytes(32).toString("base64"));
   process.stdout.write(`${JSON.stringify({ profileIds: ["snapshot.root", "browser.profile-root"], configured: true })}\n`);
 } else if (command === "credential" && ["set", "status", "delete"].includes(subcommand ?? "")) {
   if (!argument) throw new Error("A credential profile id is required");
-  const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(dataDir, effectiveEnvironment);
   if (subcommand === "set") {
     const secret = (await readStandardInput()).replace(/[\r\n]+$/, "");
     if (!secret) throw new Error("Pipe the provider credential to stdin");
@@ -484,7 +484,7 @@ if (command === "help" || command === "--help") {
   if (subcommand === "install") {
     const installation = loadInstallationConfiguration(process.env, process.cwd(), process.platform, { developmentDefaults: true });
     const service = { root, dataDir: installation.dataDir };
-    const credentials = new OsSecretStore({ windowsPath: join(installation.dataDir, "credentials.dpapi.json") });
+    const credentials = createCredentialStore(installation.dataDir, effectiveEnvironment);
     await credentials.getOrCreate("service.internal-token", () => randomBytes(32).toString("hex"));
     await credentials.getOrCreate("service.app-token", () => randomBytes(32).toString("hex"));
     writeInstallationConfiguration(installation);
@@ -629,7 +629,7 @@ async function inspectGatewayReadiness(url: string | undefined, required: boolea
 }
 
 async function snapshotKey(): Promise<Buffer> {
-  const credentials = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(dataDir, effectiveEnvironment);
   const value = effectiveEnvironment.LITE_HARNESS_SNAPSHOT_KEY?.trim() || await credentials.get("snapshot.root");
   if (!value) throw new Error("Configure LITE_HARNESS_SNAPSHOT_KEY or run `pnpm lite keygen-store`");
   const key = Buffer.from(value, "base64");
@@ -707,7 +707,7 @@ function pluginCoordinate(value: string | undefined, operation: string): { id: s
 
 async function managerPluginRequest<T = unknown>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
   const configuration = loadManagerIpcConfiguration(effectiveEnvironment);
-  const credentials = new OsSecretStore({ windowsPath: join(configuration.dataDir, "credentials.dpapi.json") });
+  const credentials = createCredentialStore(configuration.dataDir, effectiveEnvironment);
   const internalToken = effectiveEnvironment.LITE_HARNESS_INTERNAL_TOKEN?.trim() || await credentials.get("service.internal-token");
   if (!internalToken) throw new Error("Manager plugin commands require LITE_HARNESS_INTERNAL_TOKEN or an installed service token");
   const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");

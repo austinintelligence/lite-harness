@@ -200,6 +200,9 @@ describe("release truth", () => {
       bypass.claims.payload = payload;
       expect(validateEvidenceDocument(bypass)).toContain(expected);
     }
+    const relativeDoubleSlash = structuredClone(valid);
+    relativeDoubleSlash.claims.payload = "test case a//b remains a relative token";
+    expect(validateEvidenceDocument(relativeDoubleSlash)).toEqual([]);
   });
 
   it("stores only repo-relative allowlisted Vitest proof fields", () => {

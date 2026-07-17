@@ -422,7 +422,9 @@ export class ExternalBrowserEgressBroker {
         "--label", "lite-harness.managed=true", "--label", "lite-harness.kind=browser",
         "--label", "lite-harness.browser-role=egress", "--label", `lite-harness.installation=${installation}`,
         "--network", this.networkName, "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges", "--security-opt", "seccomp=default", "--pids-limit", "64",
+        // Docker's built-in default seccomp profile is selected by omission;
+        // `seccomp=default` would be interpreted as a profile filename.
+        "--security-opt", "no-new-privileges", "--pids-limit", "64",
         "--memory", "128m", "--memory-swap", "128m", "--cpus", "0.5", "--ulimit", "nofile=1024:1024",
         "--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3", "--user", "pwuser",
         "--add-host", "host.docker.internal:host-gateway",

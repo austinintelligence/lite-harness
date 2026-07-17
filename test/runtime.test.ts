@@ -37,12 +37,13 @@ describe("tool runtime policy", () => {
     const args = dockerMaintenanceHardeningArgs({ memory: "48m", cpus: "0.25", pidsLimit: 32 }, { user: "1000:1000" });
     expect(args).toEqual(expect.arrayContaining([
       "--network", "none", "--read-only", "--cap-drop", "ALL",
-      "--security-opt", "no-new-privileges=true", "--security-opt", "seccomp=default", "--pids-limit", "32",
+      "--security-opt", "no-new-privileges=true", "--pids-limit", "32",
       "--memory", "48m", "--memory-swap", "48m", "--cpus", "0.25", "--ulimit", "nofile=1024:1024",
       "--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3",
       "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
       "--user", "1000:1000",
     ]));
+    expect(args).not.toContain("seccomp=default");
     expect(args).not.toContain("--privileged");
     expect(args).not.toContain("--network=host");
   });
@@ -97,7 +98,7 @@ describe("tool runtime policy", () => {
       expect(volumes.some((args) => args[1] === "create")).toBe(true);
       expect(creates.every((args) => args.includes("--pull=never") && args.includes("none") && args.includes("--read-only") && args.includes("1000:1000"))).toBe(true);
       expect(creates.every((args) => args.includes("--memory-swap") && args.includes("256m") &&
-        args.includes("nofile=1024:1024") && args.includes("seccomp=default") &&
+        args.includes("nofile=1024:1024") && !args.includes("seccomp=default") &&
         args.includes("--log-driver") && args.includes("json-file") &&
         args.includes("max-size=10m") && args.includes("max-file=3"))).toBe(true);
       expect(runs.length).toBeGreaterThan(0);

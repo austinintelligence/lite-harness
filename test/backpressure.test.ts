@@ -77,7 +77,7 @@ describe("SSE and local IPC flow control", () => {
   it("aborts the in-flight Unix-socket or named-pipe request when the Gateway cancels it", async () => {
     const socketPath = process.platform === "win32"
       ? `\\\\.\\pipe\\lite-harness-ipc-${randomUUID()}`
-      : join(tmpdir(), `lite-harness-ipc-${randomUUID()}.sock`);
+      : join(tmpdir(), `lh-${randomUUID().slice(0, 8)}.sock`);
     let notifyRequest!: () => void;
     let notifyDisconnected!: () => void;
     const requested = new Promise<void>((resolve) => { notifyRequest = resolve; });

@@ -22,7 +22,11 @@ Manager resolves `LITE_HARNESS_CREDENTIAL_PROFILE` through a single-flight
 credential broker. `LITE_HARNESS_CREDENTIAL_STORE=os` reads the profile from
 DPAPI on Windows, Keychain on macOS, or Secret Service on Linux. The default
 `environment` lane accepts `LITE_HARNESS_PROVIDER_API_KEY` for ephemeral local
-use. Neither lane serializes secret material into run state, logs, or Docker.
+use. Headless recovery may explicitly set
+`LITE_HARNESS_CREDENTIAL_RECOVERY_KEY` (at least 12 characters); this selects an
+AES-GCM recovery envelope in the data directory without a plaintext fallback,
+and the key is never persisted. Neither lane serializes secret material into
+run state, logs, or Docker.
 
 Fallback occurs only for typed retryable failures before the provider accepts
 the request and before any text, tool call, or usage becomes visible. Once any

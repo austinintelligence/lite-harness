@@ -171,6 +171,10 @@ Use `anthropic` for Anthropic or `openai-compatible` plus
 endpoint. Presets also cover `openrouter`, `gemini`, `xai`, `kimi`, and
 `minimax`. Set `LITE_HARNESS_CREDENTIAL_STORE=os` to resolve
 `LITE_HARNESS_CREDENTIAL_PROFILE` through DPAPI, Keychain, or Secret Service.
+For headless recovery, explicitly set
+`LITE_HARNESS_CREDENTIAL_RECOVERY_KEY` (at least 12 characters) to use an
+encrypted recovery envelope in the data directory; the key is not persisted
+and there is no plaintext fallback.
 
 For a fail-closed offline run, set `LITE_HARNESS_OFFLINE=true`. Offline mode
 accepts the deterministic fake provider in development or an

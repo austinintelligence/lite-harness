@@ -6,7 +6,7 @@ import { loadManagerConfiguration, type ValidatedManagerConfiguration } from "@l
 import { AgentRunner, FakeModelGateway } from "@lite-harness/agent-runtime";
 import type { IntervalTrigger } from "@lite-harness/automation";
 import { RunService } from "@lite-harness/control-plane";
-import { OsSecretStore } from "@lite-harness/credential-store";
+import { createCredentialStore } from "@lite-harness/credential-store";
 import { ClaudeCodeGateway, CodexAppServerGateway } from "@lite-harness/delegated-runtime";
 import type { SqliteIntegrationStore } from "@lite-harness/integrations";
 import {
@@ -299,7 +299,7 @@ async function configureBrokeredTools(
 }
 
 async function resolveStoredKey(environmentName: string, profileId: string): Promise<Buffer> {
-  const secrets = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const secrets = createCredentialStore(dataDir, process.env);
   const value = process.env[environmentName]?.trim() || await secrets.get(profileId);
   if (!value) throw new Error(`Configure ${environmentName} or OS credential ${profileId}`);
   const key = Buffer.from(value, "base64");
@@ -463,7 +463,7 @@ async function providerReadiness(provider: string, mode: "development" | "produc
   if (kind !== "os") return { ok: false, reason: "credential-store-unsupported" };
   try {
     const profileId = process.env.LITE_HARNESS_CREDENTIAL_PROFILE ?? `${provider}_default`;
-    const secret = await new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") }).get(profileId);
+    const secret = await createCredentialStore(dataDir, process.env).get(profileId);
     return secret ? { ok: true } : { ok: false, reason: "provider-credential-missing" };
   } catch {
     return { ok: false, reason: "credential-store-unavailable" };
@@ -477,7 +477,7 @@ async function snapshotKeyReadiness(path: string, mode: "development" | "product
     ? { ok: true }
     : { ok: false, reason: "snapshot-key-invalid" };
   try {
-    const secret = await new OsSecretStore({ windowsPath: join(path, "credentials.dpapi.json") }).get("snapshot.root");
+    const secret = await createCredentialStore(path, process.env).get("snapshot.root");
     return secret && validBase64Key(secret)
       ? { ok: true }
       : { ok: false, reason: "snapshot-key-missing" };
@@ -493,7 +493,7 @@ async function artifactEncryptionRootKey(path: string, mode: "development" | "pr
     return Buffer.from(configured, "base64");
   }
   try {
-    const secret = await new OsSecretStore({ windowsPath: join(path, "credentials.dpapi.json") }).get("snapshot.root");
+    const secret = await createCredentialStore(path, process.env).get("snapshot.root");
     if (secret) {
       if (!validBase64Key(secret)) throw new Error("Stored snapshot.root must be a base64-encoded 32-byte key");
       return Buffer.from(secret, "base64");
@@ -765,7 +765,7 @@ function resolveCredentialBroker(profileId: string): CredentialBroker {
     return broker;
   }
   if (kind !== "os") throw new Error(`Unsupported LITE_HARNESS_CREDENTIAL_STORE: ${kind}`);
-  const secrets = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+  const secrets = createCredentialStore(dataDir, process.env);
   const load = async (id: string) => {
     const secret = await secrets.get(id);
     return secret ? { authorizationHeader: `Bearer ${secret}` } : undefined;

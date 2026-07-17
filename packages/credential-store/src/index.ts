@@ -1,12 +1,28 @@
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, open as openFile, readFile, rename, rm, stat as statFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface SecretStore {
   get(key: string, signal?: AbortSignal): Promise<string | undefined>;
   getOrCreate(key: string, createValue: () => string, signal?: AbortSignal): Promise<{ value: string; created: boolean }>;
   set(key: string, value: string, signal?: AbortSignal): Promise<void>;
   delete(key: string, signal?: AbortSignal): Promise<boolean>;
+}
+
+/**
+ * Selects the OS store by default. An explicitly supplied recovery key opts
+ * into the encrypted recovery-file backend for headless environments; there
+ * is intentionally no implicit plaintext fallback.
+ */
+export function createCredentialStore(dataDir: string, environment: NodeJS.ProcessEnv = process.env): SecretStore {
+  const recoveryPassphrase = environment.LITE_HARNESS_CREDENTIAL_RECOVERY_KEY?.trim();
+  return recoveryPassphrase
+    ? new EncryptedFileSecretStore({
+      path: join(dataDir, "credentials.recovery.json"),
+      passphrase: recoveryPassphrase,
+    })
+    : new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
 }
 
 export interface CommandResult { code: number; stdout: string; stderr: string }
@@ -223,6 +239,171 @@ export class OsSecretStore implements SecretStore {
         if (Date.now() >= deadline) throw new Error("Windows credential index lock acquisition timed out");
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
+    }
+  }
+}
+
+export class EncryptedFileSecretStore implements SecretStore {
+  #tail = Promise.resolve();
+
+  constructor(private readonly options: { path: string; passphrase: string }) {
+    if (!options.path || options.passphrase.trim().length < 12) {
+      throw new Error("Encrypted recovery credential storage requires a passphrase of at least 12 characters");
+    }
+  }
+
+  async get(key: string): Promise<string | undefined> {
+    validateKey(key);
+    return await this.#withLock(async () => (await this.#read())[key]);
+  }
+
+  async getOrCreate(key: string, createValue: () => string): Promise<{ value: string; created: boolean }> {
+    validateKey(key);
+    return await this.#withLock(async () => {
+      const values = await this.#read();
+      if (values[key] !== undefined) return { value: values[key], created: false };
+      const value = createValue();
+      validateValue(value);
+      values[key] = value;
+      await this.#write(values);
+      return { value, created: true };
+    });
+  }
+
+  async set(key: string, value: string): Promise<void> {
+    validateKey(key); validateValue(value);
+    await this.#withLock(async () => {
+      const values = await this.#read();
+      values[key] = value;
+      await this.#write(values);
+    });
+  }
+
+  async delete(key: string): Promise<boolean> {
+    validateKey(key);
+    return await this.#withLock(async () => {
+      const values = await this.#read();
+      if (!(key in values)) return false;
+      delete values[key];
+      await this.#write(values);
+      return true;
+    });
+  }
+
+  async #read(): Promise<Record<string, string>> {
+    let source: string;
+    try { source = await readFile(this.options.path, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      throw error;
+    }
+    try {
+      const envelope = JSON.parse(source) as RecoveryEnvelope;
+      if (envelope.schemaVersion !== 1 || envelope.algorithm !== "aes-256-gcm" ||
+          typeof envelope.salt !== "string" || typeof envelope.iv !== "string" ||
+          typeof envelope.tag !== "string" || typeof envelope.ciphertext !== "string") {
+        throw new Error("Recovery credential envelope is malformed");
+      }
+      const salt = Buffer.from(envelope.salt, "base64url");
+      const iv = Buffer.from(envelope.iv, "base64url");
+      const tag = Buffer.from(envelope.tag, "base64url");
+      const ciphertext = Buffer.from(envelope.ciphertext, "base64url");
+      if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16) throw new Error("Recovery credential envelope is malformed");
+      const decipher = createDecipheriv("aes-256-gcm", recoveryKey(this.options.passphrase, salt), iv);
+      decipher.setAuthTag(tag);
+      const values = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8")) as unknown;
+      if (!values || typeof values !== "object" || Array.isArray(values) ||
+          !Object.entries(values).every(([key, value]) => { validateKey(key); validateValue(String(value)); return typeof value === "string"; })) {
+        throw new Error("Recovery credential payload is malformed");
+      }
+      return values as Record<string, string>;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Recovery credential")) throw error;
+      throw new Error("Recovery credential store could not be decrypted");
+    }
+  }
+
+  async #write(values: Record<string, string>): Promise<void> {
+    await mkdir(dirname(this.options.path), { recursive: true, mode: 0o700 });
+    const salt = randomBytes(16);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", recoveryKey(this.options.passphrase, salt), iv);
+    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(values), "utf8"), cipher.final()]);
+    const envelope: RecoveryEnvelope = {
+      schemaVersion: 1,
+      algorithm: "aes-256-gcm",
+      salt: salt.toString("base64url"),
+      iv: iv.toString("base64url"),
+      tag: cipher.getAuthTag().toString("base64url"),
+      ciphertext: ciphertext.toString("base64url"),
+    };
+    const temporary = `${this.options.path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+    const backup = `${this.options.path}.bak`;
+    await writeFile(temporary, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
+    await rm(backup, { force: true });
+    try { await rename(this.options.path, backup); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try {
+      await rename(temporary, this.options.path);
+      await rm(backup, { force: true });
+    } catch (error) {
+      try { await rename(backup, this.options.path); } catch { /* preserve the original error */ }
+      throw error;
+    } finally { await rm(temporary, { force: true }); }
+  }
+
+  async #withLock<T>(operation: () => Promise<T>): Promise<T> {
+    const lockPath = `${this.options.path}.lock`;
+    await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
+    const predecessor = this.#tail;
+    let release!: () => void;
+    this.#tail = new Promise<void>((resolve) => { release = resolve; });
+    await predecessor;
+    let lock: Awaited<ReturnType<typeof openFile>> | undefined;
+    try {
+      lock = await acquireFileLock(lockPath);
+      return await operation();
+    } finally {
+      release();
+      if (lock) {
+        await lock.close();
+        await rm(lockPath, { force: true });
+      }
+    }
+  }
+}
+
+type RecoveryEnvelope = {
+  schemaVersion: 1;
+  algorithm: "aes-256-gcm";
+  salt: string;
+  iv: string;
+  tag: string;
+  ciphertext: string;
+};
+
+function recoveryKey(passphrase: string, salt: Buffer): Buffer {
+  return scryptSync(passphrase, salt, 32, { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+}
+
+async function acquireFileLock(lockPath: string): Promise<Awaited<ReturnType<typeof openFile>>> {
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      const lock = await openFile(lockPath, "wx", 0o600);
+      await lock.writeFile(`${process.pid}\n`, "utf8");
+      return lock;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      try {
+        const metadata = await statFile(lockPath);
+        if (Date.now() - metadata.mtimeMs > 30_000) { await rm(lockPath, { force: true }); continue; }
+      } catch (metadataError) {
+        if ((metadataError as NodeJS.ErrnoException).code !== "ENOENT") throw metadataError;
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error("Recovery credential store lock acquisition timed out");
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
 }

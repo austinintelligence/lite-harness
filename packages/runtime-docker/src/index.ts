@@ -463,6 +463,10 @@ export class DockerToolRuntime implements ToolRuntime {
     } catch (error) {
       executionError = error;
     }
+    // Once the caller has cancelled, the mutation result is intentionally
+    // abandoned. A second quota container would only race the cancellation
+    // cleanup and can mask the original abort with a secondary failure.
+    if (executionError && (params.signal?.aborted || isAbortError(executionError))) throw executionError;
     let quotaError: unknown;
     try {
       await this.#assertWorkspaceQuota(mount, params);
@@ -768,6 +772,11 @@ function isNoSuchContainer(result: DockerCommandResult): boolean {
   return /no such (?:container|object)/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof AggregateError) return error.errors.some((item) => isAbortError(item));
+  return error instanceof Error && (error.name === "AbortError" || /\babort(?:ed|ing)?\b|timed out/i.test(error.message));
+}
+
 function isContainerNotRunning(result: DockerCommandResult): boolean {
   return /container\b.*\bis not running\b/i.test(`${result.stderr}\n${result.stdout}`);
 }
@@ -788,13 +797,14 @@ export function dockerMaintenanceHardeningArgs(
 ): string[] {
   const capabilities = options.capabilities ?? [];
   const memory = config.memory ?? "256m";
+  // Omitting a seccomp override selects Docker's built-in default profile.
+  // `seccomp=default` is parsed as a profile filename named "default".
   return [
     "--network", "none",
     "--read-only",
     "--cap-drop", "ALL",
     ...capabilities.flatMap((capability) => ["--cap-add", capability]),
     "--security-opt", "no-new-privileges=true",
-    "--security-opt", "seccomp=default",
     "--pids-limit", String(config.pidsLimit ?? 64),
     "--memory", memory,
     "--memory-swap", memory,

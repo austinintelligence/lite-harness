@@ -215,7 +215,7 @@ describe("Docker runtime integration", () => {
       expect(inspected.HostConfig.ReadonlyRootfs).toBe(true);
       expect(inspected.HostConfig.NetworkMode).toBe("none");
       expect(inspected.HostConfig.CapDrop).toEqual(expect.arrayContaining(["ALL"]));
-      expect(inspected.HostConfig.SecurityOpt).toEqual(expect.arrayContaining(["no-new-privileges"]));
+      expect(inspected.HostConfig.SecurityOpt.some((option) => /^no-new-privileges(?:=true)?$/.test(option))).toBe(true);
       expect(inspected.HostConfig.Memory).toBe(32 * 1024 * 1024);
       expect(inspected.HostConfig.NanoCpus).toBe(500_000_000);
       expect(inspected.HostConfig.PidsLimit).toBe(32);

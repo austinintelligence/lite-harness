@@ -1121,10 +1121,10 @@ export class LocalCacheCatalog {
       if (entry?.state === "READY") throw new Error("Cache entry is already ready");
       const active = database.prepare("SELECT owner_id, expires_at, staging_path FROM cache_population_leases WHERE cache_key = ?").get(key) as { owner_id: string; expires_at: string; staging_path: string } | undefined;
       if (active && Date.parse(active.expires_at) > now && active.owner_id !== ownerId) throw new Error("Cache population is leased by another publisher");
-      if (active) rmSync(active.staging_path, { recursive: true, force: true });
+      if (active) removeCacheTree(active.staging_path);
       fencingToken = (entry?.fencing_token ?? 0) + 1;
       stagingPath = this.#stagingPath(key, fencingToken);
-      rmSync(stagingPath, { recursive: true, force: true });
+      removeCacheTree(stagingPath);
       mkdirSync(stagingPath, { recursive: true, mode: 0o700 });
       database.prepare(`
         INSERT INTO cache_entries (
@@ -1146,7 +1146,7 @@ export class LocalCacheCatalog {
       database.exec("COMMIT");
     } catch (error) {
       try { database.exec("ROLLBACK"); } catch { /* no transaction */ }
-      if (stagingPath) rmSync(stagingPath, { recursive: true, force: true });
+      if (stagingPath) removeCacheTree(stagingPath);
       throw error;
     } finally { database.close(); }
     return { key, class: descriptor.class, ownerId, fencingToken, stagingPath, expiresAt };
@@ -1182,7 +1182,7 @@ export class LocalCacheCatalog {
       return { key: lease.key, path: target, manifestSha256: manifest.sha256, sizeBytes: manifest.sizeBytes, fileCount: manifest.fileCount, readOnly: true };
     } catch (error) {
       try { database.exec("ROLLBACK"); } catch { /* no transaction */ }
-      rmSync(target, { recursive: true, force: true });
+      removeCacheTree(target);
       throw error;
     } finally { database.close(); }
   }
@@ -1236,9 +1236,14 @@ export class LocalCacheCatalog {
         if (manifest.sha256 === row.manifest_sha256 && manifest.sizeBytes === row.size_bytes && manifest.fileCount === row.file_count) return;
       } catch { /* every unreadable or structurally invalid entry is poisoned */ }
       const entryPath = this.#entryPath(row.class, key); const quarantinePath = this.#quarantinePath(row.class, key);
-      rmSync(quarantinePath, { recursive: true, force: true });
+      removeCacheTree(quarantinePath);
       mkdirSync(dirname(quarantinePath), { recursive: true, mode: 0o700 });
-      if (lstatExists(entryPath)) renameSync(entryPath, quarantinePath);
+      if (lstatExists(entryPath)) {
+        // A READY cache is intentionally read-only. Restore directory write
+        // permission only for this integrity-failure quarantine move.
+        chmodCacheTreeWritable(entryPath);
+        renameSync(entryPath, quarantinePath);
+      }
         database.prepare("UPDATE cache_entries SET state='QUARANTINED', updated_at=? WHERE cache_key=?").run(new Date().toISOString(), key);
       throw new Error("Cache integrity verification failed and the entry was quarantined");
     } finally { database.close(); }
@@ -1252,7 +1257,7 @@ export class LocalCacheCatalog {
     try {
       const populations = database.prepare("SELECT cache_key, staging_path FROM cache_population_leases WHERE expires_at <= ?").all(new Date(now).toISOString()) as Array<{ cache_key: string; staging_path: string }>;
       for (const lease of populations) {
-        rmSync(lease.staging_path, { recursive: true, force: true });
+        removeCacheTree(lease.staging_path);
         database.prepare("DELETE FROM cache_population_leases WHERE cache_key=?").run(lease.cache_key);
         database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND state='STAGING'").run(lease.cache_key);
         expiredPopulations += 1;
@@ -1261,7 +1266,7 @@ export class LocalCacheCatalog {
       for (const lease of readers) { this.#releaseReadInDatabase(database, lease.id, lease.cache_key); expiredReaders += 1; }
       const quarantined = database.prepare("SELECT cache_key, class, size_bytes FROM cache_entries WHERE state='QUARANTINED'").all() as Array<{ cache_key: string; class: CacheClass; size_bytes: number }>;
       for (const entry of quarantined) {
-        rmSync(this.#quarantinePath(entry.class, entry.cache_key), { recursive: true, force: true });
+        removeCacheTree(this.#quarantinePath(entry.class, entry.cache_key));
         database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND state='QUARANTINED'").run(entry.cache_key);
         evictedEntries += 1; reclaimedBytes += entry.size_bytes;
       }
@@ -1273,7 +1278,7 @@ export class LocalCacheCatalog {
       for (const entry of ready) {
         if (total <= options.quotaBytes && count <= options.maxEntries) break;
         if (entry.active_readers > 0) continue;
-        rmSync(this.#entryPath(entry.class, entry.cache_key), { recursive: true, force: true });
+        removeCacheTree(this.#entryPath(entry.class, entry.cache_key));
         database.prepare("DELETE FROM cache_entries WHERE cache_key=? AND active_readers=0").run(entry.cache_key);
         total -= entry.size_bytes; count -= 1; evictedEntries += 1; reclaimedBytes += entry.size_bytes;
       }
@@ -1392,6 +1397,25 @@ function chmodCacheTreeReadOnly(root: string): void {
     else chmodSync(path, 0o400);
   }
   chmodSync(root, 0o500);
+}
+
+function chmodCacheTreeWritable(root: string): void {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      chmodCacheTreeWritable(path);
+      chmodSync(path, 0o700);
+    } else {
+      chmodSync(path, 0o600);
+    }
+  }
+  chmodSync(root, 0o700);
+}
+
+function removeCacheTree(root: string): void {
+  if (!lstatExists(root)) return;
+  chmodCacheTreeWritable(root);
+  rmSync(root, { recursive: true, force: true });
 }
 
 function lstatExists(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; } }

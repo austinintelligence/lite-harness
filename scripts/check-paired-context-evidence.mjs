@@ -255,7 +255,7 @@ function runBehavioralContextEvidence() {
       proofSha256: createHash("sha256").update(proofBytes).digest("hex"),
       counts: counts ?? null,
       defaultOffExecuted: passedCase("test/optional-systems-manager.test.ts", "BD-050-REGRESSION keeps context optimization off by default and retains native text"),
-      durableRecoveryAndFallbackExecuted: passedCase("test/context-optimization.test.ts", "BD-050-REGRESSION persists immutable exact text and sends images only through a vision route"),
+      durableRecoveryAndFallbackExecuted: passedCase("test/context-optimization.test.ts", "BD-050-REGRESSION persists immutable exact canonical text"),
       nativeEligibilityExecuted: passedCase("test/capabilities.test.ts", "keeps canonical context exact and only renders eligible blocks for allowlisted models"),
       selectedVisionRouteExecuted: passedCase("test/optional-systems-manager.test.ts", "connects an explicitly classified semantic file to the selected vision route and exact recovery"),
       opticalProviderFallbackExecuted: passedCase("test/provider-core.test.ts", "fails closed instead of sending model-specific optical context to a fallback"),

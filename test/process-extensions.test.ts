@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,7 +91,7 @@ describe("process-backed extensions", () => {
       messages: [{ role: "user", content: "work in the leased directory" }], context: delegatedContext,
     })) { /* consume delegated lifecycle */ }
     expect(resolvedContext).toEqual(delegatedContext);
-    expect(processSpec?.cwd).toBe(workspace);
+    expect(processSpec?.cwd).toBe(realpathSync(workspace));
   });
 
   it("rejects delegated ownership, fencing, or non-bind workspace mismatches", () => {
@@ -118,7 +118,7 @@ describe("process-backed extensions", () => {
       const lease = store.acquireWorkspaceLease(delegatedContext.workspaceId, delegatedContext.runId, 60_000)!;
       const resolver = createDelegatedWorkspaceResolver(store);
       const context = { ...delegatedContext, fencingToken: lease.fencingToken };
-      expect(resolver(context)).toBe(workspace);
+      expect(resolver(context)).toBe(realpathSync(workspace));
       expect(() => resolver({ ...context, principal: { ...context.principal, userId: "other" } }))
         .toThrow(/ownership is invalid/);
       store.releaseWorkspaceLease(lease);
@@ -147,7 +147,7 @@ describe("process-backed extensions", () => {
     for await (const _event of gateway.streamTurn({
       messages: [{ role: "user", content: secretPrompt }], context: delegatedContext,
     })) { /* consume delegated lifecycle */ }
-    expect(capturedSpec?.cwd).toBe(workspace);
+    expect(capturedSpec?.cwd).toBe(realpathSync(workspace));
     expect(capturedSpec?.args?.join(" ")).not.toContain(secretPrompt);
     expect(capturedInput).toContain(secretPrompt);
   });

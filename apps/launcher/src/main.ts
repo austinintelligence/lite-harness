@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join, resolve } from "node:path";
-import { OsSecretStore } from "@lite-harness/credential-store";
+import { createCredentialStore } from "@lite-harness/credential-store";
 import { RedactedStreamBuffer, RotatingLogSink } from "@lite-harness/operations";
 import {
   buildRoleEnvironment,
@@ -26,7 +26,7 @@ try {
   if (!(error instanceof Error) || !error.message.includes("configuration is missing")) throw error;
   installation = loadInstallationConfiguration(launchEnvironment);
 }
-const secrets = new OsSecretStore({ windowsPath: join(dataDir, "credentials.dpapi.json") });
+const secrets = createCredentialStore(dataDir, launchEnvironment);
 const internalToken = launchEnvironment.LITE_HARNESS_INTERNAL_TOKEN ?? await secrets.get("service.internal-token");
 const appToken = launchEnvironment.LITE_HARNESS_APP_TOKEN ?? await secrets.get("service.app-token");
 if (!internalToken || !appToken) throw new Error("Service tokens are missing; run `pnpm lite service install`");

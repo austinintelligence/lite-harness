@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OsSecretStore, type CommandRunner } from "@lite-harness/credential-store";
+import { createCredentialStore, EncryptedFileSecretStore, OsSecretStore, type CommandRunner } from "@lite-harness/credential-store";
 
 const cleanup: string[] = [];
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -87,5 +87,23 @@ describe("OS credential store", () => {
     expect(generated).toBe(1);
     expect(results.map((result) => result.value)).toEqual(["token-1", "token-1"]);
     expect(results.filter((result) => result.created)).toHaveLength(1);
+  });
+
+  it("uses an explicit encrypted recovery envelope without plaintext or lost concurrent updates", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "lite-recovery-credentials-")); cleanup.push(directory);
+    const path = join(directory, "credentials.recovery.json");
+    const first = new EncryptedFileSecretStore({ path, passphrase: "operator-recovery-passphrase" });
+    const second = new EncryptedFileSecretStore({ path, passphrase: "operator-recovery-passphrase" });
+    await Promise.all([first.set("first", "secret-one"), second.set("second", "secret-two")]);
+    const source = readFileSync(path, "utf8");
+    expect(source).not.toContain("secret-one");
+    expect(source).not.toContain("secret-two");
+    await expect(first.get("first")).resolves.toBe("secret-one");
+    await expect(second.get("second")).resolves.toBe("secret-two");
+    await expect(new EncryptedFileSecretStore({ path, passphrase: "wrong-recovery-passphrase" }).get("first"))
+      .rejects.toThrow(/could not be decrypted/);
+    const selected = createCredentialStore(directory, { LITE_HARNESS_CREDENTIAL_RECOVERY_KEY: "operator-recovery-passphrase" });
+    await selected.set("factory", "selected-secret");
+    await expect(selected.get("factory")).resolves.toBe("selected-secret");
   });
 });

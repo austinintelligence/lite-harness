@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -65,12 +65,12 @@ describe("workspace durability", () => {
 
     const directory = mkdtempSync(join(tmpdir(), "lite-registered-bind-"));
     directories.push(directory);
-    expect(validateRegisteredBindRoot(directory)).toBe(directory);
+    expect(validateRegisteredBindRoot(directory)).toBe(realpathSync(directory));
     const target = join(directory, "project");
     const link = join(directory, "project-link");
     mkdirSync(target);
     symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
-    expect(validateRegisteredBindRoot(link)).toBe(target);
+    expect(validateRegisteredBindRoot(link)).toBe(realpathSync(target));
   });
 
   it("encrypts snapshots and falls back to the previous verified generation", async () => {

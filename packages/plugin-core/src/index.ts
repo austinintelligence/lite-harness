@@ -117,7 +117,9 @@ export class DockerPluginExecutionSandbox implements PluginExecutionSandbox {
         "--label", `lite-harness.installation=${this.#installationLabel}`,
         "--label", `lite-harness.plugin=${pluginLabelDigest(`${plugin.manifest.id}@${plugin.manifest.version}`)}`,
         "--network", "none", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges=true", "--security-opt", "seccomp=default", "--user", "1000:1000",
+        // Docker's built-in default seccomp profile is selected by omission;
+        // `seccomp=default` would be interpreted as a profile filename.
+        "--security-opt", "no-new-privileges=true", "--user", "1000:1000",
         "--pids-limit", String(this.config.pidsLimit ?? 64),
         "--memory", this.config.memory ?? "256m", "--memory-swap", this.config.memory ?? "256m",
         "--cpus", this.config.cpus ?? "1",

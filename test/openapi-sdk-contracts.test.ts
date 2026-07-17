@@ -18,7 +18,8 @@ const document = JSON.parse(readFileSync(resolve(root, "docs/openapi.json"), "ut
   components: { schemas: Record<string, unknown> };
   paths: Record<string, Record<string, any>>;
 };
-const pythonGenerated = readFileSync(resolve(root, "sdks/python/src/lite_harness/generated_api.py"), "utf8");
+const pythonGenerated = readFileSync(resolve(root, "sdks/python/src/lite_harness/generated_api.py"), "utf8")
+  .replaceAll("\r\n", "\n");
 
 describe("authoritative OpenAPI and generated SDK contract", () => {
   it("has a typed success response and request model for every public operation", () => {

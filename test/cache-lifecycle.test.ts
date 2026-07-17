@@ -1,11 +1,25 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LocalCacheCatalog, type CacheDescriptor, type CachePublisher } from "@lite-harness/workspace";
 
 const cleanup: string[] = [];
-afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const path of cleanup.splice(0)) {
+    makeTreeWritable(path);
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+function makeTreeWritable(path: string): void {
+  try {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      makeTreeWritable(join(path, entry.name));
+    }
+  } catch { /* the path may already have been removed by the test */ }
+  try { chmodSync(path, 0o700); } catch { /* Windows does not expose POSIX mode bits. */ }
+}
 
 describe("verified cache lifecycle BD-046-REGRESSION", () => {
   it("A13-CACHE-KEYS keys every compatibility and owner boundary deterministically", () => {

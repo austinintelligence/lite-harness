@@ -136,6 +136,59 @@ describe("packaged Manager workspace durability across restart boundaries", () =
     if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "A09 cleanup failed");
     expect(namedVolumeExists(volume)).toBe(false);
   }, 360_000);
+
+  it("A08-MANAGER-DEATH-PROCESS-RECONCILE reaps the owned tool container after an unclean Manager death", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "lite-a08-manager-death-"));
+    const suffix = randomUUID().replaceAll("-", "");
+    const fixture: A09Fixture = {
+      owner: { appId: "a08-app", tenantId: "a08-tenant", userId: `a08-user-${suffix}` },
+      workspaceId: `a08-workspace-${suffix}`,
+      agentId: `a08-shell-${suffix}`,
+      internalToken: `a08-real-manager-token-${suffix}`,
+    };
+    const volume = dockerWorkspaceVolumeName(fixture.workspaceId, { ...fixture.owner, scopes: [] });
+    let manager: PackagedWorkspaceManager | undefined;
+    let testFailure: unknown;
+    try {
+      manager = await startPackagedManager(dataDir, fixture);
+      activeManager = manager;
+      const runId = await manager.startShell("sleep 60");
+      await waitForManagedContainers(dataDir);
+      await manager.killHard();
+      activeManager = undefined;
+      expect(managedContainers(dataDir).length).toBeGreaterThan(0);
+
+      manager = await startPackagedManager(dataDir, fixture);
+      activeManager = manager;
+      await waitForNoManagedContainers(dataDir);
+      await expect(manager.waitForTerminal(runId)).resolves.toMatchObject({ status: "ORPHANED" });
+    } catch (error) {
+      testFailure = error;
+    }
+
+    const cleanupFailures: unknown[] = [];
+    let managerStopped = true;
+    const cleanupManager = manager ?? activeManager;
+    if (cleanupManager) {
+      try {
+        await cleanupManager.stop();
+        if (activeManager === cleanupManager) activeManager = undefined;
+      } catch (error) {
+        managerStopped = false;
+        cleanupFailures.push(error);
+      }
+    }
+    try { await waitForDockerReady(30_000); } catch (error) { cleanupFailures.push(error); }
+    if (managerStopped) {
+      try { removeNamedVolumeIfPresent(volume); } catch (error) { cleanupFailures.push(error); }
+      try { rmSync(dataDir, { recursive: true, force: true }); } catch (error) { cleanupFailures.push(error); }
+    } else {
+      cleanupFailures.push(new Error(`A08 cleanup preserved Manager data at ${dataDir} because the process did not stop`));
+    }
+    if (testFailure && cleanupFailures.length) throw new AggregateError([testFailure, ...cleanupFailures], "A08 qualification and cleanup both failed");
+    if (testFailure) throw testFailure;
+    if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "A08 cleanup failed");
+  }, 180_000);
 });
 
 interface A09Fixture {
@@ -240,15 +293,7 @@ class PackagedWorkspaceManager {
   }
 
   async runShell(script: string): Promise<string> {
-    const started = await this.request("POST", "/internal/runs", {
-      agent: this.fixture.agentId,
-      workspace: this.fixture.workspaceId,
-      input: JSON.stringify({ script }),
-      idempotencyKey: `a09-${randomUUID()}`,
-      principal: { ...this.fixture.owner, scopes: ["runs:create"] },
-    });
-    if (started.status !== 202) throw new Error(`Could not start A09 run: ${JSON.stringify(started.body)}`);
-    const runId = (started.body as { runId: string }).runId;
+    const runId = await this.startShell(script);
     const terminal = await this.waitForTerminal(runId);
     const eventsResponse = await this.request("GET", `/internal/runs/${runId}/events?after=0&wait_ms=0`);
     if (eventsResponse.status !== 200) throw new Error(`Could not read A09 events: ${JSON.stringify(eventsResponse.body)}`);
@@ -258,6 +303,18 @@ class PackagedWorkspaceManager {
       throw new Error(`A09 shell run failed: terminal=${terminal.status} completion=${JSON.stringify(completion?.payload)}`);
     }
     return typeof completion.payload.content === "string" ? completion.payload.content : "";
+  }
+
+  async startShell(script: string): Promise<string> {
+    const started = await this.request("POST", "/internal/runs", {
+      agent: this.fixture.agentId,
+      workspace: this.fixture.workspaceId,
+      input: JSON.stringify({ script }),
+      idempotencyKey: `a09-${randomUUID()}`,
+      principal: { ...this.fixture.owner, scopes: ["runs:create"] },
+    });
+    if (started.status !== 202) throw new Error(`Could not start A09 run: ${JSON.stringify(started.body)}`);
+    return (started.body as { runId: string }).runId;
   }
 
   async waitForTerminal(runId: string): Promise<RunRecordResult> {
@@ -279,6 +336,18 @@ class PackagedWorkspaceManager {
     this.child.kill("SIGKILL");
     if (!(await Promise.race([this.#exit.then(() => true), delay(10_000).then(() => false)]))) {
       throw new Error(`Packaged Manager did not exit:\n${this.#logs}`);
+    }
+  }
+
+  async killHard(): Promise<void> {
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+    if (process.platform === "win32" && this.child.pid) {
+      spawnSync("taskkill.exe", ["/PID", String(this.child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    } else {
+      this.child.kill("SIGKILL");
+    }
+    if (!(await Promise.race([this.#exit.then(() => true), delay(15_000).then(() => false)]))) {
+      throw new Error(`Packaged Manager did not die after a hard kill:\n${this.#logs}`);
     }
   }
 
@@ -520,6 +589,15 @@ async function waitForNoManagedContainers(dataDir: string): Promise<void> {
   for (;;) {
     if (managedContainers(dataDir).length === 0) return;
     if (Date.now() >= deadline) throw new Error("Timed out waiting for A09 run-container removal");
+    await delay(50);
+  }
+}
+
+async function waitForManagedContainers(dataDir: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    if (managedContainers(dataDir).length > 0) return;
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for A08 Manager-death tool container");
     await delay(50);
   }
 }

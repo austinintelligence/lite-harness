@@ -4,6 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { LiteHarnessClient } from "@lite-harness/sdk";
+import type { RunEvent } from "@lite-harness/contracts";
 import { dockerWorkspaceVolumeName } from "@lite-harness/runtime-docker";
 
 const root = resolve(import.meta.dirname, "..");
@@ -25,7 +27,7 @@ const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() || "h
 const provider = process.env.LITE_HARNESS_PROVIDER?.trim() || "openai-compatible";
 const modelId = process.env.LITE_HARNESS_MODEL?.trim() || "gpt-5.6-luna";
 const offline = process.env.LITE_HARNESS_OFFLINE?.trim() || (provider === "openai-compatible" && /^http:\/\/127\.0\.0\.1(?::\d+)?(?:\/|$)/i.test(providerBaseUrl) ? "true" : "false");
-const expectedContent = `Hermes real Docker artifact ${suffix}\n`;
+const expectedContent = `Hermes real Docker artifact ${suffix}`;
 const runtimeImage = resolveRuntimeImage(process.env.LITE_HARNESS_RUNTIME_IMAGE);
 const volume = dockerWorkspaceVolumeName(workspaceId, { ...owner, scopes: [] });
 const installationLabel = labelDigest(dataDir);
@@ -36,11 +38,14 @@ let managerLogs = "";
 let gatewayLogs = "";
 let runId: string | undefined;
 let observedRun: Record<string, unknown> | undefined;
-let observedEvents: EventRecord[] = [];
+let observedEvents: RunEvent[] = [];
+let processEnvironment: NodeJS.ProcessEnv | undefined;
+let credentialInspection = { inspectedContainers: 0, providerCredentialAbsent: true };
+let restartVerification: Record<string, unknown> | undefined;
 let report: Record<string, unknown>;
 
 try {
-  const environment: NodeJS.ProcessEnv = {
+  processEnvironment = {
     ...process.env,
     LITE_HARNESS_CONFIG_VERSION: "1",
     LITE_HARNESS_DATA_DIR: dataDir,
@@ -69,15 +74,14 @@ try {
     LITE_HARNESS_CONTEXT_OPTIMIZATION: "false",
   };
 
-  manager = startProcess("manager", join(root, "apps", "manager", "src", "main.ts"), environment);
-  manager.stdout.on("data", (chunk: Buffer) => { managerLogs = `${managerLogs}${chunk.toString()}`.slice(-64 * 1024); });
-  manager.stderr.on("data", (chunk: Buffer) => { managerLogs = `${managerLogs}${chunk.toString()}`.slice(-64 * 1024); });
-  gateway = startProcess("gateway", join(root, "apps", "gateway", "src", "main.ts"), environment);
-  gateway.stdout.on("data", (chunk: Buffer) => { gatewayLogs = `${gatewayLogs}${chunk.toString()}`.slice(-64 * 1024); });
-  gateway.stderr.on("data", (chunk: Buffer) => { gatewayLogs = `${gatewayLogs}${chunk.toString()}`.slice(-64 * 1024); });
+  manager = startProcess("manager", join(root, "apps", "manager", "src", "main.ts"), processEnvironment);
+  attachProcessLogs(manager, "manager");
+  gateway = startProcess("gateway", join(root, "apps", "gateway", "src", "main.ts"), processEnvironment);
+  attachProcessLogs(gateway, "gateway");
 
   await waitForReady(`${baseUrl}/readyz`, [manager, gateway]);
-  await requestJson("POST", "/v1/agents", {
+  const client = new LiteHarnessClient({ baseUrl, token: appToken });
+  await client.createAgent({
     id: agentId,
     name: "Hermes Docker qualification agent",
     instructions: "Use only the two requested tools and complete the file-and-artifact task exactly.",
@@ -85,28 +89,32 @@ try {
     allowedTools: ["write_file", "artifact_publish"],
     defaultBudget: { maxTurns: 4, maxToolCalls: 4, totalTimeoutMs: 180000, modelIdleTimeoutMs: 120000, commandTimeoutMs: 30000 },
   });
-  await requestJson("POST", "/v1/workspaces", { id: workspaceId });
-  const created = await requestJson<{ runId: string }>("POST", "/v1/runs", {
+  await client.createWorkspace({ id: workspaceId });
+  const created = await client.createRun({
     agent: agentId,
     workspace: workspaceId,
     input: `Use write_file to create hermes-docker-result.txt with exactly this UTF-8 content: ${JSON.stringify(expectedContent)}. Then use artifact_publish on that same path with mediaType text/plain. Use no other tools and do not finish until both calls succeed.`,
     budget: { maxTurns: 4, maxToolCalls: 4, totalTimeoutMs: 180000, modelIdleTimeoutMs: 120000, commandTimeoutMs: 30000 },
-  }, { "idempotency-key": `hermes-docker-${suffix}` });
+  }, `hermes-docker-${suffix}`);
   runId = created.runId;
+  const streamedEvents = collectEvents(client, runId);
 
   let run: Record<string, unknown> | undefined;
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
-    run = await requestJson<Record<string, unknown>>("GET", `/v1/runs/${encodeURIComponent(runId)}`);
+    run = await client.getRun(runId) as unknown as Record<string, unknown>;
     observedRun = run;
-    for (const id of managedContainerIds(installationLabel)) managedSeen.add(id);
+    for (const id of managedContainerIds(installationLabel)) {
+      managedSeen.add(id);
+      inspectContainerCredentials(id);
+    }
     if (["SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"].includes(String(run.status))) break;
     await delay(150);
   }
   if (!run || !["SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ORPHANED"].includes(String(run.status))) {
     throw new Error(`Hermes Docker run timed out: ${JSON.stringify(run)}`);
   }
-  const events = await readEvents(runId);
+  const events = await streamedEvents;
   observedEvents = events;
   const toolRequests = events.filter((event) => event.type === "tool.call.requested").map((event) => event.payload?.name);
   const toolResults = events.filter((event) => event.type === "tool.call.completed").map((event) => event.payload?.ok);
@@ -119,20 +127,54 @@ try {
   }
   if (toolResults.some((value) => value !== true)) throw new Error(`Hermes Docker tool failure: ${JSON.stringify(toolResults)}`);
   if (!artifactId) throw new Error("Hermes Docker run did not publish an artifact");
-  const artifactPayload = await requestJson<{ record: { id: string }; dataBase64: string }>("GET", `/v1/artifacts/${encodeURIComponent(artifactId)}`);
-  const artifactContent = Buffer.from(artifactPayload.dataBase64, "base64").toString("utf8");
+  const artifactPayload = await client.downloadArtifact(artifactId);
+  const artifactContent = Buffer.from(artifactPayload.data).toString("utf8");
   if (artifactContent !== expectedContent) throw new Error("Published Hermes Docker artifact content did not match the requested bytes");
   const volumeContent = readVolumeFile(volume, runtimeImage);
   if (volumeContent !== expectedContent) throw new Error("The Docker workspace volume did not contain the published artifact bytes");
+  if (credentialInspection.inspectedContainers === 0) throw new Error("No live tool container was available for provider-credential inspection");
+
+  await stopProcess(gateway);
+  gateway = undefined;
+  await stopProcess(manager);
+  manager = undefined;
+  if (!processEnvironment) throw new Error("Hermes process environment was not initialized");
+  manager = startProcess("manager", join(root, "apps", "manager", "src", "main.ts"), processEnvironment);
+  attachProcessLogs(manager, "manager");
+  gateway = startProcess("gateway", join(root, "apps", "gateway", "src", "main.ts"), processEnvironment);
+  attachProcessLogs(gateway, "gateway");
+  await waitForReady(`${baseUrl}/readyz`, [manager, gateway]);
+  const restartedRun = await client.getRun(runId);
+  const restartedArtifact = await client.downloadArtifact(artifactId);
+  const replayedAfterRestart = await collectEvents(client, runId);
+  if (restartedRun.status !== "SUCCEEDED" || Buffer.from(restartedArtifact.data).toString("utf8") !== expectedContent) {
+    throw new Error("Restarted public SDK could not read the completed run and artifact");
+  }
+  if (replayedAfterRestart.length < events.length || replayedAfterRestart.at(-1)?.sequence !== events.at(-1)?.sequence) {
+    throw new Error("Restarted public SDK event replay did not preserve the terminal sequence");
+  }
+  restartVerification = {
+    managerRestarted: true,
+    gatewayRestarted: true,
+    runStatus: restartedRun.status,
+    artifactContentVerified: true,
+    replayedEvents: replayedAfterRestart.length,
+    terminalSequence: replayedAfterRestart.at(-1)?.sequence ?? null,
+  };
   report = {
     schemaVersion: 1,
     kind: "model-docker-vertical",
     sourceCommit: gitOutput(["rev-parse", "HEAD"]),
     sourceDirty: gitOutput(["status", "--porcelain"]).length > 0,
     provider: { route: provider === "openai-compatible" && offline === "true" ? "local-hermes-openai-compatible" : provider, baseUrl: providerBaseUrl, model: modelId, credential: "non-empty-placeholder-only" },
-    runtime: { kind: "docker", image: runtimeImage, imagePinned: true, managedContainersObserved: [...managedSeen] },
+    publicClient: { implementation: "@lite-harness/sdk LiteHarnessClient", eventStream: "SDK SSE replay" },
+    runtime: {
+      kind: "docker", image: runtimeImage, imagePinned: true, managedContainersObserved: [...managedSeen],
+      providerCredentialInspection: credentialInspection,
+    },
     run: { id: runId, status: run.status, toolRequests, toolResults, artifactId, eventTypes: events.map((event) => event.type) },
     artifact: { bytes: Buffer.byteLength(artifactContent), sha256: createHash("sha256").update(artifactContent).digest("hex"), contentVerified: true },
+    restart: restartVerification,
     usage: { observed: usage.length > 0, records: usage.length > 0 ? usage : "unknown", savingsClaimed: false },
   };
 } catch (error) {
@@ -147,6 +189,8 @@ try {
     run: observedRun,
     events: observedEvents,
     managedContainersObserved: [...managedSeen],
+    providerCredentialInspection: credentialInspection,
+    restart: restartVerification,
     managerLogs,
     gatewayLogs,
   };
@@ -177,6 +221,35 @@ function startProcess(name: string, entry: string, environment: NodeJS.ProcessEn
   });
 }
 
+function attachProcessLogs(child: ChildProcessWithoutNullStreams, name: "manager" | "gateway"): void {
+  const capture = (chunk: Buffer) => {
+    if (name === "manager") managerLogs = `${managerLogs}${chunk.toString()}`.slice(-64 * 1024);
+    else gatewayLogs = `${gatewayLogs}${chunk.toString()}`.slice(-64 * 1024);
+  };
+  child.stdout.on("data", capture);
+  child.stderr.on("data", capture);
+}
+
+function inspectContainerCredentials(containerId: string): void {
+  let rendered: string;
+  try {
+    rendered = execFileSync("docker", ["container", "inspect", "--format", "{{json .Config.Env}}", containerId], {
+      encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    if (/no such container|is not running/i.test(error instanceof Error ? error.message : String(error))) return;
+    throw error;
+  }
+  const env = JSON.parse(rendered) as unknown;
+  if (!Array.isArray(env) || env.some((item) => typeof item !== "string")) throw new Error("Tool container environment inspection was invalid");
+  credentialInspection.inspectedContainers += 1;
+  const values = env as string[];
+  if (values.some((item) => item.startsWith("LITE_HARNESS_PROVIDER_API_KEY=") || item.includes(providerKey))) {
+    credentialInspection.providerCredentialAbsent = false;
+    throw new Error("A real provider credential reached a Docker tool container");
+  }
+}
+
 async function waitForReady(url: string, processes: ChildProcessWithoutNullStreams[]): Promise<void> {
   const deadline = Date.now() + 45_000;
   let last = "not ready";
@@ -194,35 +267,12 @@ async function waitForReady(url: string, processes: ChildProcessWithoutNullStrea
   throw new Error(`Gateway did not become ready: ${last}\n${managerLogs}\n${gatewayLogs}`);
 }
 
-async function requestJson<T = Record<string, unknown>>(
-  method: string,
-  path: string,
-  body?: unknown,
-  extraHeaders: Record<string, string> = {},
-): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${appToken}`, ...(body === undefined ? {} : { "content-type": "application/json" }), ...extraHeaders },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  let parsed: unknown = {};
-  try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { raw: text }; }
-  if (!response.ok) throw new Error(`${method} ${path} returned HTTP ${response.status}: ${JSON.stringify(parsed)}`);
-  return parsed as T;
-}
-
-interface EventRecord { type: string; payload?: Record<string, unknown>; }
-
-async function readEvents(id: string): Promise<EventRecord[]> {
-  const response = await fetch(`${baseUrl}/v1/runs/${encodeURIComponent(id)}/events?after=0`, {
-    headers: { authorization: `Bearer ${appToken}` },
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`GET events returned HTTP ${response.status}: ${text}`);
-  return text.split(/\r?\n/)
-    .filter((line) => line.startsWith("data: ") && line !== "data: [DONE]")
-    .map((line) => JSON.parse(line.slice(6)) as EventRecord);
+async function collectEvents(client: LiteHarnessClient, id: string): Promise<RunEvent[]> {
+  const events: RunEvent[] = [];
+  for await (const event of client.events(id)) {
+    events.push(event);
+  }
+  return events;
 }
 
 function resolveRuntimeImage(configured: string | undefined): string {

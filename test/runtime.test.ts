@@ -85,6 +85,7 @@ describe("tool runtime policy", () => {
     });
     try {
       await expect(execute("shell_exec", { script: "printf safe", cwd: "." })).resolves.toMatchObject({ ok: true });
+      await expect(execute("shell_exec", { script: "printf empty-cwd", cwd: "" })).resolves.toMatchObject({ ok: true });
       await expect(execute("process_exec", { argv: ["node", "--version"] })).resolves.toMatchObject({ ok: true });
       await expect(execute("search_text", { pattern: "needle", paths: ["src"] })).resolves.toMatchObject({ ok: true });
       await expect(execute("patch_apply", { patch: "diff --git a/a b/a\n" })).resolves.toMatchObject({ ok: true });

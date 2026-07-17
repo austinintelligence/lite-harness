@@ -65,6 +65,32 @@ describe("managed Docker plugin lifecycle", () => {
     }
   }, 90_000);
 
+  it("A07-REAL-PLUGIN-HARDENING-INSPECT applies the bounded no-network policy to the live plugin container", async () => {
+    const installationId = uniqueInstallation("a07-hardening");
+    const sandbox = managedSandbox(installationId);
+    const supervisor = pluginSupervisor(fixturePlugin(`export default {
+      invoke(action, input) { return { action, input, hardened: true }; }
+    };`), sandbox, { idleTtlMs: 60_000 });
+    try {
+      await expect(supervisor.invoke("echo", { value: "a07" })).resolves.toMatchObject({ hardened: true });
+      await waitFor(() => managedContainers(installationId).length === 1, 15_000);
+      const inspected = dockerInspect(managedContainers(installationId)[0]!);
+      expect(inspected.Config.User).not.toMatch(/^0(?::0)?$/);
+      expect(inspected.HostConfig.ReadonlyRootfs).toBe(true);
+      expect(inspected.HostConfig.NetworkMode).toBe("none");
+      expect(inspected.HostConfig.CapDrop).toEqual(expect.arrayContaining(["ALL"]));
+      expect(inspected.HostConfig.SecurityOpt.some((option) => /^no-new-privileges(?:=true)?$/.test(option))).toBe(true);
+      expect(inspected.HostConfig.SecurityOpt).not.toContain("seccomp=default");
+      expect(inspected.HostConfig.Memory).toBeGreaterThan(0);
+      expect(inspected.HostConfig.NanoCpus).toBeGreaterThan(0);
+      expect(inspected.HostConfig.PidsLimit).toBeGreaterThan(0);
+      expect(inspected.HostConfig.Tmpfs["/tmp"]).toMatch(/noexec/);
+    } finally {
+      await supervisor.stop();
+      expect(managedContainers(installationId)).toEqual([]);
+    }
+  }, 90_000);
+
   it("A22-REAL-PLUGIN-IDLE-ZERO invokes in a managed container and authoritatively reaps it after idle", async () => {
     const installationId = uniqueInstallation("idle");
     const sandbox = managedSandbox(installationId);
@@ -202,6 +228,18 @@ function docker(args: readonly string[]): string {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Docker command failed: ${result.stderr || result.stdout}`);
   return result.stdout ?? "";
+}
+
+function dockerInspect(name: string): {
+  Config: { User: string };
+  HostConfig: {
+    ReadonlyRootfs: boolean; NetworkMode: string; CapDrop: string[]; SecurityOpt: string[];
+    Memory: number; NanoCpus: number; PidsLimit: number; Tmpfs: Record<string, string>;
+  };
+} {
+  const parsed = JSON.parse(docker(["container", "inspect", name])) as unknown;
+  if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== "object") throw new Error("A07 plugin Docker inspect output was invalid");
+  return parsed[0] as ReturnType<typeof dockerInspect>;
 }
 
 function labelDigest(value: string): string {

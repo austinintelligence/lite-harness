@@ -241,7 +241,10 @@ export const WORKSPACE_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.free
   }),
 ]);
 
-const workspaceDirectorySchema = { type: "string", minLength: 1, maxLength: 4_096 } as const;
+// Models often serialize an omitted workspace root as an empty cwd. The Docker
+// runtime normalizes that representation to "." while still rejecting unsafe
+// non-empty paths at execution time.
+const workspaceDirectorySchema = { type: "string", maxLength: 4_096 } as const;
 const packageManagerSchema = { enum: ["pnpm", "npm", "yarn"] } as const;
 function stringArraySchema(minItems: number, maxItems: number): Record<string, unknown> {
   return { type: "array", items: { type: "string", maxLength: 16_384 }, minItems, maxItems };

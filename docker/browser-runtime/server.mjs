@@ -109,7 +109,34 @@ async function invoke(command) {
   if (command.action === "navigate") {
     await assertAllowed(command.url);
     await resetReferences(page);
-    await page.goto(command.url, { waitUntil: "domcontentloaded" });
+    let download;
+    let resolveDownload;
+    const downloadReady = new Promise((resolve) => { resolveDownload = resolve; });
+    const onDownload = (candidate) => { download = candidate; resolveDownload(candidate); };
+    page.once("download", onDownload);
+    try {
+      try {
+        await page.goto(command.url, { waitUntil: "domcontentloaded" });
+      } catch (error) {
+        // Playwright rejects page.goto when the response starts a download.
+        // Preserve the browser action contract by promoting that download
+        // through the same quarantine boundary as click(expectDownload).
+        if (!download) {
+          download = await Promise.race([
+            downloadReady,
+            new Promise((resolve) => setTimeout(() => resolve(undefined), 1_000)),
+          ]);
+        }
+        if (!download) throw error;
+      }
+      if (download) {
+        return await quarantineArtifact(safeName(download.suggestedFilename()), "application/octet-stream", async (path) => {
+          await download.saveAs(path);
+        });
+      }
+    } finally {
+      page.off("download", onDownload);
+    }
     return metadata();
   }
   if (command.action === "back") { await resetReferences(page); await page.goBack(); return metadata(); }

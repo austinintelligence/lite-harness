@@ -129,6 +129,37 @@ describe("managed browser broker", () => {
     if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "Browser smoke cleanup failed");
   }, 90_000);
 
+  it("A07-REAL-BROWSER-HARDENING-INSPECT applies the bounded policy to Chromium and its egress sidecar", async () => {
+    const installationId = mkdtempSync(join(tmpdir(), "lite-browser-a07-hardening-")); cleanup.push(installationId);
+    const quarantineRoot = join(installationId, "quarantine");
+    const label = createHash("sha256").update(installationId).digest("hex").slice(0, 32);
+    const driver = new DockerBrowserDriver({
+      image: browserImage, installationId, quarantineRoot, memory: "1g", cpus: "0.5", pidsLimit: 256, timeoutMs: 60_000,
+    });
+    try {
+      await driver.start({ allowedOrigins: [], allowPrivateNetworks: false });
+      await expect(driver.execute({ action: "snapshot" })).resolves.toMatchObject({ snapshot: expect.any(Object) });
+      await waitFor(() => browserDockerContainers(label).length >= 2, 15_000);
+      for (const container of browserDockerContainers(label)) {
+        const inspected = dockerInspect(container);
+        expect(inspected.Config.User).not.toMatch(/^0(?::0)?$/);
+        expect(inspected.HostConfig.ReadonlyRootfs).toBe(true);
+        expect(inspected.HostConfig.NetworkMode).not.toBe("host");
+        expect(inspected.HostConfig.CapDrop).toEqual(expect.arrayContaining(["ALL"]));
+        expect(inspected.HostConfig.SecurityOpt.some((option) => /^no-new-privileges(?:=true)?$/.test(option))).toBe(true);
+        expect(inspected.HostConfig.SecurityOpt).not.toContain("seccomp=default");
+        expect(inspected.HostConfig.Memory).toBeGreaterThan(0);
+        expect(inspected.HostConfig.NanoCpus).toBeGreaterThan(0);
+        expect(inspected.HostConfig.PidsLimit).toBeGreaterThan(0);
+        expect(inspected.HostConfig.Tmpfs["/tmp"]).toMatch(/noexec/);
+      }
+    } finally {
+      await driver.stop().catch(() => undefined);
+      await reconcileBrowserResources({ installationId }).catch(() => undefined);
+      expect(browserDockerResources(label)).toEqual([]);
+    }
+  }, 120_000);
+
   it("serializes an overlapping navigation and snapshot against one observed page", async () => {
     const server = createServer((_request, response) => {
       setTimeout(() => {
@@ -233,6 +264,9 @@ describe("managed browser broker", () => {
     const driver = new DockerBrowserDriver({ image: browserImage, timeoutMs: 60_000 });
     try {
       await driver.start({ allowedOrigins: [origin], allowPrivateNetworks: true });
+      const directDownload = await driver.execute({ action: "navigate", url: `${origin}/download` });
+      expect(directDownload.artifact).toMatchObject({ name: "fixture.txt", mediaType: "application/octet-stream" });
+      driver.releaseArtifact(directDownload.artifact?.localPath as string);
       await driver.execute({ action: "navigate", url: origin });
       const snapshot = await driver.execute({ action: "snapshot" });
       expect(snapshot.snapshot?.elements).toMatchObject([
@@ -700,6 +734,18 @@ function dockerText(args: readonly string[]): string {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Docker command failed: ${result.stderr || result.stdout}`);
   return result.stdout ?? "";
+}
+
+function dockerInspect(name: string): {
+  Config: { User: string };
+  HostConfig: {
+    ReadonlyRootfs: boolean; NetworkMode: string; CapDrop: string[]; SecurityOpt: string[];
+    Memory: number; NanoCpus: number; PidsLimit: number; Tmpfs: Record<string, string>;
+  };
+} {
+  const parsed = JSON.parse(dockerText(["container", "inspect", name])) as unknown;
+  if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== "object") throw new Error("A07 browser Docker inspect output was invalid");
+  return parsed[0] as ReturnType<typeof dockerInspect>;
 }
 
 function assertNoSentinels(value: string, sentinels: readonly string[]): void {

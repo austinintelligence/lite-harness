@@ -97,6 +97,34 @@ describe("Docker stdio MCP integration", () => {
     }
   }, 60_000);
 
+  it("A07-REAL-MCP-HARDENING-INSPECT applies the bounded no-network policy to the live MCP container", async () => {
+    const suffix = randomUUID().replaceAll("-", "");
+    const containerName = `lite-harness-mcp-a07-${suffix}`;
+    const installationId = `a07-mcp-installation-${suffix}`;
+    const transport = new DockerStdioMcpTransport({
+      image, command: "node", args: ["-e", SERVER], containerName, installationId,
+      memory: "32m", cpus: "0.5", pidsLimit: 32, timeoutMs: 30_000,
+    });
+    try {
+      await expect(transport.listTools()).resolves.toMatchObject([{ name: "echo" }]);
+      await waitFor(() => containerExists(containerName), 15_000);
+      const inspected = dockerInspect(containerName);
+      expect(inspected.Config.User).toBe("1000:1000");
+      expect(inspected.HostConfig.ReadonlyRootfs).toBe(true);
+      expect(inspected.HostConfig.NetworkMode).toBe("none");
+      expect(inspected.HostConfig.CapDrop).toEqual(expect.arrayContaining(["ALL"]));
+      expect(inspected.HostConfig.SecurityOpt.some((option) => /^no-new-privileges(?:=true)?$/.test(option))).toBe(true);
+      expect(inspected.HostConfig.SecurityOpt).not.toContain("seccomp=default");
+      expect(inspected.HostConfig.Memory).toBe(32 * 1024 * 1024);
+      expect(inspected.HostConfig.NanoCpus).toBe(500_000_000);
+      expect(inspected.HostConfig.PidsLimit).toBe(32);
+      expect(inspected.HostConfig.Tmpfs["/tmp"]).toMatch(/noexec/);
+    } finally {
+      await transport.stop();
+      expect(containerExists(containerName)).toBe(false);
+    }
+  }, 90_000);
+
   it("A22-REAL-MCP-IDLE-ZERO reaps the real MCP container after its final idle interval", async () => {
     const containerName = `lite-harness-mcp-${randomUUID().replaceAll("-", "")}`;
     const supervisor = new McpSupervisor({ timeoutMs: 30_000, idleTtlMs: 75 });
@@ -191,6 +219,18 @@ function dockerText(args: readonly string[]): string {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Docker command failed: ${result.stderr || result.stdout}`);
   return result.stdout ?? "";
+}
+
+function dockerInspect(name: string): {
+  Config: { User: string };
+  HostConfig: {
+    ReadonlyRootfs: boolean; NetworkMode: string; CapDrop: string[]; SecurityOpt: string[];
+    Memory: number; NanoCpus: number; PidsLimit: number; Tmpfs: Record<string, string>;
+  };
+} {
+  const parsed = JSON.parse(dockerText(["container", "inspect", name])) as unknown;
+  if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== "object") throw new Error("A07 MCP Docker inspect output was invalid");
+  return parsed[0] as ReturnType<typeof dockerInspect>;
 }
 
 function assertNoSentinels(value: string, sentinels: readonly string[]): void {

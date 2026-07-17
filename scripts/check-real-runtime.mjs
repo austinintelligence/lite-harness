@@ -109,7 +109,7 @@ try {
       suite: "required-real-runtime",
       command: "pnpm test:real-runtime",
       report: evidenceReport,
-      requirementIds: ["A04", "A05", "A06", "A08", "A09", "A18", "A20", "A21", "A22"],
+      requirementIds: ["A04", "A05", "A06", "A07", "A08", "A09", "A18", "A20", "A21", "A22"],
       regressionIds: ["BD-045-REGRESSION", "BD-047-REGRESSION", "BD-049-REGRESSION", "BD-054-REGRESSION", "BD-055-REGRESSION"],
       packages: executedCandidateArtifacts.map(packageArtifact),
       images: [
@@ -123,6 +123,7 @@ try {
           packagedToolContainerSecretSentinelsAbsent: true,
           pluginMcpBrowserContainerSecretSentinelsAbsent: true,
           toolContainerHardeningLimitsInspected: true,
+          pluginMcpBrowserContainerHardeningLimitsInspected: true,
           mcpContainersInstallationScopedForReconciliation: true,
           expiredLeaseReacquisitionIncrementsFence: true,
           pausedWriterMutationRejectedAndResumed: true,

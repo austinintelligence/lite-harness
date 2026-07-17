@@ -74,6 +74,11 @@ export async function configureManagerBrowserCapability(
         allowPrivateNetworks: options.allowPrivateNetworks,
       }, options.profileId);
       return { callId: params.call.id, ok: true, content: JSON.stringify({ sessionId }), metadata: { sessionId } };
+    }, {
+      description: "Open an isolated browser session. Pass an empty JSON object and retain the returned sessionId for browser_action and browser_close.",
+      // The capability ignores optional compatibility fields from providers;
+      // the returned sessionId remains the only state that authorizes use.
+      inputSchema: { type: "object", additionalProperties: true },
     }));
     disposers.push(options.runtime.register("browser_action", async (params) => {
       const principal = requireBrowserPrincipal(params);
@@ -119,12 +124,52 @@ export async function configureManagerBrowserCapability(
         content: JSON.stringify({ ...result, artifact: { ...record } }),
         metadata: { artifactId: record.id },
       };
+    }, {
+      description: "Execute one action in an owned browser session. command must be an object with an action such as navigate, snapshot, screenshot, click, type, wait, or back; include action-specific fields such as url or ref inside command.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", minLength: 1, maxLength: 128 },
+          command: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  action: {
+                    type: "string",
+                    enum: ["navigate", "snapshot", "click", "type", "select", "hover", "keyboard", "wait", "screenshot", "pdf", "upload", "scroll", "drag", "tabs", "new_tab", "switch_tab", "close_tab", "inspect", "back", "forward", "reload"],
+                  },
+                  url: { type: "string", maxLength: 1_000_000 },
+                  ref: { type: "string", maxLength: 1_000_000 },
+                  milliseconds: { type: "integer", minimum: 0, maximum: 300_000 },
+                  text: { type: "string", maxLength: 1_000_000 },
+                  key: { type: "string", maxLength: 256 },
+                  artifactId: { type: "string", maxLength: 128 },
+                },
+                required: ["action"],
+                additionalProperties: true,
+              },
+              { type: "string", minLength: 2, maxLength: 1_000_000 },
+            ],
+          },
+        },
+        required: ["sessionId", "command"],
+        additionalProperties: false,
+      },
     }));
     disposers.push(options.runtime.register("browser_close", async (params) => {
       const principal = requireBrowserPrincipal(params);
       const sessionId = boundedBrowserString(params.call.arguments.sessionId, "sessionId");
       await browser.close(sessionId, { ...principal, runId: params.runId as string });
       return { callId: params.call.id, ok: true, content: JSON.stringify({ sessionId, closed: true }) };
+    }, {
+      description: "Close an owned browser session after all browser work is complete.",
+      inputSchema: {
+        type: "object",
+        properties: { sessionId: { type: "string", minLength: 1, maxLength: 128 } },
+        required: ["sessionId"],
+        additionalProperties: false,
+      },
     }));
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose();
@@ -158,6 +203,11 @@ function boundedBrowserString(value: unknown, name: string): string {
 }
 
 function validateBrowserAction(value: unknown): BrowserAction {
+  if (typeof value === "string") {
+    if (value.length > 1_000_000) throw new Error("Browser command is too large");
+    try { value = JSON.parse(value) as unknown; }
+    catch { throw new Error("Browser command JSON string is invalid"); }
+  }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Browser command must be an object");
   const record = value as Record<string, unknown>;
   const allowed = new Set([

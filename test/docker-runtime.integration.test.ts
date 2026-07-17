@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { DockerToolRuntime } from "@lite-harness/runtime-docker";
+import { DockerToolRuntime, dockerWorkspaceVolumeName } from "@lite-harness/runtime-docker";
 import type { ToolExecutionContext } from "@lite-harness/runtime";
 import { SqliteRunStore } from "@lite-harness/storage-sqlite";
 
@@ -120,9 +121,57 @@ describe("Docker runtime integration", () => {
       await runtimeB.removeWorkspace(workspaceId, principal).catch(() => undefined);
       storeA.close();
       storeB.close();
-      rmSync(root, { recursive: true, force: true });
+      try {
+        rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch (error) {
+        // Preserve the worker assertion failure if Windows still has a transient SQLite handle.
+        process.stderr.write(`A06 temporary-directory cleanup deferred: ${String(error)}\n`);
+      }
     }
   }, 90_000);
+
+  it("A06-TWO-MANAGER-PROCESS-MUTATION fences Docker writes from two independent contender processes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lite-a06-processes-"));
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const workspaceId = `a06-process-workspace-${suffix}`;
+    const installationId = `a06-process-installation-${suffix}`;
+    const principal = { appId: "a06-process-app", tenantId: "a06-process-tenant", userId: "a06-process-user", scopes: [] };
+    const databasePath = join(root, "manager.db");
+    const markerRoot = join(root, "markers");
+    const workerPath = join(process.cwd(), "test", "support", "a06-fenced-writer.ts");
+    const workers: A06Worker[] = [];
+
+    try {
+      const stale = spawnWorker({
+        role: "stale", workerPath, databasePath, markerRoot, image, installationId, workspaceId, principal,
+      });
+      workers.push(stale);
+      await waitForMarker(join(markerRoot, "stale-ready"), 15_000);
+      const resumed = spawnWorker({
+        role: "resumed", workerPath, databasePath, markerRoot, image, installationId, workspaceId, principal,
+      });
+      workers.push(resumed);
+      const results = await Promise.all(workers.map((worker) => waitForWorker(worker, 120_000)));
+      expect(new Set(workers.map((worker) => worker.pid)).size).toBe(2);
+      expect(results.map((result) => result.role).sort()).toEqual(["resumed", "stale"]);
+      expect(results.find((result) => result.role === "stale")).toMatchObject({
+        staleMutationRejected: true,
+        runtimeContainers: 0,
+      });
+      expect(results.find((result) => result.role === "resumed")).toMatchObject({
+        resumedMutationSucceeded: true,
+        content: "fenced process owner wins\n",
+      });
+      expect(listManagedDockerContainers(installationId)).toEqual([]);
+    } finally {
+      for (const worker of workers) killWorker(worker.pid);
+      removeManagedContainers(installationId);
+      const volume = dockerWorkspaceVolumeName(workspaceId, principal);
+      const inspected = spawnSync("docker", ["volume", "inspect", volume], { encoding: "utf8", windowsHide: true });
+      if (inspected.status === 0) spawnSync("docker", ["volume", "rm", "--force", volume], { encoding: "utf8", windowsHide: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 150_000);
 
   it("A08-REAL-CLEANUP-MATRIX reaps tool containers after success, failure, cancel, timeout, and OOM", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -326,6 +375,78 @@ function listManagedDockerContainers(installationId: string): string[] {
   return (result.stdout ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 }
 
+interface A06Worker {
+  pid: number | undefined;
+  child: ChildProcessByStdio<null, Readable, Readable>;
+}
+
+function spawnWorker(options: {
+  role: "stale" | "resumed";
+  workerPath: string;
+  databasePath: string;
+  markerRoot: string;
+  image: string;
+  installationId: string;
+  workspaceId: string;
+  principal: { appId: string; tenantId: string; userId: string; scopes: string[] };
+}): A06Worker {
+  const child = spawn(process.execPath, ["--import", "tsx", options.workerPath], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      LITE_A06_ROLE: options.role,
+      LITE_A06_DATABASE: options.databasePath,
+      LITE_A06_MARKERS: options.markerRoot,
+      LITE_A06_IMAGE: options.image,
+      LITE_A06_INSTALLATION: options.installationId,
+      LITE_A06_WORKSPACE: options.workspaceId,
+      LITE_A06_PRINCIPAL: JSON.stringify(options.principal),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  return { pid: child.pid, child };
+}
+
+function waitForWorker(worker: A06Worker, timeoutMs: number): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      killWorker(worker.pid);
+      reject(new Error(`A06 contender process timed out. stdout=${stdout.slice(-4_000)} stderr=${stderr.slice(-4_000)}`));
+    }, timeoutMs);
+    timer.unref?.();
+    worker.child.stdout.on("data", (chunk: Buffer) => { stdout = `${stdout}${chunk.toString("utf8")}`.slice(-16_384); });
+    worker.child.stderr.on("data", (chunk: Buffer) => { stderr = `${stderr}${chunk.toString("utf8")}`.slice(-16_384); });
+    worker.child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    worker.child.once("close", (code) => {
+      clearTimeout(timer);
+      const line = stdout.split(/\r?\n/u).findLast((value) => value.startsWith("A06_RESULT "));
+      if (code !== 0 || !line) {
+        reject(new Error(`A06 contender process failed with exit ${code}. stdout=${stdout} stderr=${stderr}`));
+        return;
+      }
+      try { resolve(JSON.parse(line.slice("A06_RESULT ".length)) as Record<string, unknown>); }
+      catch (error) { reject(new Error(`A06 contender result was invalid: ${line}`, { cause: error })); }
+    });
+  });
+}
+
+function killWorker(pid: number | undefined): void {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  } else {
+    try { process.kill(pid, "SIGKILL"); } catch { /* process already exited */ }
+  }
+}
+
+function removeManagedContainers(installationId: string): void {
+  const containers = listManagedDockerContainers(installationId);
+  if (containers.length > 0) spawnSync("docker", ["rm", "--force", ...containers], { stdio: "ignore", windowsHide: true });
+}
+
 function inspectDockerContainer(containerId: string): {
   Config: { User: string };
   HostConfig: {
@@ -351,6 +472,15 @@ async function waitForDockerContainers(installationId: string, timeoutMs: number
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`Timed out waiting for A08 ${empty ? "empty" : "active"} Docker inventory`);
+}
+
+async function waitForMarker(path: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for A06 marker ${path}`);
 }
 
 function digestLabel(value: string): string {

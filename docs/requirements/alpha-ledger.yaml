@@ -1631,7 +1631,8 @@
       ],
       "testIds": [
         "A06-SAME-RUN-EXPIRY-FENCING",
-        "A06-PAUSED-WRITER-MUTATION"
+        "A06-PAUSED-WRITER-MUTATION",
+        "A06-TWO-MANAGER-PROCESS-MUTATION"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [
@@ -1668,7 +1669,10 @@
       ],
       "testIds": [
         "A07-REAL-TOOL-HARDENING-INSPECT",
-        "A07-MAINTENANCE-HARDENING-ARGS"
+        "A07-MAINTENANCE-HARDENING-ARGS",
+        "A07-REAL-PLUGIN-HARDENING-INSPECT",
+        "A07-REAL-MCP-HARDENING-INSPECT",
+        "A07-REAL-BROWSER-HARDENING-INSPECT"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [
@@ -1706,7 +1710,8 @@
       "testIds": [
         "A08-MCP-ORPHAN-OWNERSHIP",
         "A08-REAL-CLEANUP-MATRIX",
-        "A08-MANAGER-DEATH-ORPHAN-RECONCILE"
+        "A08-MANAGER-DEATH-ORPHAN-RECONCILE",
+        "A08-MANAGER-DEATH-PROCESS-RECONCILE"
       ],
       "ciJob": "required-real-runtime",
       "evidenceArtifacts": [

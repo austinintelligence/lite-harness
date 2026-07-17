@@ -1047,7 +1047,7 @@ function checkedStringArray(value: unknown, name: string, minimum: number, maxim
 
 function workspaceDirectoryArgument(call: ToolCall, name: string): string {
   const value = call.arguments[name];
-  if (value === undefined || value === ".") return ".";
+  if (value === undefined || value === "." || value === "") return ".";
   if (typeof value !== "string") throw new Error(`${call.name}.${name} must be a workspace-relative path`);
   validateWorkspacePath(value);
   return value;

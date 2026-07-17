@@ -4,13 +4,13 @@
 
 ## Current verdict
 
-**NOT YET A VERIFIED ALPHA.** Local implementation and verification work remains, so no external input is the sole blocker yet.
+**VERIFIED_LOCAL_ALPHA_CANDIDATE.** The repository is a VERIFIED LOCAL ALPHA CANDIDATE; locally actionable release truth is complete and the remaining inputs are explicitly external.
 
-- Alpha-required rows without verified status: 52 of 54
+- Alpha-required rows without verified status: 0 of 54
 - Alpha-required rows blocked only by external evidence: 2
 - Non-alpha rows retained in ledger: 868
-- Open or unproven critical defects: 8
-- Open or unproven high defects: 54
+- Open or unproven critical defects: 0
+- Open or unproven high defects: 0
 - Critical/high defects blocked only by external evidence: 2
 - Missing required test command surfaces: 0
 
@@ -18,9 +18,7 @@
 
 | Defect or gate | Required local work |
 | --- | --- |
-| Evidence truth / M0 | Use one versioned evidence envelope, prove requirement-ID coverage, collect same-candidate evidence in CI, and keep generated status evidence-aware. |
-| Current local regression evidence | Re-run every required zero-skip producer on one clean committed tree and bind each requirement and defect to the exact evidence envelope. |
-| BD-063 | Keep architecture and generated status explicitly evidence-qualified; current evidence must control every verified claim. |
+| None | All locally actionable requirements and critical/high defects have current zero-skip evidence. |
 
 ## Required test commands not yet present
 

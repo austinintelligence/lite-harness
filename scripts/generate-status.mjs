@@ -79,14 +79,14 @@ function render() {
   for (const row of requirements.filter((item) => item.kind === "alpha-gate")) {
     const evaluation = evaluatedRequirements.find((item) => item.row.id === row.id);
     const status = evaluation.verified ? "verified" : isExternalOnlyRequirement(row) ? "blocked-external" : row.status === "verified" ? "unverified" : row.status;
-    const blocker = row.blockers.join(", ") || evaluation.failures[0] || "unverified";
+    const blocker = evaluation.verified ? "none" : row.blockers.join(", ") || evaluation.failures[0] || "unverified";
     lines.push(`| ${row.id} ${escapeCell(row.title)} | ${status} | ${escapeCell(blocker)} |`);
   }
   lines.push("", "## Roadmap exits", "", "| Phase | Status | Current blocker |", "| --- | --- | --- |");
   for (const row of requirements.filter((item) => item.kind === "phase-exit")) {
     const evaluation = evaluatedRequirements.find((item) => item.row.id === row.id);
     const status = evaluation.verified ? "verified" : row.status === "verified" ? "unverified" : row.status;
-    const blocker = row.blockers.join(", ") || evaluation.failures[0] || "unverified";
+    const blocker = evaluation.verified ? "none" : row.blockers.join(", ") || evaluation.failures[0] || "unverified";
     lines.push(`| ${row.id} ${escapeCell(row.title)} | ${status} | ${escapeCell(blocker)} |`);
   }
   const severity = countBy(openDefects, "severity");

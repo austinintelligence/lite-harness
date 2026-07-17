@@ -54,9 +54,13 @@ function render() {
     `- Missing required test command surfaces: ${missingCommands.length}`,
     "", "## Highest-priority local blockers", "",
     "| Defect or gate | Required local work |", "| --- | --- |",
-    "| Evidence truth / M0 | Use one versioned evidence envelope, prove requirement-ID coverage, collect same-candidate evidence in CI, and keep generated status evidence-aware. |",
-    "| Current local regression evidence | Re-run every required zero-skip producer on one clean committed tree and bind each requirement and defect to the exact evidence envelope. |",
-    "| BD-063 | Keep architecture and generated status explicitly evidence-qualified; current evidence must control every verified claim. |",
+    ...(localQualified
+      ? ["| None | All locally actionable requirements and critical/high defects have current zero-skip evidence. |"]
+      : [
+          "| Evidence truth / M0 | Use one versioned evidence envelope, prove requirement-ID coverage, collect same-candidate evidence in CI, and keep generated status evidence-aware. |",
+          "| Current local regression evidence | Re-run every required zero-skip producer on one clean committed tree and bind each requirement and defect to the exact evidence envelope. |",
+          "| BD-063 | Keep architecture and generated status explicitly evidence-qualified; current evidence must control every verified claim. |",
+        ]),
     "", "## Required test commands not yet present", "",
     ...(missingCommands.length ? missingCommands.map((name) => `- \`${name}\``) : ["- None."]),
     "", "## External evidence and owner inputs still required", "",

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "measuredAt": "2026-07-17T08:32:01.055Z",
+  "measuredAt": "2026-07-17T13:33:39.388Z",
   "environment": {
     "platform": "win32",
     "architecture": "x64",
@@ -9,10 +9,10 @@
   "lane": "model-free deterministic kernel benchmark",
   "provider": "fake",
   "runtime": "in-memory",
-  "startupReadyMs": 2738.1,
-  "runTerminalMs": 90.6,
-  "gatewayRssBytes": 108154880,
-  "managerRssBytes": 113229824,
+  "startupReadyMs": 2410.2,
+  "runTerminalMs": 88.8,
+  "gatewayRssBytes": 108449792,
+  "managerRssBytes": 115056640,
   "terminalStatus": "SUCCEEDED",
   "note": "This measures the process/kernel path only; credentialed inference uses the Hermes test wrapper."
 }

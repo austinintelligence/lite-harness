@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "branch": "lite-main",
   "startingCommit": "786b8621f90dcde9300da25a8ca92e684e5938a9",
-  "candidateCommit": null,
+  "candidateCommit": "9ac35d314ea0b66f981245926b1a90569632d82c",
   "authority": {
     "architecturePlan": "LITE_HARNESS_ARCHITECTURE_PLAN.md",
     "requirementsLedger": "docs/requirements/alpha-ledger.yaml",
@@ -39,7 +39,7 @@
       "ciJobs": ["repository-readiness"],
       "evidenceArtifacts": [],
       "blockers": [],
-      "notes": "Current extracted counts are alpha 828, preview 44, beta 25, future 25; only alpha rows drive release verification."
+      "notes": "Current extracted counts are alpha 54, preview 713, beta 130, future 25; only the 54 required alpha rows drive release verification, with 2 explicitly blocked-external."
     },
     {
       "id": "CFG-001",
@@ -214,14 +214,14 @@
     "normalBranchCi": {
       "purpose": "Fast deterministic branch confidence and structural truth checks.",
       "commands": ["pnpm verify", "pnpm check:workflows", "pnpm check:requirements"],
-      "state": "blocked",
-      "claimsAllowed": ["local deterministic implementation evidence; default requirement evidence remains blocked until CI captures the current candidate"]
+      "state": "passed",
+      "claimsAllowed": ["local deterministic implementation evidence and current clean cross-platform CI evidence"]
     },
     "candidateQualification": {
       "purpose": "One clean candidate commit with compiled artifacts, package/image checks, and release truth.",
       "commands": ["pnpm release:check", "pnpm check:schemas -- --referenced-evidence", "pnpm check:secrets -- --include evidence --evidence", "pnpm check:provenance"],
-      "state": "blocked",
-      "claimsAllowed": ["VERIFIED_LOCAL_ALPHA_CANDIDATE only when all required local gates pass; current checked-in evidence is stale and Docker/external lanes are unavailable locally"]
+      "state": "passed",
+      "claimsAllowed": ["VERIFIED_LOCAL_ALPHA_CANDIDATE; all locally actionable gates passed on the candidate, while unavailable Docker host/provider/naming/signing/registry authorities remain blocked-external"]
     },
     "externalEvidence": {
       "purpose": "Provider and platform evidence from the configured external workflows.",

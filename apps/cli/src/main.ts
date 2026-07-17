@@ -26,7 +26,14 @@ import { importOpenClawSkills, inspectOpenClawRoot } from "@lite-harness/migrati
 import type { PluginPermissions } from "@lite-harness/plugin-core";
 import { DockerToolRuntime, inspectDocker } from "@lite-harness/runtime-docker";
 import { SQLITE_SCHEMA_VERSION, SqliteRunStore } from "@lite-harness/storage-sqlite";
-import { DerivedSnapshotKeyProvider, LocalWorkspaceSnapshotStore, StaticSnapshotKeyProvider, validateRegisteredBindRoot } from "@lite-harness/workspace";
+import {
+  createInstallationRecoveryBundle,
+  DerivedSnapshotKeyProvider,
+  LocalWorkspaceSnapshotStore,
+  restoreInstallationRecoveryBundle,
+  StaticSnapshotKeyProvider,
+  validateRegisteredBindRoot,
+} from "@lite-harness/workspace";
 
 const [command = "help", subcommand, argument, extraArgument, fifthArgument] = process.argv.slice(2);
 const remainingArguments = process.argv.slice(6);
@@ -40,7 +47,7 @@ const effectiveEnvironment: NodeJS.ProcessEnv = {
 };
 
 if (command === "help" || command === "--help") {
-  process.stdout.write(`Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  agent create|list|get|show|delete\n  workspace create|list|get|import|export|delete\n  run start|list|get|show|events|cancel|retry\n  events [watch] <run-id> | cancel <run-id>\n  approve|reject <approval-id>\n  provider list|login|configure|models\n  plugin list|inspect|install|enable|disable|upgrade|rollback\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  service install|status|uninstall\n`);
+  process.stdout.write(`Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  agent create|list|get|show|delete\n  workspace create|list|get|import|export|delete\n  run start|list|get|show|events|cancel|retry\n  events [watch] <run-id> | cancel <run-id>\n  approve|reject <approval-id>\n  provider list|login|configure|models\n  plugin list|inspect|install|enable|disable|upgrade|rollback\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  recovery export|import <bundle-path> <target-or-key-path> [key-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  service install|status|uninstall\n`);
 } else if (command === "doctor") {
   mkdirSync(dataDir, { recursive: true });
   let dataDirectoryWritable = true;
@@ -338,6 +345,16 @@ if (command === "help" || command === "--help") {
   process.stdout.write(`${JSON.stringify({ configuredImage: effectiveEnvironment.LITE_HARNESS_BROWSER_IMAGE ?? null, privateNetworksAllowed: effectiveEnvironment.LITE_HARNESS_BROWSER_ALLOW_PRIVATE === "true", status: "configuration-only" }, null, 2)}\n`);
 } else if (command === "prune") {
   process.stdout.write(`${JSON.stringify({ pruned: [], status: "manager-gc-required", message: "No destructive prune was performed; Manager-owned snapshot/cache GC must be active." })}\n`);
+} else if (command === "recovery" && subcommand === "export") {
+  if (!argument || !extraArgument) throw new Error("Usage: recovery export <bundle-path> <recovery-key-file>");
+  const recoveryKey = readRecoveryKey(extraArgument);
+  writeFileSync(argument, createInstallationRecoveryBundle(dataDir, recoveryKey), { mode: 0o600 });
+  process.stdout.write(`${JSON.stringify({ exported: true, path: resolve(argument), source: resolve(dataDir), encrypted: true })}\n`);
+} else if (command === "recovery" && subcommand === "import") {
+  if (!argument || !extraArgument || !fifthArgument) throw new Error("Usage: recovery import <bundle-path> <target-data-dir> <recovery-key-file>");
+  const recoveryKey = readRecoveryKey(fifthArgument);
+  const restored = restoreInstallationRecoveryBundle(readFileSync(argument), recoveryKey, extraArgument);
+  process.stdout.write(`${JSON.stringify({ imported: true, path: resolve(argument), target: resolve(extraArgument), bundleId: restored.bundleId, entries: restored.restoredPaths.length })}\n`);
 } else if ((command === "export" && subcommand) || (command === "workspace" && subcommand === "export" && argument)) {
   const runtime = new DockerToolRuntime({ image: requiredEnvironment("LITE_HARNESS_RUNTIME_IMAGE") });
   const workspaceId = command === "workspace" ? argument! : subcommand!;
@@ -499,7 +516,7 @@ if (command === "help" || command === "--help") {
   }
 } else {
   process.stdout.write(
-    "Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  agent create|list|get\n  workspace create|list|get\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n  workspaces list\n  run start|list|get|events|cancel|retry\n  approve|reject <approval-id>\n  events|cancel <run-id>\n  providers list|login|configure\n  models list\n  plugins list\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin rollback <id>\n  plugin doctor\n  service install|status|uninstall\n",
+    "Lite-Harness\n\nCommands:\n  init\n  start | stop | status\n  doctor\n  logs [count]\n  config get|set|unset|list|validate\n  token create|list|revoke <id>\n  keygen                       # print a key for headless environments\n  keygen-store                 # generate snapshot.root in the OS store\n  credential set <profile>     # reads secret from stdin\n  credential status <profile>\n  credential delete <profile>\n  agent create|list|get\n  workspace create|list|get\n  workspace register <id> <absolute-path>\n  workspace snapshot <id>\n  workspace restore <id>\n  workspace delete <id>\n  workspaces list\n  run start|list|get|events|cancel|retry\n  approve|reject <approval-id>\n  events|cancel <run-id>\n  providers list|login|configure\n  models list\n  plugins list\n  integrations list\n  browser doctor\n  prune\n  export|import <workspace-id> [archive-path]\n  recovery export|import <bundle-path> <target-or-key-path> [key-path]\n  gateway | manager\n  migrate openclaw <root> [--apply]\n  plugin inspect <manifest>\n  plugin install <directory>\n  plugin enable|disable <id>@<version>\n  plugin uninstall <id>@<version>\n  plugin migrate <directory> <from> <to>\n  plugin rollback <id>\n  plugin doctor\n  service install|status|uninstall\n",
   );
 }
 
@@ -646,6 +663,13 @@ function requiredEnvironment(name: string): string {
   const value = effectiveEnvironment[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function readRecoveryKey(path: string): Buffer {
+  const raw = readFileSync(path, "utf8").trim();
+  const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
+  if (key.length !== 32) throw new Error("Recovery key file must contain exactly 32 bytes as hex or base64");
+  return key;
 }
 
 function cliPrincipal(): { appId: string; tenantId: string; userId: string; scopes: string[] } {

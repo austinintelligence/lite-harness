@@ -40,6 +40,28 @@ Docker-backed writes enforce `LITE_HARNESS_WORKSPACE_QUOTA_BYTES` (1 GiB by
 default) before replacement. `pnpm lite doctor` fails its disk check below 1
 GiB free. A failed automatic checkpoint never deletes the warm workspace.
 
+## Portable installation recovery bundle
+
+For a stopped installation, create a portable encrypted bundle with a separate
+32-byte recovery key file. The bundle contains `installation.json`, SQLite
+authoritative state, snapshots, artifacts, memory/context, and other durable
+metadata under the data directory. It excludes OS credential stores, provider
+secrets, logs, locks, and disposable caches.
+
+```powershell
+pnpm lite keygen | Set-Content -NoNewline recovery-key.txt
+pnpm lite recovery export .\lite-recovery.lhr .\recovery-key.txt
+pnpm lite recovery import .\lite-recovery.lhr C:\Lite-Harness-Restored .\recovery-key.txt
+pnpm lite doctor
+```
+
+Keep the key file separate from the bundle. Import refuses to overwrite an
+existing target directory and verifies bundle authentication, manifest, entry
+sizes, and SHA-256 hashes before atomic promotion. Re-enter provider
+credentials through the OS credential store or the documented headless
+credential-recovery procedure after importing; raw OAuth credentials are never
+part of the bundle.
+
 ## Database and artifacts
 
 Stop Manager before copying `lite-harness.db`, `-wal`, and `-shm` files. Copy

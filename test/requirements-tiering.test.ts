@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { extractRequirements } from "../scripts/requirements-lib.mjs";
+import { extractRequirements, requirementTier } from "../scripts/requirements-lib.mjs";
 
 describe("requirement tier integrity", () => {
   it("preserves every extracted row while separating alpha scope from future work", () => {
@@ -22,5 +22,17 @@ describe("requirement tier integrity", () => {
     expect(ledger.requirements.some((row) => row.tier === "preview")).toBe(true);
     expect(ledger.requirements.some((row) => row.tier === "beta")).toBe(true);
     expect(ledger.requirements.some((row) => row.tier === "future")).toBe(true);
+  });
+
+  it("applies the accepted alpha boundary without deleting extracted requirements", () => {
+    expect(requirementTier("A01")).toBe("alpha");
+    expect(requirementTier("R16-1500", "MCP Streamable HTTP tools use normal grants")).toBe("preview");
+    expect(requirementTier("R16-1501", "Telegram and scheduled automation remain preview")).toBe("preview");
+    expect(requirementTier("R14-1400", "OpenRouter and Gemini provider packs")).toBe("preview");
+    expect(requirementTier("R14-1401", "OpenAI-compatible capability routing and usage")).toBe("preview");
+    expect(requirementTier("R18-1700", "pxpipe is optional")).toBe("future");
+    expect(requirementTier("R31-2400", "Repository layout is documented")).toBe("beta");
+    expect(requirementTier("P08")).toBe("beta");
+    expect(requirementTier("P10")).toBe("preview");
   });
 });

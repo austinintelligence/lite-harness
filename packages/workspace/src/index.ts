@@ -7,7 +7,7 @@ import {
   webcrypto,
 } from "node:crypto";
 import { availableParallelism, homedir, loadavg, tmpdir } from "node:os";
-import { createGunzip, createGzip } from "node:zlib";
+import { createGunzip, createGzip, gunzipSync, gzipSync } from "node:zlib";
 import {
   createReadStream,
   createWriteStream,
@@ -18,6 +18,7 @@ import {
   fsyncSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readSync,
@@ -40,6 +41,7 @@ import { createId } from "@lite-harness/domain";
 import { validateWorkspacePath } from "@lite-harness/runtime";
 
 const SNAPSHOT_MAGIC = "LHS2\n";
+const RECOVERY_MAGIC = "LHR1\n";
 const SNAPSHOT_TAG_BYTES = 16;
 const SNAPSHOT_HEADER_BYTES = 16 * 1024;
 const ARTIFACT_MAGIC = "LHA1\n";
@@ -172,6 +174,10 @@ export interface SnapshotRecord {
   path: string;
 }
 
+export type SnapshotCommitStage = "after-staged-write" | "after-staged-verify" | "after-rotation" | "after-promotion";
+
+export type SnapshotCommitFaultInjector = (stage: SnapshotCommitStage) => void;
+
 interface SnapshotHeader {
   schemaVersion: 2;
   workspaceId: string;
@@ -190,6 +196,7 @@ export class LocalWorkspaceSnapshotStore {
     private readonly keys: SnapshotKeyProvider,
     private readonly legacyKeys?: SnapshotKeyProvider,
     private readonly maxArchiveBytes = 512 * 1024 * 1024,
+    private readonly faultInjector?: SnapshotCommitFaultInjector,
   ) {}
 
   async create(workspaceId: string, archive: Buffer): Promise<SnapshotRecord> {
@@ -211,9 +218,13 @@ export class LocalWorkspaceSnapshotStore {
     await mkdir(dirname(paths.current), { recursive: true });
     try {
       await createStreamingSnapshotPipeline(archive, paths.staging, key, nonce, header);
+      this.faultInjector?.("after-staged-write");
       await this.#verifySnapshotBeforeRotation(workspaceId, paths.staging, header.sha256);
+      this.faultInjector?.("after-staged-verify");
       await this.#rotateVerifiedSnapshots(workspaceId, paths);
+      this.faultInjector?.("after-rotation");
       await rename(paths.staging, paths.current);
+      this.faultInjector?.("after-promotion");
       await rm(paths.previousBackup, { force: true });
     } finally {
       await rm(paths.staging, { force: true });
@@ -326,6 +337,227 @@ export class LocalWorkspaceSnapshotStore {
       staging: join(directory, `staging-${process.pid}-${randomBytes(6).toString("hex")}.lhs`),
     };
   }
+}
+
+export interface RecoveryBundleEntry {
+  path: string;
+  data: Uint8Array;
+}
+
+export interface RecoveryBundleManifestEntry {
+  path: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface RecoveryBundleManifest {
+  schemaVersion: 1;
+  bundleId: string;
+  createdAt: string;
+  entries: RecoveryBundleManifestEntry[];
+}
+
+export interface RecoveryBundleRestoreResult {
+  bundleId: string;
+  manifest: RecoveryBundleManifest;
+  restoredPaths: string[];
+}
+
+const MAX_RECOVERY_ENTRIES = 10_000;
+const MAX_RECOVERY_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Collects portable, non-secret authoritative files for an installation.
+ * OS credential stores and volatile logs/caches are intentionally excluded.
+ */
+export function createInstallationRecoveryBundle(root: string, recoveryKey: Uint8Array): Buffer {
+  const canonicalRoot = realpathSync(root);
+  if (!statSync(canonicalRoot).isDirectory()) throw new Error("Recovery source must be a directory");
+  const entries: RecoveryBundleEntry[] = [];
+  const excludedDirectories = new Set(["cache", "logs", "tmp", "run"]);
+  const excludedFiles = new Set([
+    "credentials.dpapi.json", "credentials.dpapi.json.bak", "credentials.recovery.json",
+    "credentials.recovery.json.bak", "manager.lock", "gateway.lock",
+    "recovery-key.txt", "recovery-key.hex", "recovery-key.base64",
+  ]);
+  const visit = (directory: string, relativeDirectory: string, depth: number): void => {
+    if (depth > 16) throw new Error("Recovery source exceeds the directory depth limit");
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = join(directory, entry.name);
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      const metadata = lstatSync(absolute);
+      if (metadata.isSymbolicLink()) throw new Error(`Recovery source contains a symbolic link: ${relativePath}`);
+      if (metadata.isDirectory()) {
+        if (!relativeDirectory && excludedDirectories.has(entry.name)) continue;
+        visit(absolute, relativePath, depth + 1);
+        continue;
+      }
+      if (!metadata.isFile()) continue;
+      if (excludedFiles.has(entry.name) || entry.name.endsWith(".lock")) continue;
+      if (metadata.size > MAX_RECOVERY_BYTES) throw new Error(`Recovery source file exceeds the archive limit: ${relativePath}`);
+      entries.push({ path: relativePath.replaceAll("\\", "/"), data: readFileSync(absolute) });
+    }
+  };
+  visit(canonicalRoot, "", 0);
+  return createRecoveryBundle(entries, recoveryKey);
+}
+
+/**
+ * Creates an operator-held encrypted recovery bundle. The recovery key is
+ * deliberately supplied by the caller and is never serialized into the
+ * bundle. Entries are path-safe, hashed, and authenticated before they can be
+ * restored into a clean installation.
+ */
+export function createRecoveryBundle(entries: readonly RecoveryBundleEntry[], recoveryKey: Uint8Array): Buffer {
+  validateRecoveryKey(recoveryKey);
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_RECOVERY_ENTRIES) {
+    throw new Error("Recovery bundle entry count is invalid");
+  }
+  const normalized = entries.map((entry) => {
+    const path = validateRecoveryEntryPath(entry.path);
+    const data = Buffer.from(entry.data);
+    return { path, data, bytes: data.byteLength, sha256: createHash("sha256").update(data).digest("hex") };
+  }).sort((left, right) => left.path.localeCompare(right.path));
+  if (new Set(normalized.map((entry) => entry.path)).size !== normalized.length) {
+    throw new Error("Recovery bundle contains duplicate paths");
+  }
+  const totalBytes = normalized.reduce((sum, entry) => sum + entry.bytes, 0);
+  if (totalBytes > MAX_RECOVERY_BYTES) throw new Error("Recovery bundle exceeds the archive limit");
+  const bundleId = createHash("sha256").update(`${Date.now()}-${randomBytes(16).toString("hex")}`).digest("hex").slice(0, 32);
+  const manifest: RecoveryBundleManifest = {
+    schemaVersion: 1,
+    bundleId,
+    createdAt: new Date().toISOString(),
+    entries: normalized.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
+  };
+  const manifestJson = JSON.stringify(manifest);
+  const payload = Buffer.from(JSON.stringify({
+    manifest,
+    entries: normalized.map(({ path, data }) => ({ path, data: data.toString("base64") })),
+  }), "utf8");
+  const nonce = randomBytes(12);
+  const header = {
+    schemaVersion: 1,
+    bundleId,
+    createdAt: manifest.createdAt,
+    manifestSha256: createHash("sha256").update(manifestJson).digest("hex"),
+    nonce: nonce.toString("base64"),
+    algorithm: "aes-256-gcm+gzip",
+  } as const;
+  const cipher = createCipheriv("aes-256-gcm", Buffer.from(recoveryKey), nonce);
+  cipher.setAAD(recoveryAssociatedData(header));
+  const ciphertext = Buffer.concat([cipher.update(gzipSync(payload)), cipher.final()]);
+  return Buffer.concat([
+    Buffer.from(RECOVERY_MAGIC, "utf8"),
+    Buffer.from(`${JSON.stringify(header)}\n`, "utf8"),
+    ciphertext,
+    cipher.getAuthTag(),
+  ]);
+}
+
+/** Restores an encrypted recovery bundle without overwriting an existing installation. */
+export function restoreRecoveryBundle(bundle: Uint8Array, recoveryKey: Uint8Array, targetRoot: string): RecoveryBundleRestoreResult {
+  validateRecoveryKey(recoveryKey);
+  if (!targetRoot.trim()) throw new Error("Recovery target is required");
+  if (lstatExists(targetRoot)) throw new Error("Recovery target must be a clean, non-existent installation");
+  const parsed = parseRecoveryBundle(Buffer.from(bundle));
+  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(recoveryKey), parsed.nonce);
+  decipher.setAAD(recoveryAssociatedData(parsed.header));
+  decipher.setAuthTag(parsed.tag);
+  let payload: { manifest?: RecoveryBundleManifest; entries?: Array<{ path?: string; data?: string }> };
+  try {
+    payload = JSON.parse(gunzipSync(Buffer.concat([decipher.update(parsed.ciphertext), decipher.final()])).toString("utf8")) as typeof payload;
+  } catch {
+    throw new Error("Recovery bundle authentication failed");
+  }
+  const manifest = validateRecoveryPayload(payload, parsed.header);
+  const staging = mkdtempSync(join(dirname(targetRoot), ".lite-recovery-"));
+  try {
+    const sourceEntries = new Map((payload.entries ?? []).map((entry) => [validateRecoveryEntryPath(entry.path ?? ""), entry.data ?? ""]));
+    for (const entry of manifest.entries) {
+      const encoded = sourceEntries.get(entry.path);
+      if (encoded === undefined) throw new Error(`Recovery bundle entry is missing: ${entry.path}`);
+      const data = Buffer.from(encoded, "base64");
+      if (data.byteLength !== entry.bytes || createHash("sha256").update(data).digest("hex") !== entry.sha256) {
+        throw new Error(`Recovery bundle entry integrity failed: ${entry.path}`);
+      }
+      const destination = join(staging, entry.path);
+      mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
+      writeFileSync(destination, data, { mode: 0o600 });
+    }
+    mkdirSync(dirname(targetRoot), { recursive: true, mode: 0o700 });
+    renameSync(staging, targetRoot);
+    return { bundleId: manifest.bundleId, manifest, restoredPaths: manifest.entries.map((entry) => entry.path) };
+  } catch (error) {
+    rmSync(staging, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** Restores a portable installation bundle into a clean, non-existent data root. */
+export function restoreInstallationRecoveryBundle(
+  bundle: Uint8Array,
+  recoveryKey: Uint8Array,
+  targetRoot: string,
+): RecoveryBundleRestoreResult {
+  return restoreRecoveryBundle(bundle, recoveryKey, targetRoot);
+}
+
+function validateRecoveryKey(key: Uint8Array): void {
+  if (key.byteLength !== 32) throw new Error("Recovery key must be exactly 32 bytes");
+}
+
+function validateRecoveryEntryPath(value: string): string {
+  if (!value || value === ".") throw new Error("Recovery bundle entry path is required");
+  validateWorkspacePath(value);
+  if (value.startsWith(".lite-harness/")) throw new Error("Recovery bundle entry path is reserved");
+  return value.replaceAll("\\", "/");
+}
+
+function recoveryAssociatedData(header: { schemaVersion: number; bundleId: string; createdAt: string; manifestSha256: string; nonce: string; algorithm: string }): Buffer {
+  return Buffer.from(`${RECOVERY_MAGIC}${JSON.stringify(header)}`, "utf8");
+}
+
+function parseRecoveryBundle(bundle: Buffer): { header: { schemaVersion: 1; bundleId: string; createdAt: string; manifestSha256: string; nonce: string; algorithm: "aes-256-gcm+gzip" }; nonce: Buffer; ciphertext: Buffer; tag: Buffer } {
+  const magic = Buffer.from(RECOVERY_MAGIC, "utf8");
+  if (!bundle.subarray(0, magic.length).equals(magic)) throw new Error("Recovery bundle magic is invalid");
+  const headerEnd = bundle.indexOf(0x0a, magic.length);
+  if (headerEnd < 0) throw new Error("Recovery bundle header is missing");
+  const raw = JSON.parse(bundle.subarray(magic.length, headerEnd).toString("utf8")) as Record<string, unknown>;
+  if (raw.schemaVersion !== 1 || raw.algorithm !== "aes-256-gcm+gzip" || typeof raw.bundleId !== "string" ||
+      typeof raw.createdAt !== "string" || typeof raw.manifestSha256 !== "string" || typeof raw.nonce !== "string") {
+    throw new Error("Recovery bundle header is invalid");
+  }
+  const nonce = Buffer.from(raw.nonce, "base64");
+  if (nonce.byteLength !== 12) throw new Error("Recovery bundle nonce is invalid");
+  if (bundle.length <= headerEnd + 1 + SNAPSHOT_TAG_BYTES) throw new Error("Recovery bundle payload is missing");
+  return {
+    header: { schemaVersion: 1, bundleId: raw.bundleId, createdAt: raw.createdAt, manifestSha256: raw.manifestSha256, nonce: raw.nonce, algorithm: "aes-256-gcm+gzip" },
+    nonce,
+    ciphertext: bundle.subarray(headerEnd + 1, -SNAPSHOT_TAG_BYTES),
+    tag: bundle.subarray(-SNAPSHOT_TAG_BYTES),
+  };
+}
+
+function validateRecoveryPayload(
+  payload: { manifest?: RecoveryBundleManifest; entries?: Array<{ path?: string; data?: string }> },
+  header: { bundleId: string; manifestSha256: string },
+): RecoveryBundleManifest {
+  const manifest = payload.manifest;
+  if (!manifest || manifest.schemaVersion !== 1 || manifest.bundleId !== header.bundleId || !Array.isArray(manifest.entries) ||
+      createHash("sha256").update(JSON.stringify(manifest)).digest("hex") !== header.manifestSha256) {
+    throw new Error("Recovery bundle manifest is invalid");
+  }
+  if (manifest.entries.length === 0 || manifest.entries.length > MAX_RECOVERY_ENTRIES) throw new Error("Recovery bundle entry count is invalid");
+  const total = manifest.entries.reduce((sum, entry) => {
+    validateRecoveryEntryPath(entry.path);
+    if (!Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new Error("Recovery bundle manifest entry is invalid");
+    return sum + entry.bytes;
+  }, 0);
+  if (total > MAX_RECOVERY_BYTES) throw new Error("Recovery bundle exceeds the archive limit");
+  if (new Set(manifest.entries.map((entry) => entry.path)).size !== manifest.entries.length) throw new Error("Recovery bundle contains duplicate paths");
+  if (!Array.isArray(payload.entries) || payload.entries.length !== manifest.entries.length) throw new Error("Recovery bundle payload entries are invalid");
+  return manifest;
 }
 
 export interface WorkspaceLifecycleOwner {

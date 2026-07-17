@@ -8,6 +8,7 @@ import {
   LocalCacheCatalog,
   LocalWorkspaceSnapshotStore,
   DerivedSnapshotKeyProvider,
+  type SnapshotCommitStage,
   rejectSensitiveRegisteredRoot,
   StaticSnapshotKeyProvider,
   validateRegisteredBindRoot,
@@ -92,6 +93,36 @@ describe("workspace durability", () => {
     expect(restored.recoveredFromPrevious).toBe(true);
     expect(restored.archive.toString("utf8")).toBe("first archive");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("A11-PREVIOUS-GOOD-RECOVERY survives every pre-promotion commit fault", async () => {
+    const stages: SnapshotCommitStage[] = [
+      "after-staged-write",
+      "after-staged-verify",
+      "after-rotation",
+      "after-promotion",
+    ];
+    for (const stage of stages) {
+      const directory = mkdtempSync(join(tmpdir(), `lite-snapshot-fault-${stage}-`));
+      directories.push(directory);
+      const keyProvider = new StaticSnapshotKeyProvider(Buffer.alloc(32, 10));
+      const stable = new LocalWorkspaceSnapshotStore(directory, keyProvider);
+      await stable.create("workspace", Buffer.from("previous-good"));
+      const failing = new LocalWorkspaceSnapshotStore(
+        directory,
+        keyProvider,
+        undefined,
+        512 * 1024 * 1024,
+        (observed) => {
+          if (observed === stage) throw new Error(`injected ${stage}`);
+        },
+      );
+
+      await expect(failing.create("workspace", Buffer.from("next-generation"))).rejects.toThrow(`injected ${stage}`);
+      const restored = await failing.restore("workspace");
+      expect(restored.archive.toString("utf8")).toBe(stage === "after-promotion" ? "next-generation" : "previous-good");
+      expect(restored.recoveredFromPrevious).toBe(stage === "after-rotation");
+    }
   });
 
   it("BD-015-REGRESSION authenticates workspace identity metadata as AEAD associated data", async () => {

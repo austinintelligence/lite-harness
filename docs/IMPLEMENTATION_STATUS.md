@@ -12,26 +12,26 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 ## Requirement ledger
 
 - Total ledger rows: 922
-- Alpha-required rows: 828
+- Alpha-required rows: 54
 - Verified by current zero-skip evidence: 0
 - Declared verified in the ledger: 0
-- Declared in progress: 1
-- Currently blocked or unverified alpha rows: 828
-- Non-alpha rows retained in ledger: 94
+- Declared in progress: 0
+- Currently blocked or unverified alpha rows: 54
+- Non-alpha rows retained in ledger: 868
 
 | Tier | Ledger rows | Alpha-required | Current evidence |
 | --- | ---: | ---: | ---: |
-| alpha | 828 | 828 | 0 |
-| preview | 44 | 0 | 0 |
-| beta | 25 | 0 | 0 |
+| alpha | 54 | 54 | 0 |
+| preview | 713 | 0 | 0 |
+| beta | 130 | 0 | 0 |
 | future | 25 | 0 | 0 |
 
 | Kind | Total | Current evidence | Declared verified |
 | --- | ---: | ---: | ---: |
 | frozen-decision | 32 | 0 | 0 |
-| phase-exit | 12 | 0 | 0 |
+| phase-exit | 0 | 0 | 0 |
 | alpha-gate | 22 | 0 | 0 |
-| contract-requirement | 762 | 0 | 0 |
+| contract-requirement | 0 | 0 | 0 |
 
 ## Alpha gates
 
@@ -47,11 +47,11 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | A08 Cleanup and reconciliation | blocked | current-evidence-stale, manager-death-process-inventory-gap |
 | A09 Workspace durability | blocked | current-evidence-stale |
 | A10 Automatic encrypted cold restore | blocked | current-evidence-stale |
-| A11 Previous-good recovery | blocked | traceability-not-yet-established |
+| A11 Previous-good recovery | blocked | current-evidence-stale |
 | A12 Artifact ownership | blocked | current-evidence-stale |
 | A13 Cache isolation | blocked | current-evidence-stale |
 | A14 Doctor | blocked | current-evidence-stale |
-| A15 Recovery and export | blocked | traceability-not-yet-established |
+| A15 Recovery and export | blocked | current-evidence-stale |
 | A16 Provider conformance | blocked | external-provider-credentials-and-live-evidence-missing |
 | A17 Routing and usage | blocked | current-evidence-stale |
 | A18 Plugin lifecycle | blocked | current-evidence-stale |

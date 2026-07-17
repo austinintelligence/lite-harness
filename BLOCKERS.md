@@ -6,8 +6,8 @@
 
 **NOT YET A VERIFIED ALPHA.** Local implementation and verification work remains, so no external input is the sole blocker yet.
 
-- Alpha-required rows without verified status: 828 of 828
-- Non-alpha rows retained in ledger: 94
+- Alpha-required rows without verified status: 54 of 54
+- Non-alpha rows retained in ledger: 868
 - Open or unproven critical defects: 8
 - Open or unproven high defects: 56
 - Missing required test command surfaces: 0

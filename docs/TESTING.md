@@ -29,6 +29,14 @@ model-backed pxpipe evaluation: it uses the same wrapper and records a paired
 text-versus-optical quality and full-bill report without persisting upstream
 credentials.
 
+`pnpm evaluate:hermes:docker` is the bounded local vertical probe for the
+Hermes-compatible route. It starts separate Gateway and Manager processes,
+uses a pinned Docker image, asks the model for `write_file` followed by
+`artifact_publish`, verifies the artifact bytes and workspace volume, and
+removes only its own labeled containers and volume. A run that returns prose
+without tool calls is recorded as a failed qualification; it is not converted
+into a successful Docker result.
+
 ## CI and release automation
 
 The branch workflow is safe to run for every pull request and `lite-main` push:

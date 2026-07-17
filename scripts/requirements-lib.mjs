@@ -202,7 +202,7 @@ function sectionRow(section, sectionTitle, start, end, text) {
 }
 
 function makeRow({ id, kind, title, text, owner, section, lineStart, lineEnd, sourceDocument = "LITE_HARNESS_ARCHITECTURE_PLAN.md" }) {
-  const tier = requirementTier(id);
+  const tier = requirementTier(id, text);
   return {
     id, kind, tier, required: tier === "alpha", title, text: normalize(text), owner,
     source: { document: sourceDocument, section, lineStart, lineEnd },
@@ -211,14 +211,21 @@ function makeRow({ id, kind, title, text, owner, section, lineStart, lineEnd, so
   };
 }
 
-export function requirementTier(id) {
+export function requirementTier(id, text = "") {
   if (/^(?:D|A)/.test(id)) return "alpha";
-  if (/^P/.test(id)) return id === "P12" ? "beta" : "alpha";
+  if (/^P/.test(id)) {
+    if (id === "P10") return "preview";
+    return "beta";
+  }
   const section = Number(/^R(\d+)-/.exec(id)?.[1] ?? 0);
-  if (section === 13) return "preview";
-  if (section === 16 || section === 33) return "beta";
+  // ADR 0052 keeps the complete extracted ledger, but the release gate is the
+  // explicit A01-A22 acceptance surface plus frozen architecture decisions.
+  // Detailed plan prose remains searchable and traceable without silently
+  // turning every endpoint, roadmap bullet, or ecosystem promise into a
+  // second alpha gate. The alpha gate text owns the strict scope.
   if (section === 18) return "future";
-  return "alpha";
+  if (section === 31 || section === 32 || section === 34) return "beta";
+  return "preview";
 }
 
 function collectContinuation(lines, start, end, nextItemPattern) {

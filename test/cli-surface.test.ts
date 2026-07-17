@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,6 +30,21 @@ describe("CLI alpha surface", () => {
     ]) expect(cli).toContain(token);
     expect(manager).toContain('app.delete<{ Params: { agentId: string } }>("/internal/agents/:agentId"');
     expect(manager).toContain('"/internal/runs"');
+  });
+
+  it("A15-RECOVERY-BUNDLE-CLI exports and imports a clean encrypted installation", () => {
+    const source = mkdtempSync(join(tmpdir(), "lite-cli-recovery-source-"));
+    const targetParent = mkdtempSync(join(tmpdir(), "lite-cli-recovery-target-"));
+    roots.push(source, targetParent);
+    const keyFile = join(source, "recovery-key.txt");
+    writeFileSync(keyFile, Buffer.alloc(32, 23).toString("base64"), { mode: 0o600 });
+    expect(runCli(source, "init")).toMatchObject({ initialized: true });
+    writeFileSync(join(source, "durable-marker.txt"), "authoritative");
+    const bundle = join(source, "installation.lhr");
+    expect(runCli(source, "recovery", "export", bundle, keyFile)).toMatchObject({ exported: true, encrypted: true });
+    const target = join(targetParent, "restored");
+    expect(runCli(source, "recovery", "import", bundle, target, keyFile)).toMatchObject({ imported: true, entries: expect.any(Number) });
+    expect(readFileSync(join(target, "durable-marker.txt"), "utf8")).toBe("authoritative");
   });
 });
 

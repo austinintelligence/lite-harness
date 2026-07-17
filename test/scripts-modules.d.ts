@@ -5,4 +5,5 @@ declare module "*.mjs" {
     tier: string;
     required: boolean;
   }>;
+  export function requirementTier(id: string, text?: string): string;
 }

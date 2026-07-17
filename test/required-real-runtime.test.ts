@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { dockerMaintenanceHardeningArgs } from "@lite-harness/runtime-docker";
 
 const requiredImages = [
   "LITE_HARNESS_TEST_DOCKER_IMAGE",
@@ -9,6 +10,17 @@ const requiredImages = [
 ] as const;
 
 describe("required real runtime qualification", () => {
+  it("A07-MAINTENANCE-HARDENING-ARGS keeps maintenance containers on the bounded default Docker profile", () => {
+    const args = dockerMaintenanceHardeningArgs({ memory: "48m", cpus: "0.25", pidsLimit: 32 }, { user: "1000:1000" });
+    expect(args).toEqual(expect.arrayContaining([
+      "--network", "none", "--read-only", "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges=true", "--pids-limit", "32",
+      "--memory", "48m", "--memory-swap", "48m", "--cpus", "0.25",
+      "--ulimit", "nofile=1024:1024", "--user", "1000:1000",
+    ]));
+    expect(args).not.toContain("seccomp=default");
+  });
+
   it("BD-055-REGRESSION fails closed unless every Docker and browser lane has immutable, locally available inputs", () => {
     expect(process.env.LITE_HARNESS_REAL_RUNTIME_TEST).toBe("1");
     for (const name of requiredImages) {

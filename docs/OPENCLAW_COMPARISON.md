@@ -39,8 +39,8 @@ fixtures and explicit adapters. The relevant current local evidence is:
 | Deterministic host suite | 67 files, 350 tests passed before the current evidence-only runner additions |
 | Real Docker/browser runtime | 174/174 checks, zero skips |
 | Public SDK to model to Docker vertical | Passed with a pinned tool image, artifact bytes, restart replay, usage, and provider-secret absence |
-| OpenRouter one-agent corpus | 14/16 tasks passed in the latest run; the two failures were free-router tool-call variance |
-| OpenRouter ten-agent concurrency | 14/20 tasks passed across two rounds; workspace isolation and scoped cleanup passed |
+| OpenRouter one-agent corpus | Earlier exploratory run: 14/16; exact pushed-SHA run: 13/16, with code execution, repeated context, and browser lifecycle omissions |
+| OpenRouter ten-agent concurrency | Exact pushed-SHA runs: 19/20 in two attempts (10/10 then 9/10); cross-user isolation and scoped cleanup passed |
 
 The raw OpenClaw tree is retained as provenance and research material. File
 counts or source-layout similarity are not treated as parity evidence; the Lite

@@ -19,14 +19,14 @@ model score.
   `write_file` and `artifact_publish`, artifact byte verification, Manager and
   Gateway restart, SDK event replay, usage records, provider-secret absence in
   tool containers, and scoped cleanup.
-- The latest one-agent corpus passed 14/16 tasks. The failures were a malformed
-  browser tool argument and a hallucinated context block ID during the approval
-  task; process restart, cold snapshot restore, Docker tools, artifacts, and
-  cleanup passed.
-- The ten-agent run executed two rounds of ten concurrent tasks. It passed
-  14/20 task assertions; cross-user workspace-volume isolation and cleanup
-  passed. The failed assertions included invalid JSON tool arguments and model
-  turns that stopped before the requested verification.
+- The exact pushed-SHA one-agent corpus passed 13/16 tasks. The three failures
+  were a code task that stopped after writing, a repeated-context task that
+  answered without tool calls, and a browser task that omitted close; process
+  restart, cold snapshot restore, Docker tools, artifacts, and cleanup passed.
+- The corrected ten-agent runner executed two rounds of ten concurrent tasks.
+  Two exact-SHA attempts each passed 19/20 assertions. One attempt omitted
+  `browser_close`; the other ended a browser task with an unavailable session.
+  Cross-user workspace-volume isolation and scoped cleanup passed in both.
 
 These results demonstrate a working route integration and expose the free
 router's variance. They do not qualify `openrouter/free` as a fixed model or

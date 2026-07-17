@@ -19,6 +19,10 @@ import type {
   ErrorEnvelope,
   ManagerHealth,
   ManagerReadiness,
+  ModelCatalogRecord,
+  ProviderConnectionRecord,
+  CreateProviderConnectionRequest,
+  ProviderConnectionLoginRequest,
 } from "@lite-harness/contracts";
 import { isManagerReadiness, LITE_IPC_PROTOCOL_VERSION, LITE_IPC_VERSION_HEADER } from "@lite-harness/contracts";
 
@@ -182,6 +186,36 @@ export class ManagerClient {
     return this.#request<{ workspaces: WorkspaceRecord[] }>("GET", "/internal/workspaces", undefined, principalHeaders(principal)).then((value) => value.workspaces);
   }
 
+  listModels(principal: InternalPrincipal): Promise<ModelCatalogRecord[]> {
+    return this.#request<{ models: ModelCatalogRecord[] }>("GET", "/internal/models", undefined, principalHeaders(principal)).then((value) => value.models);
+  }
+
+  listProviderConnections(principal: InternalPrincipal): Promise<ProviderConnectionRecord[]> {
+    return this.#request<{ connections: ProviderConnectionRecord[] }>(
+      "GET", "/internal/provider-connections", undefined, principalHeaders(principal),
+    ).then((value) => value.connections);
+  }
+
+  createProviderConnection(request: CreateProviderConnectionRequest, principal: InternalPrincipal): Promise<ProviderConnectionRecord> {
+    return this.#request<ProviderConnectionRecord>("POST", "/internal/provider-connections", { ...request, principal });
+  }
+
+  loginProviderConnection(
+    connectionId: string,
+    request: ProviderConnectionLoginRequest,
+    principal: InternalPrincipal,
+  ): Promise<ProviderConnectionRecord> {
+    return this.#request<ProviderConnectionRecord>(
+      "POST", `/internal/provider-connections/${encodeURIComponent(connectionId)}/login`, { ...request, principal },
+    );
+  }
+
+  deleteProviderConnection(connectionId: string, principal: InternalPrincipal): Promise<{ deleted: true; connectionId: string }> {
+    return this.#request<{ deleted: true; connectionId: string }>(
+      "DELETE", `/internal/provider-connections/${encodeURIComponent(connectionId)}`, undefined, principalHeaders(principal),
+    );
+  }
+
   ingestWebhook(accountId: string, rawBody: Buffer, signature: string): Promise<{ duplicate: boolean; runId?: string }> {
     return this.#request("POST", `/internal/integrations/webhook/${encodeURIComponent(accountId)}/inbound`, rawBody, {
       "x-lite-signature": signature,
@@ -189,7 +223,7 @@ export class ManagerClient {
   }
 
   #request<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "DELETE",
     path: string,
     body?: unknown,
     additionalHeaders: Record<string, string> = {},

@@ -11,6 +11,7 @@ import type {
   RunAttemptRecord,
   CreateAgentProfileRequest,
   CreateWorkspaceRequest,
+  CreateProviderConnectionRequest,
   CreateRunResponse,
   RunEvent,
   RunRecord,
@@ -21,6 +22,10 @@ import type {
   MintRunTokenRequest,
   MintRunTokenResponse,
   RevokeTokenResponse,
+  ModelCatalogRecord,
+  ProviderConnectionRecord,
+  ProviderConnectionLoginRequest,
+  DeleteProviderConnectionResponse,
 } from "@lite-harness/contracts";
 export * from "./generated-api.js";
 
@@ -154,6 +159,31 @@ export class LiteHarnessClient {
     return (await this.#jsonMethod<{ workspaces: WorkspaceRecord[] }>("listWorkspaces")).workspaces;
   }
 
+  async listModels(): Promise<ModelCatalogRecord[]> {
+    return (await this.#jsonMethod<{ models: ModelCatalogRecord[] }>("listModels")).models;
+  }
+
+  async listProviderConnections(): Promise<ProviderConnectionRecord[]> {
+    return (await this.#jsonMethod<{ connections: ProviderConnectionRecord[] }>("listProviderConnections")).connections;
+  }
+
+  createProviderConnection(request: CreateProviderConnectionRequest): Promise<ProviderConnectionRecord> {
+    return this.#jsonMethod<ProviderConnectionRecord>("createProviderConnection", {
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
+    });
+  }
+
+  loginProviderConnection(connectionId: string, request: ProviderConnectionLoginRequest): Promise<ProviderConnectionRecord> {
+    return this.#jsonMethod<ProviderConnectionRecord>("loginProviderConnection", {
+      pathParams: { connectionId },
+      init: { headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
+    });
+  }
+
+  deleteProviderConnection(connectionId: string): Promise<DeleteProviderConnectionResponse> {
+    return this.#jsonMethod<DeleteProviderConnectionResponse>("deleteProviderConnection", { pathParams: { connectionId } });
+  }
+
   async *events(runId: string, after = 0, options: RunEventStreamOptions = {}): AsyncIterable<RunEvent> {
     if (!Number.isSafeInteger(after) || after < 0) {
       throw new LiteHarnessError("Event cursor must be a non-negative safe integer", undefined, "invalid_event_cursor");
@@ -277,6 +307,11 @@ export const AUTHENTICATED_OPERATION_METHODS = {
   getV1Workspaces: "listWorkspaces",
   postV1Workspaces: "createWorkspace",
   getV1WorkspacesByWorkspaceId: "getWorkspace",
+  getV1Models: "listModels",
+  getV1ProviderConnections: "listProviderConnections",
+  postV1ProviderConnections: "createProviderConnection",
+  postV1ProviderConnectionsByConnectionIdLogin: "loginProviderConnection",
+  deleteV1ProviderConnectionsByConnectionId: "deleteProviderConnection",
 } as const satisfies Record<AuthenticatedOperationId, keyof LiteHarnessClient>;
 
 export const AUTHENTICATED_OPERATION_ROUTES = GENERATED_API_OPERATIONS

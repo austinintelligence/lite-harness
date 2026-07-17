@@ -73,6 +73,7 @@ class CreateRun(TypedDict):
     agent: str
     workspace: str
     session: NotRequired[str]
+    providerConnectionId: NotRequired[str]
     input: str
     budget: NotRequired[RunBudgetOverrides]
 
@@ -82,9 +83,21 @@ class CreateRunResponse(TypedDict):
     eventCursor: int
     idempotentReplay: bool
 
+class CreateProviderConnection(TypedDict):
+    id: NotRequired[str]
+    providerId: str
+    displayName: str
+    authKind: NotRequired[Literal["api_key", "oauth", "delegated_cli", "local_endpoint"]]
+    baseUrl: NotRequired[str]
+    modelIds: NotRequired[list[str]]
+
 class CreateWorkspace(TypedDict):
     id: NotRequired[str]
     mode: NotRequired[Literal["managed"]]
+
+class DeleteProviderConnectionResponse(TypedDict):
+    connectionId: str
+    deleted: Literal[True]
 
 ErrorDetail: TypeAlias = dict[str, Any]
 
@@ -134,9 +147,43 @@ class MintRunTokenResponse(TypedDict):
     scopes: list[str]
     replayPolicy: Literal["resource_bound_multi_use"]
 
+class ModelCatalogRecord(TypedDict):
+    id: str
+    providerId: str
+    capabilities: list[AgentModelCapability]
+    contextWindow: int
+    inputUsdPerMillion: NotRequired[float]
+    outputUsdPerMillion: NotRequired[float]
+    provenance: Literal["static", "discovered", "operator"]
+
+class ModelListResponse(TypedDict):
+    models: list[ModelCatalogRecord]
+
 class PublishArtifact(TypedDict):
     path: str
     mediaType: str
+
+class ProviderConnectionListResponse(TypedDict):
+    connections: list[ProviderConnectionRecord]
+
+class ProviderConnectionLogin(TypedDict):
+    secret: str
+
+class ProviderConnectionRecord(TypedDict):
+    id: str
+    appId: str
+    tenantId: str
+    userId: str
+    providerId: str
+    displayName: str
+    authKind: Literal["api_key", "oauth", "delegated_cli", "local_endpoint"]
+    credentialProfileId: str
+    baseUrl: NotRequired[str]
+    modelIds: list[str]
+    status: Literal["needs_login", "ready", "error", "revoked"]
+    lastErrorCode: NotRequired[str]
+    createdAt: str
+    updatedAt: str
 
 class RevokeTokenResponse(TypedDict):
     tokenId: str
@@ -285,6 +332,11 @@ API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/agents/{agentId}", "getV1AgentsByAgentId"),
     ("POST", "/v1/approvals/{approvalId}", "postV1ApprovalsByApprovalId"),
     ("GET", "/v1/artifacts/{artifactId}", "getV1ArtifactsByArtifactId"),
+    ("GET", "/v1/models", "getV1Models"),
+    ("GET", "/v1/provider-connections", "getV1ProviderConnections"),
+    ("POST", "/v1/provider-connections", "postV1ProviderConnections"),
+    ("DELETE", "/v1/provider-connections/{connectionId}", "deleteV1ProviderConnectionsByConnectionId"),
+    ("POST", "/v1/provider-connections/{connectionId}/login", "postV1ProviderConnectionsByConnectionIdLogin"),
     ("POST", "/v1/runs", "postV1Runs"),
     ("GET", "/v1/runs/{runId}", "getV1RunsByRunId"),
     ("POST", "/v1/runs/{runId}/artifacts", "postV1RunsByRunIdArtifacts"),
@@ -302,4 +354,4 @@ API_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/workspaces/{workspaceId}", "getV1WorkspacesByWorkspaceId"),
 )
 
-__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateWorkspace","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadinessDependencies","GatewayReadiness","InboundEnvelope","ManagerReadiness","MintRunToken","MintRunTokenResponse","PublishArtifact","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunStreamError","RunStreamFrame","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]
+__all__ = ["AgentListResponse","AgentModelCapability","AgentProfileRecord","ApprovalRecord","ApprovalStatus","ArtifactPayloadResponse","ArtifactRecord","ChildRunsResponse","CreateAgent","CreateRun","CreateRunResponse","CreateProviderConnection","CreateWorkspace","DeleteProviderConnectionResponse","ErrorDetail","ErrorEnvelope","GatewayHealth","GatewayReadinessDependencies","GatewayReadiness","InboundEnvelope","ManagerReadiness","MintRunToken","MintRunTokenResponse","ModelCatalogRecord","ModelListResponse","PublishArtifact","ProviderConnectionListResponse","ProviderConnectionLogin","ProviderConnectionRecord","RevokeTokenResponse","ReadinessDependency","ResolveApproval","RunAttemptRecord","RunAttemptsResponse","RunBudget","RunBudgetOverrides","RunEvent","RunEventType","RunRecord","RunStatus","RunStreamError","RunStreamFrame","RunUsage","SessionMessageRecord","SessionMessageRole","SessionMessagesResponse","SessionRecord","SteerRun","StructuredError","WebhookIngestResponse","WorkspaceListResponse","WorkspaceRecord","API_OPERATIONS"]

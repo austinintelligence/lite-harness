@@ -14,6 +14,7 @@ import type {
   RunStatus,
   SessionMessageRecord,
   SessionRecord,
+  ProviderConnectionRecord,
   WorkspaceLease,
   ToolCall,
 } from "@lite-harness/contracts";
@@ -180,6 +181,7 @@ export class RunService {
       agent: request.agent,
       workspace,
       session,
+      ...(parent.providerConnectionId ? { providerConnectionId: parent.providerConnectionId } : {}),
       input: request.input,
       budget,
       idempotencyKey,
@@ -233,6 +235,36 @@ export class RunService {
 
   listWorkspaces(principal: { appId: string; tenantId: string; userId: string }): WorkspaceRecord[] {
     return this.store.listWorkspaces(principal);
+  }
+
+  createProviderConnection(record: ProviderConnectionRecord): ProviderConnectionRecord {
+    return this.store.createProviderConnection(record);
+  }
+
+  getProviderConnection(
+    connectionId: string,
+    owner: { appId: string; tenantId: string; userId: string },
+  ): ProviderConnectionRecord | undefined {
+    return this.store.getProviderConnection(connectionId, owner);
+  }
+
+  listProviderConnections(principal: { appId: string; tenantId: string; userId: string }): ProviderConnectionRecord[] {
+    return this.store.listProviderConnections(principal);
+  }
+
+  updateProviderConnection(
+    connectionId: string,
+    owner: { appId: string; tenantId: string; userId: string },
+    update: { status: ProviderConnectionRecord["status"]; lastErrorCode?: string },
+  ): ProviderConnectionRecord | undefined {
+    return this.store.updateProviderConnection(connectionId, owner, update);
+  }
+
+  deleteProviderConnection(
+    connectionId: string,
+    owner: { appId: string; tenantId: string; userId: string },
+  ): boolean {
+    return this.store.deleteProviderConnection(connectionId, owner);
   }
 
   getSession(sessionId: string, owner: { appId: string; tenantId: string; userId: string }): SessionRecord | undefined {
@@ -550,6 +582,7 @@ export class RunService {
         maxCostUsd: run.budget.maxCostUsd,
         modelCapabilities: profile.modelCapabilities,
         principal: { appId: run.appId, tenantId: run.tenantId, userId: run.userId, scopes: [] },
+        ...(run.providerConnectionId ? { providerConnectionId: run.providerConnectionId } : {}),
         ...(history?.length ? { history } : {}),
         signal: controller.signal,
         maxTurns: run.budget.maxTurns,

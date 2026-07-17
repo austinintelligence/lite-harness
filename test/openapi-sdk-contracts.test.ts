@@ -99,6 +99,11 @@ describe("authoritative OpenAPI and generated SDK contract", () => {
       getV1Workspaces: "listWorkspaces",
       postV1Workspaces: "createWorkspace",
       getV1WorkspacesByWorkspaceId: "getWorkspace",
+      getV1Models: "listModels",
+      getV1ProviderConnections: "listProviderConnections",
+      postV1ProviderConnections: "createProviderConnection",
+      postV1ProviderConnectionsByConnectionIdLogin: "loginProviderConnection",
+      deleteV1ProviderConnectionsByConnectionId: "deleteProviderConnection",
     } as const;
     expect(AUTHENTICATED_OPERATION_METHODS).toEqual(expectedMethods);
     const expected = GENERATED_API_OPERATIONS
@@ -110,7 +115,7 @@ describe("authoritative OpenAPI and generated SDK contract", () => {
         expectedMethods[operation.operationId as keyof typeof expectedMethods],
       ]);
     expect(AUTHENTICATED_OPERATION_ROUTES).toEqual(expected);
-    expect(expected).toHaveLength(20);
+    expect(expected).toHaveLength(25);
     for (const methodName of Object.values(expectedMethods)) {
       expect(typeof LiteHarnessClient.prototype[methodName]).toBe("function");
     }

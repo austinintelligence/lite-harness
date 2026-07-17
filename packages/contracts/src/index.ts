@@ -94,6 +94,7 @@ export const CreateRunRequestSchema = Type.Object(
     agent: Type.String({ minLength: 1, maxLength: 128 }),
     workspace: Type.String({ minLength: 1, maxLength: 128 }),
     session: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    providerConnectionId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     input: Type.String({ minLength: 1, maxLength: 1_000_000 }),
     budget: Type.Optional(RunBudgetOverridesSchema),
   },
@@ -154,6 +155,7 @@ export const InternalStartRunRequestSchema = Type.Object({
   agent: Type.String({ minLength: 1, maxLength: 128 }),
   workspace: Type.String({ minLength: 1, maxLength: 128 }),
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  providerConnectionId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   input: Type.String({ minLength: 1, maxLength: 1_000_000 }),
   budget: Type.Optional(RunBudgetOverridesSchema),
   idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
@@ -174,6 +176,7 @@ export interface RunRecord {
   agentId: string;
   workspaceId: string;
   sessionId?: string;
+  providerConnectionId?: string;
   parentRunId?: string;
   depth: number;
   deliveryAllowed: boolean;
@@ -340,6 +343,124 @@ export interface WorkspaceRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export type ProviderConnectionStatus = "needs_login" | "ready" | "error" | "revoked";
+export const ProviderConnectionStatusSchema = Type.Union([
+  Type.Literal("needs_login"), Type.Literal("ready"), Type.Literal("error"), Type.Literal("revoked"),
+]);
+
+export interface ProviderConnectionRecord {
+  id: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  providerId: string;
+  displayName: string;
+  authKind: "api_key" | "oauth" | "delegated_cli" | "local_endpoint";
+  credentialProfileId: string;
+  baseUrl?: string;
+  modelIds: string[];
+  status: ProviderConnectionStatus;
+  lastErrorCode?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ProviderAuthKindSchema = Type.Union([
+  Type.Literal("api_key"), Type.Literal("oauth"), Type.Literal("delegated_cli"), Type.Literal("local_endpoint"),
+]);
+
+export interface CreateProviderConnectionRequest {
+  id?: string;
+  providerId: string;
+  displayName: string;
+  authKind?: ProviderConnectionRecord["authKind"];
+  baseUrl?: string;
+  modelIds?: string[];
+}
+
+export const CreateProviderConnectionRequestSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._:-]+$" })),
+  providerId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._:-]+$" }),
+  displayName: Type.String({ minLength: 1, maxLength: 128, pattern: ".*\\S.*" }),
+  authKind: Type.Optional(ProviderAuthKindSchema),
+  baseUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048, format: "uri" })),
+  modelIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 256, uniqueItems: true })),
+}, { additionalProperties: false });
+
+export interface ProviderConnectionLoginRequest {
+  secret: string;
+}
+
+export const ProviderConnectionLoginRequestSchema = Type.Object({
+  secret: Type.String({ minLength: 16, maxLength: 4_096 }),
+}, { additionalProperties: false });
+
+export interface ModelCatalogRecord {
+  id: string;
+  providerId: string;
+  capabilities: AgentModelCapability[];
+  contextWindow: number;
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
+  provenance: "static" | "discovered" | "operator";
+}
+
+export const ModelCatalogRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 256 }),
+  providerId: Type.String({ minLength: 1, maxLength: 128 }),
+  capabilities: Type.Array(AgentModelCapabilitySchema, { minItems: 1, maxItems: 6, uniqueItems: true }),
+  contextWindow: Type.Integer({ minimum: 1 }),
+  inputUsdPerMillion: Type.Optional(Type.Number({ minimum: 0 })),
+  outputUsdPerMillion: Type.Optional(Type.Number({ minimum: 0 })),
+  provenance: Type.Union([Type.Literal("static"), Type.Literal("discovered"), Type.Literal("operator")]),
+}, { additionalProperties: false });
+
+export const ProviderConnectionRecordSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 128 }),
+  appId: Type.String({ minLength: 1, maxLength: 128 }),
+  tenantId: Type.String({ minLength: 1, maxLength: 128 }),
+  userId: Type.String({ minLength: 1, maxLength: 128 }),
+  providerId: Type.String({ minLength: 1, maxLength: 128 }),
+  displayName: Type.String({ minLength: 1, maxLength: 128 }),
+  authKind: ProviderAuthKindSchema,
+  credentialProfileId: Type.String({ minLength: 1, maxLength: 128 }),
+  baseUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048, format: "uri" })),
+  modelIds: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 256, uniqueItems: true }),
+  status: ProviderConnectionStatusSchema,
+  lastErrorCode: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  createdAt: Type.String({ format: "date-time" }),
+  updatedAt: Type.String({ format: "date-time" }),
+}, { additionalProperties: false });
+
+export const ProviderConnectionListResponseSchema = Type.Object({
+  connections: Type.Array(ProviderConnectionRecordSchema),
+}, { additionalProperties: false });
+
+export const ModelListResponseSchema = Type.Object({
+  models: Type.Array(ModelCatalogRecordSchema),
+}, { additionalProperties: false });
+
+export const DeleteProviderConnectionResponseSchema = Type.Object({
+  connectionId: Type.String({ minLength: 1, maxLength: 128 }),
+  deleted: Type.Literal(true),
+}, { additionalProperties: false });
+export interface DeleteProviderConnectionResponse {
+  connectionId: string;
+  deleted: true;
+}
+
+export const InternalCreateProviderConnectionRequestSchema = Type.Intersect([
+  CreateProviderConnectionRequestSchema,
+  Type.Object({ principal: InternalPrincipalSchema }),
+]);
+export type InternalCreateProviderConnectionRequest = Static<typeof InternalCreateProviderConnectionRequestSchema>;
+
+export const InternalProviderConnectionLoginRequestSchema = Type.Intersect([
+  ProviderConnectionLoginRequestSchema,
+  Type.Object({ principal: InternalPrincipalSchema }),
+]);
+export type InternalProviderConnectionLoginRequest = Static<typeof InternalProviderConnectionLoginRequestSchema>;
 
 export interface CreateWorkspaceRequest {
   id?: string;

@@ -75,6 +75,7 @@ export type CreateRun =
   agent: string;
   workspace: string;
   session?: string;
+  providerConnectionId?: string;
   input: string;
   budget?: RunBudgetOverrides;
 };
@@ -85,10 +86,24 @@ export type CreateRunResponse =
   eventCursor: number;
   idempotentReplay: boolean;
 };
+export type CreateProviderConnection =
+{
+  id?: string;
+  providerId: string;
+  displayName: string;
+  authKind?: "api_key" | "oauth" | "delegated_cli" | "local_endpoint";
+  baseUrl?: string;
+  modelIds?: Array<string>;
+};
 export type CreateWorkspace =
 {
   id?: string;
   mode?: "managed";
+};
+export type DeleteProviderConnectionResponse =
+{
+  connectionId: string;
+  deleted: true;
 };
 export type ErrorDetail = Record<string, unknown>;
 export type ErrorEnvelope =
@@ -145,10 +160,49 @@ export type MintRunTokenResponse =
   scopes: Array<string>;
   replayPolicy: "resource_bound_multi_use";
 };
+export type ModelCatalogRecord =
+{
+  id: string;
+  providerId: string;
+  capabilities: Array<AgentModelCapability>;
+  contextWindow: number;
+  inputUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
+  provenance: "static" | "discovered" | "operator";
+};
+export type ModelListResponse =
+{
+  models: Array<ModelCatalogRecord>;
+};
 export type PublishArtifact =
 {
   path: string;
   mediaType: string;
+};
+export type ProviderConnectionListResponse =
+{
+  connections: Array<ProviderConnectionRecord>;
+};
+export type ProviderConnectionLogin =
+{
+  secret: string;
+};
+export type ProviderConnectionRecord =
+{
+  id: string;
+  appId: string;
+  tenantId: string;
+  userId: string;
+  providerId: string;
+  displayName: string;
+  authKind: "api_key" | "oauth" | "delegated_cli" | "local_endpoint";
+  credentialProfileId: string;
+  baseUrl?: string;
+  modelIds: Array<string>;
+  status: "needs_login" | "ready" | "error" | "revoked";
+  lastErrorCode?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 export type RevokeTokenResponse =
 {
@@ -316,7 +370,9 @@ export const GENERATED_API_SCHEMAS = [
   "CreateAgent",
   "CreateRun",
   "CreateRunResponse",
+  "CreateProviderConnection",
   "CreateWorkspace",
+  "DeleteProviderConnectionResponse",
   "ErrorDetail",
   "ErrorEnvelope",
   "GatewayHealth",
@@ -326,7 +382,12 @@ export const GENERATED_API_SCHEMAS = [
   "ManagerReadiness",
   "MintRunToken",
   "MintRunTokenResponse",
+  "ModelCatalogRecord",
+  "ModelListResponse",
   "PublishArtifact",
+  "ProviderConnectionListResponse",
+  "ProviderConnectionLogin",
+  "ProviderConnectionRecord",
   "RevokeTokenResponse",
   "ReadinessDependency",
   "ResolveApproval",
@@ -392,6 +453,31 @@ export const GENERATED_API_OPERATIONS = [
     "method": "GET",
     "path": "/v1/artifacts/{artifactId}",
     "operationId": "getV1ArtifactsByArtifactId"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/models",
+    "operationId": "getV1Models"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/provider-connections",
+    "operationId": "getV1ProviderConnections"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/provider-connections",
+    "operationId": "postV1ProviderConnections"
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/provider-connections/{connectionId}",
+    "operationId": "deleteV1ProviderConnectionsByConnectionId"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/provider-connections/{connectionId}/login",
+    "operationId": "postV1ProviderConnectionsByConnectionIdLogin"
   },
   {
     "method": "POST",

@@ -13,12 +13,15 @@ import {
   LITE_IPC_PROTOCOL_VERSION,
   isTerminalRunStatus,
   type InternalPrincipal,
+  type ModelCatalogRecord,
+  type ProviderConnectionRecord,
   type ReadinessDependency,
 } from "@lite-harness/contracts";
 import type { SqliteMemoryStore } from "@lite-harness/memory-sqlite";
 import { AnthropicProvider } from "@lite-harness/provider-anthropic";
 import {
   CapabilityBoundModelGateway,
+  ConnectionAwareModelGateway,
   InMemoryCredentialBroker,
   ModelRegistry,
   officialOpenAiModelProfile,
@@ -58,6 +61,7 @@ const instanceLock = new ManagerInstanceLock({
 await instanceLock.acquire();
 const databasePath = join(dataDir, "lite-harness.db");
 const store = new SqliteRunStore(databasePath);
+const providerSecretStore = createCredentialStore(dataDir, process.env);
 const snapshotRootKey = await artifactEncryptionRootKey(dataDir, configuration.mode);
 const artifactStore = new LocalArtifactStore(
   join(dataDir, "artifacts"),
@@ -81,10 +85,14 @@ const runtime = new ArtifactPublishingRuntime(
 const memoryStore = configuration.memoryEnabled
   ? new (await import("@lite-harness/memory-sqlite")).SqliteMemoryStore(join(dataDir, "memory.db"))
   : undefined;
-const modelGateway = resolveModelGateway(
+const defaultModelGateway = resolveModelGateway(
   configuration.provider,
   createDelegatedWorkspaceResolver(store),
   { onRoutePlan: persistRunRoutePlan, onUsage: persistRunModelUsage },
+);
+const modelGateway = new ConnectionAwareModelGateway(
+  defaultModelGateway,
+  async (connectionId, context) => resolveConnectionModelGateway(connectionId, context),
 );
 // ContextOptimizationGate, skills, MCP, plugins, snapshots, and caches are
 // composed here so they share the production run/tool lifecycle.
@@ -175,6 +183,23 @@ const app = buildManagerServer({
     });
   },
   productionReadinessChecks: createProductionReadinessChecks(store, baseRuntime, configuration),
+  modelCatalog: (principal) => {
+    const installationModels = configuredModelCatalog(configuration.provider);
+    const connectionModels = store.listProviderConnections(principal).flatMap(connectionModelCatalog);
+    const seen = new Set<string>();
+    return [...installationModels, ...connectionModels].filter((model) => {
+      const key = `${model.providerId}\0${model.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+  providerConnectionLogin: async (connection: ProviderConnectionRecord, secret: string) => {
+    await providerSecretStore.set(connection.credentialProfileId, secret);
+  },
+  providerConnectionLogout: async (connection: ProviderConnectionRecord) => {
+    await providerSecretStore.delete(connection.credentialProfileId);
+  },
   ...(optionalSystems.pluginLifecycle ? { pluginLifecycle: optionalSystems.pluginLifecycle } : {}),
   ...(integrationStore && integrationRouter ? { integrationStore, integrationRouter, webhookSecret: async (accountId: string) => {
     const configuredAccount = process.env.LITE_HARNESS_WEBHOOK_ACCOUNT ?? "primary";
@@ -573,6 +598,82 @@ function configuredApprovalRouteGeneration(provider: string): string {
   return `route-${createHash("sha256").update(descriptor).digest("hex")}`;
 }
 
+async function resolveConnectionModelGateway(
+  connectionId: string,
+  context: ModelRunContext,
+): Promise<ModelGateway | undefined> {
+  const connection = store.getProviderConnection(connectionId, context.principal);
+  if (!connection || connection.status !== "ready") return undefined;
+
+  const modelIds = connection.modelIds.length > 0
+    ? connection.modelIds
+    : (process.env.LITE_HARNESS_MODEL?.trim() ? [process.env.LITE_HARNESS_MODEL.trim()] : []);
+  if (modelIds.length === 0) return undefined;
+
+  const preset = OPENAI_COMPATIBLE_PRESETS[connection.providerId as keyof typeof OPENAI_COMPATIBLE_PRESETS];
+  const baseUrl = connection.baseUrl ?? preset?.baseUrl;
+  const adapter = connection.providerId === "openai" && !connection.baseUrl
+    ? new OpenAIResponsesProvider()
+    : connection.providerId === "anthropic"
+      ? new AnthropicProvider({
+        ...(baseUrl ? { baseUrl } : {}),
+        allowedOrigins: [new URL(baseUrl ?? "https://api.anthropic.com/v1/").origin],
+      })
+      : baseUrl
+        ? new OpenAICompatibleProvider({
+          providerId: connection.providerId,
+          baseUrl,
+          allowedOrigins: [new URL(baseUrl).origin],
+        })
+        : undefined;
+  if (!adapter) return undefined;
+
+  return new RoutedModelGateway(
+    new ModelRegistry(connectionModelDescriptors(connection, modelIds)),
+    [adapter],
+    resolveStoredCredentialBroker(connection.credentialProfileId),
+    { onRoutePlan: persistRunRoutePlan, onUsage: persistRunModelUsage },
+  );
+}
+
+function connectionModelDescriptors(
+  connection: ProviderConnectionRecord,
+  modelIds: readonly string[],
+): ModelDescriptor[] {
+  const baseCapabilities: readonly ModelCapability[] = connection.providerId === "anthropic"
+    ? ["text", "tools", "vision"]
+    : ["text", "tools", "json"];
+  const contextWindow = connection.providerId === "anthropic"
+    ? configuration.modelContext ?? 200_000
+    : configuration.modelContext ?? 128_000;
+  return modelIds.map((id) => {
+    const official = officialOpenAiModelProfile(id);
+    return {
+      id,
+      providerId: connection.providerId,
+      transport: "direct",
+      credentialProfileId: connection.credentialProfileId,
+      capabilities: official ? [...new Set([...baseCapabilities, "vision" as const])] : baseCapabilities,
+      contextWindow: official?.contextWindow ?? contextWindow,
+      ...configuredModelPricing(id),
+      provenance: "operator",
+      enabled: true,
+    };
+  });
+}
+
+function connectionModelCatalog(connection: ProviderConnectionRecord): ModelCatalogRecord[] {
+  return connectionModelDescriptors(connection, connection.modelIds).map((model) => ({
+    id: model.id,
+    providerId: model.providerId,
+    capabilities: [...model.capabilities],
+    contextWindow: model.contextWindow,
+    ...(model.inputUsdPerMillion === undefined ? {} : { inputUsdPerMillion: model.inputUsdPerMillion }),
+    ...(model.outputUsdPerMillion === undefined ? {} : { outputUsdPerMillion: model.outputUsdPerMillion }),
+    provenance: "operator",
+  }));
+}
+
 function resolveModelGateway(
   provider: string,
   workspacePathForRun: ReturnType<typeof createDelegatedWorkspaceResolver>,
@@ -780,12 +881,56 @@ function resolveCredentialBroker(profileId: string): CredentialBroker {
   });
 }
 
+function resolveStoredCredentialBroker(profileId: string): CredentialBroker {
+  const load = async (id: string, signal?: AbortSignal) => {
+    const secret = await providerSecretStore.get(id, signal);
+    return secret ? { authorizationHeader: `Bearer ${secret}` } : undefined;
+  };
+  return new SingleFlightCredentialBroker({
+    load,
+    refresh: async (id, _current, signal) => {
+      const material = await load(id, signal);
+      if (!material) throw new ProviderError("credential_missing", "Provider connection credential is unavailable", false);
+      return material;
+    },
+  });
+}
+
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function configuredModelCatalog(provider: string): ModelCatalogRecord[] {
+  if (provider === "fake") {
+    return [{
+      id: "fake", providerId: "fake", capabilities: ["text", "tools", "vision", "json", "reasoning", "delegated-agent"],
+      contextWindow: 128_000, inputUsdPerMillion: 0, outputUsdPerMillion: 0, provenance: "static",
+    }];
+  }
+  const modelId = process.env.LITE_HARNESS_MODEL?.trim();
+  if (!modelId) return [];
+  const preset = OPENAI_COMPATIBLE_PRESETS[provider as keyof typeof OPENAI_COMPATIBLE_PRESETS];
+  const providerId = provider === "anthropic"
+    ? "anthropic"
+    : provider === "openai"
+      ? "openai"
+      : preset?.providerId ?? provider;
+  const pricing = configuredModelPricing(modelId);
+  return [{
+    id: modelId,
+    providerId,
+    capabilities: provider === "anthropic" ? ["text", "tools", "vision"] : provider === "codex" || provider === "claude"
+      ? ["text", "tools", "reasoning", "delegated-agent"]
+      : ["text", "tools", "json"],
+    contextWindow: provider === "anthropic" ? configuration.modelContext ?? 200_000 : configuration.modelContext ?? 128_000,
+    ...(pricing.inputUsdPerMillion === undefined ? {} : { inputUsdPerMillion: pricing.inputUsdPerMillion }),
+    ...(pricing.outputUsdPerMillion === undefined ? {} : { outputUsdPerMillion: pricing.outputUsdPerMillion }),
+    provenance: "operator",
+  }];
 }
 
 function configuredModelPricing(modelId?: string): Pick<ModelDescriptor,

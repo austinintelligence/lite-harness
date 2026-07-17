@@ -340,7 +340,7 @@ if (failures.length) {
         "pythonWheelInstallsAndRunsThroughGateway",
       ],
     },
-    claims: { authenticatedOperationCount: 20, generatedSdkParity: true },
+    claims: { authenticatedOperationCount: 25, generatedSdkParity: true },
   });
   process.stdout.write("Release structure checks passed.\n");
 }

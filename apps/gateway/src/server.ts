@@ -9,12 +9,18 @@ import {
   type ApprovalRecord,
   type AgentProfileRecord,
   type WorkspaceRecord,
+  type ModelCatalogRecord,
+  type ProviderConnectionRecord,
+  type CreateProviderConnectionRequest,
+  type ProviderConnectionLoginRequest,
   type RunAttemptRecord,
   type CreateAgentProfileRequest,
   type CreateWorkspaceRequest,
   CreateAgentProfileRequestSchema,
   CreateRunRequestSchema,
   CreateWorkspaceRequestSchema,
+  CreateProviderConnectionRequestSchema,
+  ProviderConnectionLoginRequestSchema,
   isTerminalRunStatus,
   type CreateRunRequest,
   type InternalPrincipal,
@@ -64,6 +70,11 @@ export interface ManagerTransport {
   createWorkspace(request: CreateWorkspaceRequest, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   getWorkspace(workspaceId: string, principal: InternalPrincipal): Promise<WorkspaceRecord>;
   listWorkspaces(principal: InternalPrincipal): Promise<WorkspaceRecord[]>;
+  listModels?(principal: InternalPrincipal): Promise<ModelCatalogRecord[]>;
+  listProviderConnections?(principal: InternalPrincipal): Promise<ProviderConnectionRecord[]>;
+  createProviderConnection?(request: CreateProviderConnectionRequest, principal: InternalPrincipal): Promise<ProviderConnectionRecord>;
+  loginProviderConnection?(connectionId: string, request: ProviderConnectionLoginRequest, principal: InternalPrincipal): Promise<ProviderConnectionRecord>;
+  deleteProviderConnection?(connectionId: string, principal: InternalPrincipal): Promise<{ deleted: true; connectionId: string }>;
   ingestWebhook(accountId: string, rawBody: Buffer, signature: string): Promise<{ duplicate: boolean; runId?: string }>;
 }
 
@@ -503,6 +514,50 @@ export function buildGatewayServer(options: GatewayServerOptions): FastifyInstan
     catch { return reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } }); }
   });
 
+  app.get("/v1/models", async (request, reply) => {
+    const listModels = options.manager.listModels;
+    if (!listModels) return reply.code(501).send(errorEnvelope("not_implemented", "Model catalog is unavailable"));
+    return { models: await listModels.call(options.manager, principalFromRequest(request)) };
+  });
+
+  app.get("/v1/provider-connections", async (request, reply) => {
+    const listProviderConnections = options.manager.listProviderConnections;
+    if (!listProviderConnections) return reply.code(501).send(errorEnvelope("not_implemented", "Provider connections are unavailable"));
+    return { connections: await listProviderConnections.call(options.manager, principalFromRequest(request)) };
+  });
+
+  app.post<{ Body: CreateProviderConnectionRequest }>("/v1/provider-connections", async (request, reply) => {
+    if (!Value.Check(CreateProviderConnectionRequestSchema, request.body)) {
+      return reply.code(400).send(errorEnvelope("invalid_request", "Provider connection body does not match the schema"));
+    }
+    const createProviderConnection = options.manager.createProviderConnection;
+    if (!createProviderConnection) return reply.code(501).send(errorEnvelope("not_implemented", "Provider connections are unavailable"));
+    return reply.code(201).send(await createProviderConnection.call(options.manager, request.body, principalFromRequest(request)));
+  });
+
+  app.post<{ Params: { connectionId: string }; Body: ProviderConnectionLoginRequest }>(
+    "/v1/provider-connections/:connectionId/login",
+    async (request, reply) => {
+      if (!Value.Check(ProviderConnectionLoginRequestSchema, request.body)) {
+        return reply.code(400).send(errorEnvelope("invalid_request", "Provider login body does not match the schema"));
+      }
+      const loginProviderConnection = options.manager.loginProviderConnection;
+      if (!loginProviderConnection) return reply.code(501).send(errorEnvelope("not_implemented", "Provider connections are unavailable"));
+      return reply.send(await loginProviderConnection.call(
+        options.manager, request.params.connectionId, request.body, principalFromRequest(request),
+      ));
+    },
+  );
+
+  app.delete<{ Params: { connectionId: string } }>(
+    "/v1/provider-connections/:connectionId",
+    async (request, reply) => {
+      const deleteProviderConnection = options.manager.deleteProviderConnection;
+      if (!deleteProviderConnection) return reply.code(501).send(errorEnvelope("not_implemented", "Provider connections are unavailable"));
+      return await deleteProviderConnection.call(options.manager, request.params.connectionId, principalFromRequest(request));
+    },
+  );
+
   app.get<{ Params: { sessionId: string } }>(
     "/v1/sessions/:sessionId/messages",
     async (request, reply) => {
@@ -638,6 +693,11 @@ function requiredScope(method: string, route: string | undefined): string | unde
     "POST /v1/workspaces": "workspaces:write",
     "GET /v1/workspaces": "workspaces:read",
     "GET /v1/workspaces/:workspaceId": "workspaces:read",
+    "GET /v1/models": "models:read",
+    "GET /v1/provider-connections": "providers:read",
+    "POST /v1/provider-connections": "providers:write",
+    "POST /v1/provider-connections/:connectionId/login": "providers:write",
+    "DELETE /v1/provider-connections/:connectionId": "providers:write",
   };
   return scopes[key] ?? "route:unconfigured";
 }

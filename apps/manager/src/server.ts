@@ -7,6 +7,10 @@ import type {
   InternalStartRunRequest,
   InternalCreateAgentProfileRequest,
   InternalCreateWorkspaceRequest,
+  InternalCreateProviderConnectionRequest,
+  InternalProviderConnectionLoginRequest,
+  ModelCatalogRecord,
+  ProviderConnectionRecord,
   ManagerHealth,
   ManagerReadiness,
   ReadinessDependency,
@@ -15,6 +19,8 @@ import {
   DEFAULT_RUN_BUDGET,
   InternalCreateAgentProfileRequestSchema,
   InternalCreateWorkspaceRequestSchema,
+  InternalCreateProviderConnectionRequestSchema,
+  InternalProviderConnectionLoginRequestSchema,
   InternalPublishArtifactRequestSchema,
   InternalStartRunRequestSchema,
   LITE_IPC_PROTOCOL_VERSION,
@@ -54,6 +60,9 @@ export interface ManagerServerOptions {
   logger?: boolean;
   observability?: StructuredObservability;
   pluginLifecycle?: PluginLifecyclePort;
+  modelCatalog?: (principal: InternalPrincipal) => ModelCatalogRecord[] | Promise<ModelCatalogRecord[]>;
+  providerConnectionLogin?: (connection: ProviderConnectionRecord, secret: string) => Promise<void>;
+  providerConnectionLogout?: (connection: ProviderConnectionRecord) => Promise<void>;
   productionReadinessChecks: () => Promise<Record<string, ReadinessDependency>>;
 }
 
@@ -482,6 +491,94 @@ export function buildManagerServer(options: ManagerServerOptions): FastifyInstan
       : reply.code(404).send({ error: { code: "not_found", message: "Workspace not found" } });
   });
 
+  app.get("/internal/models", async (request) => ({
+    models: await options.modelCatalog?.(principalFromInternalHeaders(request.headers)) ?? [],
+  }));
+
+  app.get("/internal/provider-connections", async (request) => ({
+    connections: options.runService.listProviderConnections(principalFromInternalHeaders(request.headers)),
+  }));
+
+  app.post<{ Body: InternalCreateProviderConnectionRequest }>(
+    "/internal/provider-connections",
+    async (request, reply) => {
+      const body = request.body;
+      if (!Value.Check(InternalCreateProviderConnectionRequestSchema, body)) {
+        return reply.code(400).send(errorEnvelope("invalid_request", "Provider connection metadata does not match the schema"));
+      }
+      try {
+        validateProviderConnectionEndpoint(body.baseUrl);
+      } catch (error) {
+        return reply.code(400).send(errorEnvelope("invalid_provider_endpoint", error instanceof Error ? error.message : String(error)));
+      }
+      const now = new Date().toISOString();
+      try {
+        return reply.code(201).send(options.runService.createProviderConnection({
+          id: body.id ?? `pc_${randomUUID().replaceAll("-", "")}`,
+          appId: body.principal.appId,
+          tenantId: body.principal.tenantId,
+          userId: body.principal.userId,
+          providerId: body.providerId,
+          displayName: body.displayName,
+          authKind: body.authKind ?? "api_key",
+          credentialProfileId: `cred_${randomUUID().replaceAll("-", "")}`,
+          ...(body.baseUrl ? { baseUrl: body.baseUrl } : {}),
+          modelIds: body.modelIds ?? [],
+          status: "needs_login",
+          createdAt: now,
+          updatedAt: now,
+        }));
+      } catch (error) {
+        return reply.code(409).send(errorEnvelope("provider_connection_conflict", error instanceof Error ? error.message : String(error)));
+      }
+    },
+  );
+
+  app.post<{ Params: { connectionId: string }; Body: InternalProviderConnectionLoginRequest }>(
+    "/internal/provider-connections/:connectionId/login",
+    async (request, reply) => {
+      const body = request.body;
+      if (!Value.Check(InternalProviderConnectionLoginRequestSchema, body)) {
+        return reply.code(400).send(errorEnvelope("invalid_request", "Provider login payload does not match the schema"));
+      }
+      const owner = body.principal;
+      const connection = options.runService.getProviderConnection(request.params.connectionId, owner);
+      if (!connection) return reply.code(404).send(errorEnvelope("not_found", "Provider connection not found"));
+      if (!options.providerConnectionLogin) {
+        return reply.code(503).send(errorEnvelope("provider_login_unavailable", "This Manager has no credential broker login handler", { retryable: true }));
+      }
+      try {
+        await options.providerConnectionLogin(connection, body.secret);
+        return reply.send(options.runService.updateProviderConnection(connection.id, owner, { status: "ready" }));
+      } catch (error) {
+        const code = error instanceof Error && /^[A-Za-z0-9_.-]{1,128}$/u.test(error.message) ? error.message : "provider_login_failed";
+        const updated = options.runService.updateProviderConnection(connection.id, owner, { status: "error", lastErrorCode: code });
+        return reply.code(502).send(errorEnvelope("provider_login_failed", "Provider credential could not be stored", {
+          retryable: true,
+          details: { status: updated?.status ?? "error", errorCode: code },
+        }));
+      }
+    },
+  );
+
+  app.delete<{ Params: { connectionId: string } }>(
+    "/internal/provider-connections/:connectionId",
+    async (request, reply) => {
+      const owner = principalFromInternalHeaders(request.headers);
+      const connection = options.runService.getProviderConnection(request.params.connectionId, owner);
+      if (!connection) return reply.code(404).send(errorEnvelope("not_found", "Provider connection not found"));
+      try {
+        await options.providerConnectionLogout?.(connection);
+        const deleted = options.runService.deleteProviderConnection(connection.id, owner);
+        return deleted
+          ? { deleted: true, connectionId: connection.id }
+          : reply.code(404).send(errorEnvelope("not_found", "Provider connection not found"));
+      } catch (error) {
+        return reply.code(409).send(errorEnvelope("provider_connection_delete_failed", error instanceof Error ? error.message : String(error), { retryable: true }));
+      }
+    },
+  );
+
   app.get<{ Params: { sessionId: string } }>(
     "/internal/sessions/:sessionId/messages",
     async (request, reply) => {
@@ -503,6 +600,16 @@ function pluginStringField(body: unknown, field: string): string {
     throw new Error(`Plugin request ${field} must be a bounded single-line string`);
   }
   return value;
+}
+
+function validateProviderConnectionEndpoint(baseUrl: string | undefined): void {
+  if (!baseUrl) return;
+  const parsed = new URL(baseUrl);
+  if (parsed.username || parsed.password) throw new Error("Provider endpoint must not contain URL credentials");
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !loopback) {
+    throw new Error("Provider endpoint must use HTTPS unless it is loopback");
+  }
 }
 
 function pluginGrantField(body: unknown): Partial<PluginPermissions> {

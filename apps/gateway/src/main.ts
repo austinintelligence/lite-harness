@@ -19,7 +19,7 @@ const accessTokens = new AccessTokenService(accessTokenStore);
 await accessTokens.ensureBootstrapAppToken(appToken, {
   ...bootstrapIdentity,
   scopes: [...DEFAULT_APP_SCOPES],
-});
+}, { allowScopeExpansion: true });
 
 const app = buildGatewayServer({
   manager: new ManagerClient(socketPath, internalToken),

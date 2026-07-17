@@ -27,6 +27,7 @@ export interface ModelRunContext {
   workspaceId: string;
   principal: InternalPrincipal;
   fencingToken: number;
+  providerConnectionId?: string;
   maxCostUsd?: number;
   requiredCapabilities?: readonly ModelCapability[];
   contextWindow?: number;
@@ -40,6 +41,48 @@ export interface ModelGateway {
     context?: ModelRunContext;
     signal?: AbortSignal;
   }): AsyncIterable<ModelEvent>;
+}
+
+/** Selects an owner-authorized model gateway once per durable run attempt. */
+export class ConnectionAwareModelGateway implements ModelGateway {
+  readonly #gateways = new Map<string, ModelGateway>();
+
+  constructor(
+    private readonly fallback: ModelGateway,
+    private readonly resolve: (connectionId: string, context: ModelRunContext) => Promise<ModelGateway | undefined>,
+  ) {}
+
+  async prepareRun(context: ModelRunContext): Promise<PreparedModelRoute> {
+    const gateway = await this.#gateway(context);
+    if (!gateway.prepareRun) throw new ProviderError("route_unavailable", "Selected model gateway cannot prepare a run", false);
+    return await gateway.prepareRun(context);
+  }
+
+  async *streamTurn(params: {
+    messages: readonly ModelMessage[];
+    tools?: readonly ToolDefinition[];
+    context?: ModelRunContext;
+    signal?: AbortSignal;
+  }): AsyncIterable<ModelEvent> {
+    const gateway = params.context ? await this.#gateway(params.context) : this.fallback;
+    yield* gateway.streamTurn(params);
+  }
+
+  async #gateway(context: ModelRunContext): Promise<ModelGateway> {
+    const key = `${context.runId}\0${context.attemptId}`;
+    const cached = this.#gateways.get(key);
+    if (cached) return cached;
+    const selected = context.providerConnectionId
+      ? await this.resolve(context.providerConnectionId, context)
+      : undefined;
+    if (context.providerConnectionId && !selected) {
+      throw new ProviderError("provider_connection_unavailable", "The selected provider connection is not available", false);
+    }
+    const gateway = selected ?? this.fallback;
+    this.#gateways.set(key, gateway);
+    while (this.#gateways.size > 1_024) this.#gateways.delete(this.#gateways.keys().next().value as string);
+    return gateway;
+  }
 }
 
 export interface PreparedModelRoute {

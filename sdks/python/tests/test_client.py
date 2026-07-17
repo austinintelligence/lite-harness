@@ -43,7 +43,7 @@ class ClientTests(unittest.TestCase):
             if path.startswith("/v1/")
         )
         self.assertEqual(AUTHENTICATED_OPERATION_ROUTES, expected)
-        self.assertEqual(len(expected), 20)
+        self.assertEqual(len(expected), 25)
         for _method, _path, _operation_id, method_name in expected:
             self.assertTrue(callable(getattr(LiteHarnessClient, method_name, None)), method_name)
 

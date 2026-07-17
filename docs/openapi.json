@@ -417,6 +417,11 @@
             "maxLength": 128,
             "type": "string"
           },
+          "providerConnectionId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
           "input": {
             "minLength": 1,
             "maxLength": 1000000,
@@ -459,6 +464,70 @@
           "idempotentReplay"
         ]
       },
+      "CreateProviderConnection": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "providerId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "displayName": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": ".*\\S.*",
+            "type": "string"
+          },
+          "authKind": {
+            "anyOf": [
+              {
+                "const": "api_key",
+                "type": "string"
+              },
+              {
+                "const": "oauth",
+                "type": "string"
+              },
+              {
+                "const": "delegated_cli",
+                "type": "string"
+              },
+              {
+                "const": "local_endpoint",
+                "type": "string"
+              }
+            ]
+          },
+          "baseUrl": {
+            "minLength": 1,
+            "maxLength": 2048,
+            "format": "uri",
+            "type": "string"
+          },
+          "modelIds": {
+            "maxItems": 256,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "providerId",
+          "displayName"
+        ]
+      },
       "CreateWorkspace": {
         "additionalProperties": false,
         "type": "object",
@@ -473,6 +542,25 @@
             "type": "string"
           }
         }
+      },
+      "DeleteProviderConnectionResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "deleted": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "deleted"
+        ]
       },
       "ErrorDetail": {
         "type": "object",
@@ -721,6 +809,81 @@
           "replayPolicy"
         ]
       },
+      "ModelCatalogRecord": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 256,
+            "type": "string"
+          },
+          "providerId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "capabilities": {
+            "minItems": 1,
+            "maxItems": 6,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentModelCapability"
+            }
+          },
+          "contextWindow": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inputUsdPerMillion": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "outputUsdPerMillion": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "const": "static",
+                "type": "string"
+              },
+              {
+                "const": "discovered",
+                "type": "string"
+              },
+              {
+                "const": "operator",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "providerId",
+          "capabilities",
+          "contextWindow",
+          "provenance"
+        ]
+      },
+      "ModelListResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogRecord"
+            }
+          }
+        },
+        "required": [
+          "models"
+        ]
+      },
       "PublishArtifact": {
         "additionalProperties": false,
         "type": "object",
@@ -740,6 +903,159 @@
         "required": [
           "path",
           "mediaType"
+        ]
+      },
+      "ProviderConnectionListResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderConnectionRecord"
+            }
+          }
+        },
+        "required": [
+          "connections"
+        ]
+      },
+      "ProviderConnectionLogin": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "secret": {
+            "minLength": 16,
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ]
+      },
+      "ProviderConnectionRecord": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "appId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "tenantId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "userId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "providerId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "displayName": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "authKind": {
+            "anyOf": [
+              {
+                "const": "api_key",
+                "type": "string"
+              },
+              {
+                "const": "oauth",
+                "type": "string"
+              },
+              {
+                "const": "delegated_cli",
+                "type": "string"
+              },
+              {
+                "const": "local_endpoint",
+                "type": "string"
+              }
+            ]
+          },
+          "credentialProfileId": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "baseUrl": {
+            "minLength": 1,
+            "maxLength": 2048,
+            "format": "uri",
+            "type": "string"
+          },
+          "modelIds": {
+            "maxItems": 256,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "needs_login",
+                "type": "string"
+              },
+              {
+                "const": "ready",
+                "type": "string"
+              },
+              {
+                "const": "error",
+                "type": "string"
+              },
+              {
+                "const": "revoked",
+                "type": "string"
+              }
+            ]
+          },
+          "lastErrorCode": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "appId",
+          "tenantId",
+          "userId",
+          "providerId",
+          "displayName",
+          "authKind",
+          "credentialProfileId",
+          "modelIds",
+          "status",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "RevokeTokenResponse": {
@@ -3513,6 +3829,443 @@
         },
         "operationId": "deleteV1TokensByTokenId"
       }
+    },
+    "/v1/models": {
+      "get": {
+        "summary": "List the redacted model catalog",
+        "responses": {
+          "200": {
+            "description": "Available redacted model catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getV1Models",
+        "security": [
+          {
+            "appToken": []
+          }
+        ]
+      }
+    },
+    "/v1/provider-connections": {
+      "get": {
+        "summary": "List provider connections owned by the authenticated principal",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped provider connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConnectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getV1ProviderConnections",
+        "security": [
+          {
+            "appToken": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create an owner-scoped provider connection",
+        "responses": {
+          "201": {
+            "description": "Provider connection metadata created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConnectionRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "postV1ProviderConnections",
+        "security": [
+          {
+            "appToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProviderConnection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/provider-connections/{connectionId}/login": {
+      "post": {
+        "summary": "Store credentials for an owner-scoped provider connection",
+        "responses": {
+          "200": {
+            "description": "Provider credential stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConnectionRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "postV1ProviderConnectionsByConnectionIdLogin",
+        "security": [
+          {
+            "appToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderConnectionLogin"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/v1/provider-connections/{connectionId}": {
+      "delete": {
+        "summary": "Delete an owner-scoped provider connection",
+        "responses": {
+          "200": {
+            "description": "Provider connection deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteProviderConnectionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "deleteV1ProviderConnectionsByConnectionId",
+        "security": [
+          {
+            "appToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
     }
   },
   "x-lite-generated-from-contracts": {
@@ -3532,7 +4285,9 @@
     "CreateAgent",
     "CreateRun",
     "CreateRunResponse",
+    "CreateProviderConnection",
     "CreateWorkspace",
+    "DeleteProviderConnectionResponse",
     "ErrorDetail",
     "ErrorEnvelope",
     "GatewayHealth",
@@ -3542,7 +4297,12 @@
     "ManagerReadiness",
     "MintRunToken",
     "MintRunTokenResponse",
+    "ModelCatalogRecord",
+    "ModelListResponse",
     "PublishArtifact",
+    "ProviderConnectionListResponse",
+    "ProviderConnectionLogin",
+    "ProviderConnectionRecord",
     "RevokeTokenResponse",
     "ReadinessDependency",
     "ResolveApproval",

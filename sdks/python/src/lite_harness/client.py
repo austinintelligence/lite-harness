@@ -39,6 +39,11 @@ AUTHENTICATED_OPERATION_METHODS: dict[str, str] = {
     "getV1Workspaces": "list_workspaces",
     "postV1Workspaces": "create_workspace",
     "getV1WorkspacesByWorkspaceId": "get_workspace",
+    "getV1Models": "list_models",
+    "getV1ProviderConnections": "list_provider_connections",
+    "postV1ProviderConnections": "create_provider_connection",
+    "postV1ProviderConnectionsByConnectionIdLogin": "login_provider_connection",
+    "deleteV1ProviderConnectionsByConnectionId": "delete_provider_connection",
 }
 
 _EXCLUDED_OPERATION_IDS = frozenset({"getHealthz", "postHooksWebhookByAccountId", "getReadyz"})
@@ -92,12 +97,15 @@ class LiteHarnessClient:
         workspace: str,
         input: str,
         session: str | None = None,
+        provider_connection_id: str | None = None,
         budget: dict[str, int | float] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"agent": agent, "workspace": workspace, "input": input}
         if session is not None:
             body["session"] = session
+        if provider_connection_id is not None:
+            body["providerConnectionId"] = provider_connection_id
         if budget is not None:
             body["budget"] = budget
         return self._json_operation(
@@ -224,6 +232,46 @@ class LiteHarnessClient:
 
     def list_workspaces(self) -> list[dict[str, Any]]:
         return self._json_operation("getV1Workspaces")["workspaces"]
+
+    def list_models(self) -> list[dict[str, Any]]:
+        return self._json_operation("getV1Models")["models"]
+
+    def list_provider_connections(self) -> list[dict[str, Any]]:
+        return self._json_operation("getV1ProviderConnections")["connections"]
+
+    def create_provider_connection(
+        self,
+        *,
+        provider_id: str,
+        display_name: str,
+        connection_id: str | None = None,
+        auth_kind: str | None = None,
+        base_url: str | None = None,
+        model_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"providerId": provider_id, "displayName": display_name}
+        if connection_id is not None:
+            body["id"] = connection_id
+        if auth_kind is not None:
+            body["authKind"] = auth_kind
+        if base_url is not None:
+            body["baseUrl"] = base_url
+        if model_ids is not None:
+            body["modelIds"] = model_ids
+        return self._json_operation("postV1ProviderConnections", body=body)
+
+    def login_provider_connection(self, connection_id: str, *, secret: str) -> dict[str, Any]:
+        return self._json_operation(
+            "postV1ProviderConnectionsByConnectionIdLogin",
+            path_params={"connectionId": connection_id},
+            body={"secret": secret},
+        )
+
+    def delete_provider_connection(self, connection_id: str) -> dict[str, Any]:
+        return self._json_operation(
+            "deleteV1ProviderConnectionsByConnectionId",
+            path_params={"connectionId": connection_id},
+        )
 
     def events(
         self,

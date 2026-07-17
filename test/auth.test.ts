@@ -54,6 +54,23 @@ describe("opaque access-token service", () => {
     store.close();
   });
 
+  it("supports an explicit bootstrap scope expansion without weakening strict callers", async () => {
+    const root = temporaryRoot();
+    const store = new SqliteAccessTokenStore(join(root, "auth.db"));
+    const service = new AccessTokenService(store);
+    const secret = "bootstrap-app-token-migration";
+    const binding = { appId: "app-a", tenantId: "tenant-a", userId: "user-a", scopes: ["runs:create"] };
+    await service.ensureBootstrapAppToken(secret, binding);
+    await expect(service.ensureBootstrapAppToken(secret, {
+      ...binding, scopes: ["runs:create", "providers:read"],
+    })).rejects.toThrow(/conflicts/);
+    await expect(service.ensureBootstrapAppToken(secret, {
+      ...binding, scopes: ["runs:create", "providers:read"],
+    }, { allowScopeExpansion: true })).resolves.toMatchObject({ scopes: ["runs:create", "providers:read"] });
+    expect(await service.authenticate(secret)).toMatchObject({ scopes: ["runs:create", "providers:read"] });
+    store.close();
+  });
+
   it("rotates a bootstrap app credential atomically and rejects the superseded token", async () => {
     const root = temporaryRoot();
     const store = new SqliteAccessTokenStore(join(root, "auth.db"));

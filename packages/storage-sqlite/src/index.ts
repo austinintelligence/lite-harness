@@ -25,9 +25,10 @@ import type {
   RunRoutePlanRecord,
   RunModelUsageRecord,
   WorkspaceLease,
+  ProviderConnectionRecord,
 } from "@lite-harness/contracts";
 
-export const SQLITE_SCHEMA_VERSION = 13;
+export const SQLITE_SCHEMA_VERSION = 15;
 import { DEFAULT_RUN_BUDGET } from "@lite-harness/contracts";
 import { isTerminalRunStatus } from "@lite-harness/contracts";
 import type { AppendRunEvent, ResourceOwner, RunStore } from "@lite-harness/domain";
@@ -42,6 +43,7 @@ interface RunRow {
   agent_id: string;
   workspace_id: string;
   session_id: string | null;
+  provider_connection_id: string | null;
   agent_internal_id: string | null;
   workspace_internal_id: string | null;
   session_internal_id: string | null;
@@ -189,6 +191,24 @@ interface ApprovalRow {
   resolved_at: string | null;
 }
 
+interface ProviderConnectionRow {
+  internal_id: string;
+  id: string;
+  app_id: string;
+  tenant_id: string;
+  user_id: string;
+  provider_id: string;
+  display_name: string;
+  auth_kind: ProviderConnectionRecord["authKind"];
+  credential_profile_id: string;
+  base_url: string | null;
+  model_ids_json: string;
+  status: ProviderConnectionRecord["status"];
+  last_error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 function scopedIdempotencyKey(userId: string, key: string): string {
   return `${userId.length}:${userId}:${key}`;
 }
@@ -213,6 +233,7 @@ function toRunRecord(row: RunRow): RunRecord {
     agentId: row.agent_id,
     workspaceId: row.workspace_id,
     ...(row.session_id ? { sessionId: row.session_id } : {}),
+    ...(row.provider_connection_id ? { providerConnectionId: row.provider_connection_id } : {}),
     ...(row.parent_run_id ? { parentRunId: row.parent_run_id } : {}),
     depth: row.depth ?? 0,
     deliveryAllowed: (row.delivery_allowed ?? 1) === 1,
@@ -296,6 +317,25 @@ function toModelUsage(row: ModelUsageRow): RunModelUsageRecord {
     ...(row.cost_usd === null ? {} : { costUsd: row.cost_usd }),
     ...(row.price_snapshot_json ? { priceSnapshot: JSON.parse(row.price_snapshot_json) as NonNullable<RunModelUsageRecord["priceSnapshot"]> } : {}),
     recordedAt: row.recorded_at,
+  };
+}
+
+function toProviderConnection(row: ProviderConnectionRow): ProviderConnectionRecord {
+  return {
+    id: row.id,
+    appId: row.app_id,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    providerId: row.provider_id,
+    displayName: row.display_name,
+    authKind: row.auth_kind,
+    credentialProfileId: row.credential_profile_id,
+    ...(row.base_url ? { baseUrl: row.base_url } : {}),
+    modelIds: JSON.parse(row.model_ids_json) as string[],
+    status: row.status,
+    ...(row.last_error_code ? { lastErrorCode: row.last_error_code } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -752,6 +792,30 @@ export class SqliteRunStore implements RunStore {
         this.#ensureColumn("run_model_usage", "image_input_tokens", "INTEGER NOT NULL DEFAULT 0 CHECK(image_input_tokens >= 0)");
         this.#ensureColumn("run_model_usage", "price_snapshot_json", "TEXT");
       },
+      () => this.#database.exec(`
+        CREATE TABLE provider_connections (
+          internal_id TEXT PRIMARY KEY,
+          id TEXT NOT NULL,
+          app_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          provider_id TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          auth_kind TEXT NOT NULL CHECK(auth_kind IN ('api_key', 'oauth', 'delegated_cli', 'local_endpoint')),
+          credential_profile_id TEXT NOT NULL,
+          base_url TEXT,
+          model_ids_json TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('needs_login', 'ready', 'error', 'revoked')),
+          last_error_code TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(app_id, tenant_id, user_id, id),
+          UNIQUE(app_id, tenant_id, user_id, credential_profile_id)
+        ) STRICT;
+        CREATE INDEX provider_connections_owner
+          ON provider_connections(app_id, tenant_id, user_id, created_at);
+      `),
+      () => this.#ensureColumn("runs", "provider_connection_id", "TEXT"),
     ];
     if (migrations.length !== SQLITE_SCHEMA_VERSION) {
       throw new Error(`Storage migration registry has ${migrations.length} entries; expected ${SQLITE_SCHEMA_VERSION}`);
@@ -812,6 +876,16 @@ export class SqliteRunStore implements RunStore {
       }
 
       const now = new Date().toISOString();
+      if (request.providerConnectionId) {
+        const connection = this.#database.prepare(`
+          SELECT * FROM provider_connections
+          WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?
+        `).get(
+          request.principal.appId, request.principal.tenantId, request.principal.userId, request.providerConnectionId,
+        ) as ProviderConnectionRow | undefined;
+        if (!connection) throw new Error("Provider connection does not belong to the requesting principal");
+        if (connection.status !== "ready") throw new Error(`Provider connection is not ready: ${connection.status}`);
+      }
       if (request.parentRunId) {
         const parent = this.#database.prepare("SELECT * FROM runs WHERE id = ?").get(request.parentRunId) as RunRow | undefined;
         if (!parent || !sameOwner(parent, request.principal)) throw new Error("Parent run does not belong to the requesting principal");
@@ -898,10 +972,10 @@ export class SqliteRunStore implements RunStore {
         .prepare(
           `INSERT INTO runs (
             id, idempotency_key, request_fingerprint, app_id, tenant_id, user_id, agent_id,
-            workspace_id, session_id, agent_internal_id, workspace_internal_id, session_internal_id,
+            workspace_id, session_id, provider_connection_id, agent_internal_id, workspace_internal_id, session_internal_id,
             parent_run_id, depth, delivery_allowed, input, budget_json, status, last_sequence,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', 1, ?, ?)`,
         )
         .run(
           id,
@@ -913,6 +987,7 @@ export class SqliteRunStore implements RunStore {
           request.agent,
           request.workspace,
           sessionId,
+          request.providerConnectionId ?? null,
           effectiveAgent.internal_id,
           effectiveWorkspace.internal_id,
           effectiveSession.internal_id,
@@ -1481,6 +1556,62 @@ export class SqliteRunStore implements RunStore {
     return row ? JSON.parse(row.snapshot_json) as RunSnapshot : undefined;
   }
 
+  createProviderConnection(record: ProviderConnectionRecord): ProviderConnectionRecord {
+    this.#database.prepare(`
+      INSERT INTO provider_connections(
+        internal_id, id, app_id, tenant_id, user_id, provider_id, display_name, auth_kind,
+        credential_profile_id, base_url, model_ids_json, status, last_error_code, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `pc_${randomUUID().replaceAll("-", "")}`,
+      record.id, record.appId, record.tenantId, record.userId, record.providerId, record.displayName,
+      record.authKind, record.credentialProfileId, record.baseUrl ?? null, JSON.stringify(record.modelIds),
+      record.status, record.lastErrorCode ?? null, record.createdAt, record.updatedAt,
+    );
+    return this.getProviderConnection(record.id, record) as ProviderConnectionRecord;
+  }
+
+  getProviderConnection(id: string, owner: ResourceOwner): ProviderConnectionRecord | undefined {
+    const row = this.#database.prepare(`
+      SELECT * FROM provider_connections
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?
+    `).get(owner.appId, owner.tenantId, owner.userId, id) as ProviderConnectionRow | undefined;
+    return row ? toProviderConnection(row) : undefined;
+  }
+
+  listProviderConnections(principal: ResourceOwner): ProviderConnectionRecord[] {
+    return (this.#database.prepare(`
+      SELECT * FROM provider_connections
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ?
+      ORDER BY created_at, id
+    `).all(principal.appId, principal.tenantId, principal.userId) as unknown as ProviderConnectionRow[]).map(toProviderConnection);
+  }
+
+  updateProviderConnection(
+    id: string,
+    owner: ResourceOwner,
+    update: { status: ProviderConnectionRecord["status"]; lastErrorCode?: string },
+  ): ProviderConnectionRecord | undefined {
+    const updatedAt = new Date().toISOString();
+    const result = this.#database.prepare(`
+      UPDATE provider_connections
+      SET status = ?, last_error_code = ?, updated_at = ?
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?
+    `).run(
+      update.status, update.lastErrorCode ?? null, updatedAt,
+      owner.appId, owner.tenantId, owner.userId, id,
+    );
+    return Number(result.changes) === 1 ? this.getProviderConnection(id, owner) : undefined;
+  }
+
+  deleteProviderConnection(id: string, owner: ResourceOwner): boolean {
+    const result = this.#database.prepare(`
+      DELETE FROM provider_connections
+      WHERE app_id = ? AND tenant_id = ? AND user_id = ? AND id = ?
+    `).run(owner.appId, owner.tenantId, owner.userId, id);
+    return Number(result.changes) === 1;
+  }
+
   persistRunModelUsage(record: Omit<RunModelUsageRecord, "id">): RunModelUsageRecord {
     const result = this.#database.prepare(`
       INSERT INTO run_model_usage(
@@ -1601,6 +1732,7 @@ function requestFingerprint(request: InternalStartRunRequest): string {
         agent: request.agent,
         workspace: request.workspace,
         session: request.session ?? null,
+        ...(request.providerConnectionId ? { providerConnectionId: request.providerConnectionId } : {}),
         input: request.input,
         budget: request.budget ?? null,
         parentRunId: request.parentRunId ?? null,

@@ -94,7 +94,8 @@ try {
 const expectedAuthenticatedOperations = GENERATED_API_OPERATIONS
   .filter((operation) => operation.path.startsWith("/v1/"))
   .map((operation) => [operation.method, operation.path, operation.operationId, AUTHENTICATED_OPERATION_METHODS[operation.operationId]]);
-if (JSON.stringify(AUTHENTICATED_OPERATION_ROUTES) !== JSON.stringify(expectedAuthenticatedOperations) || expectedAuthenticatedOperations.length !== 20) {
+if (JSON.stringify(AUTHENTICATED_OPERATION_ROUTES) !== JSON.stringify(expectedAuthenticatedOperations) ||
+    expectedAuthenticatedOperations.length !== Object.keys(AUTHENTICATED_OPERATION_METHODS).length) {
   throw new Error("Packaged TypeScript SDK OpenAPI operation coverage drifted");
 }
 for (const methodName of Object.values(AUTHENTICATED_OPERATION_METHODS)) {
@@ -210,7 +211,7 @@ def expect_http_error(action, status, code, message=None):
     raise RuntimeError(f"Expected uniform HTTP {status} with code {code}")
 
 expected = tuple((method, path, operation_id, AUTHENTICATED_OPERATION_METHODS[operation_id]) for method, path, operation_id in API_OPERATIONS if path.startswith("/v1/"))
-if AUTHENTICATED_OPERATION_ROUTES != expected or len(expected) != 20:
+if AUTHENTICATED_OPERATION_ROUTES != expected or len(expected) != len(AUTHENTICATED_OPERATION_METHODS):
     raise RuntimeError("Packaged Python SDK OpenAPI operation coverage drifted")
 for _operation_id, method_name in AUTHENTICATED_OPERATION_METHODS.items():
     if not callable(getattr(LiteHarnessClient, method_name, None)):

@@ -16,6 +16,7 @@ import {
 } from "@lite-harness/contracts";
 import { dockerWorkspaceVolumeName } from "@lite-harness/runtime-docker";
 import { completeTreeContract } from "./support/complete-tree.js";
+import { dockerRestartBlockers, type RunningDockerContainer } from "./support/docker-restart-guard.js";
 
 const image = requiredImage("LITE_HARNESS_TEST_DOCKER_IMAGE");
 const packagedManager = requiredPackagedManager();
@@ -351,9 +352,10 @@ async function restartDockerDaemonFailClosed(): Promise<void> {
   if (process.env.LITE_HARNESS_ALLOW_DOCKER_RESTART?.trim() !== "1") {
     throw new Error("A09 Docker daemon restart is disabled by default; set LITE_HARNESS_ALLOW_DOCKER_RESTART=1 only in an isolated evidence runner");
   }
-  const running = dockerText(["ps", "--quiet"]);
-  if (running.trim()) {
-    throw new Error("A09 refuses to restart a non-quiescent Docker daemon; running containers were detected");
+  const running = listRunningDockerContainers();
+  const blockers = dockerRestartBlockers(running);
+  if (blockers.length) {
+    throw new Error(`A09 refuses to restart a non-quiescent Docker daemon; running containers were detected: ${blockers.map((container) => container.name || container.id).join(", ")}`);
   }
   const adapter = dockerRestartAdapter();
   const epochBefore = adapter.epoch();
@@ -370,6 +372,14 @@ async function restartDockerDaemonFailClosed(): Promise<void> {
   if (epochAfter === epochBefore) {
     throw new Error(`Docker ${adapter.kind} restart did not change the active daemon epoch`);
   }
+}
+
+function listRunningDockerContainers(): RunningDockerContainer[] {
+  const rendered = dockerText(["ps", "--format", "{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.Labels}}"]);
+  return rendered.split(/\\r?\\n/u).filter(Boolean).map((line) => {
+    const [id = "", name = "", image = "", labels = ""] = line.split("\\t");
+    return { id, name, image, labels };
+  });
 }
 
 interface DockerRestartAdapter {

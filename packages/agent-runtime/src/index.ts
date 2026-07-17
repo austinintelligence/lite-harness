@@ -66,6 +66,7 @@ export class AgentRunner {
     runId?: string;
     attemptId?: string;
     fencingToken?: number;
+    providerConnectionId?: string;
     maxCostUsd?: number;
     modelCapabilities?: readonly ModelCapability[];
     principal?: InternalPrincipal;
@@ -83,6 +84,7 @@ export class AgentRunner {
       ? {
           runId: params.runId, attemptId: params.attemptId, workspaceId: params.workspaceId,
           principal: params.principal, fencingToken: params.fencingToken,
+          ...(params.providerConnectionId ? { providerConnectionId: params.providerConnectionId } : {}),
           ...(params.maxCostUsd !== undefined ? { maxCostUsd: params.maxCostUsd } : {}),
           requiredCapabilities: params.modelCapabilities?.length ? [...new Set(["text" as const, ...params.modelCapabilities])] : ["text" as const],
         }

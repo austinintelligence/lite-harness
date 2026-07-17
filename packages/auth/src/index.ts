@@ -12,6 +12,7 @@ export const DEFAULT_APP_SCOPES = Object.freeze([
   "tokens:mint", "tokens:revoke", "runs:create", "runs:read", "runs:cancel", "runs:steer", "events:read",
   "approvals:resolve", "sessions:read", "artifacts:publish", "artifacts:read",
   "agents:write", "agents:read", "workspaces:write", "workspaces:read",
+  "models:read", "providers:read", "providers:write",
 ]);
 
 export interface StoredAccessToken {
@@ -39,6 +40,7 @@ export interface AccessTokenStore {
   getById(id: string): StoredAccessToken | undefined;
   latestAppKeyGeneration(appId: string, tenantId: string, userId: string): number;
   put(record: StoredAccessToken): void;
+  updateAppScopes?(id: string, scopes: string[]): void;
   rotateApp(record: StoredAccessToken, revokedAt: string): void;
   revoke(id: string, revokedAt: string): boolean;
   close(): void;
@@ -50,15 +52,23 @@ export class AccessTokenService {
   async ensureBootstrapAppToken(
     token: string,
     binding: { appId: string; tenantId: string; userId: string; scopes: string[] },
+    options: { allowScopeExpansion?: boolean } = {},
   ): Promise<StoredAccessToken> {
     validateToken(token);
     const lookupHash = lookup(token);
     const existing = this.store.getByLookupHash(lookupHash);
     if (existing) {
       if (!isActive(existing) || !await verifySecret(token, existing) || existing.type !== "app" ||
-          existing.appId !== binding.appId || existing.tenantId !== binding.tenantId || existing.userId !== binding.userId ||
-          !sameStrings(existing.scopes, binding.scopes)) {
+          existing.appId !== binding.appId || existing.tenantId !== binding.tenantId || existing.userId !== binding.userId) {
         throw new Error("Configured bootstrap app token conflicts with its persisted binding");
+      }
+      if (!sameStrings(existing.scopes, binding.scopes)) {
+        const requestedScopes = [...new Set(binding.scopes)];
+        if (!options.allowScopeExpansion || !existing.scopes.every((scope) => requestedScopes.includes(scope)) || !this.store.updateAppScopes) {
+          throw new Error("Configured bootstrap app token conflicts with its persisted binding");
+        }
+        this.store.updateAppScopes(existing.id, requestedScopes);
+        return { ...existing, scopes: requestedScopes };
       }
       return existing;
     }

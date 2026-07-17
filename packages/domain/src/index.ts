@@ -17,6 +17,7 @@ import type {
   SessionMessageRecord,
   SessionMessageRole,
   SessionRecord,
+  ProviderConnectionRecord,
   WorkspaceLease,
 } from "@lite-harness/contracts";
 
@@ -92,6 +93,15 @@ export interface RunStore {
   getRunRoutePlan(runId: string, attemptId: string): RunRoutePlanRecord | undefined;
   persistRunSnapshot(snapshot: RunSnapshot): RunSnapshot;
   getRunSnapshot(runId: string, attemptId: string): RunSnapshot | undefined;
+  createProviderConnection(record: ProviderConnectionRecord): ProviderConnectionRecord;
+  getProviderConnection(id: string, owner: ResourceOwner): ProviderConnectionRecord | undefined;
+  listProviderConnections(principal: ResourceOwner): ProviderConnectionRecord[];
+  updateProviderConnection(
+    id: string,
+    owner: ResourceOwner,
+    update: { status: ProviderConnectionRecord["status"]; lastErrorCode?: string },
+  ): ProviderConnectionRecord | undefined;
+  deleteProviderConnection(id: string, owner: ResourceOwner): boolean;
 }
 
 const allowedTransitions: Readonly<Record<RunStatus, readonly RunStatus[]>> = {

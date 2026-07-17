@@ -86,6 +86,13 @@ export class SqliteAccessTokenStore implements AccessTokenStore {
     );
   }
 
+  updateAppScopes(id: string, scopes: string[]): void {
+    const result = this.#database.prepare(
+      "UPDATE access_tokens SET scopes_json = ? WHERE id = ? AND type = 'app' AND revoked_at IS NULL",
+    ).run(JSON.stringify([...new Set(scopes)]), id);
+    if (Number(result.changes) !== 1) throw new Error("Bootstrap app token scope migration failed");
+  }
+
   rotateApp(record: StoredAccessToken, revokedAt: string): void {
     if (record.type !== "app") throw new Error("Only app credentials can be rotated");
     this.#database.exec("BEGIN IMMEDIATE");

@@ -13,25 +13,25 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 - Total ledger rows: 922
 - Alpha-required rows: 54
-- Verified by current zero-skip evidence: 46
+- Verified by current zero-skip evidence: 0
 - Declared verified in the ledger: 52
 - Explicitly blocked-external alpha rows: 2
 - Declared in progress: 0
-- Currently blocked or unverified locally actionable alpha rows: 6
+- Currently blocked or unverified locally actionable alpha rows: 52
 - Non-alpha rows retained in ledger: 868
 
 | Tier | Ledger rows | Alpha-required | Current evidence |
 | --- | ---: | ---: | ---: |
-| alpha | 54 | 54 | 46 |
+| alpha | 54 | 54 | 0 |
 | preview | 713 | 0 | 0 |
 | beta | 130 | 0 | 0 |
 | future | 25 | 0 | 0 |
 
 | Kind | Total | Current evidence | Declared verified |
 | --- | ---: | ---: | ---: |
-| frozen-decision | 32 | 26 | 32 |
+| frozen-decision | 32 | 0 | 32 |
 | phase-exit | 0 | 0 | 0 |
-| alpha-gate | 22 | 20 | 20 |
+| alpha-gate | 22 | 0 | 20 |
 | contract-requirement | 0 | 0 | 0 |
 
 ## Alpha gates
@@ -39,27 +39,27 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 | Gate | Status | Current blocker |
 | --- | --- | --- |
 | A01 Cross-platform profile | blocked-external | external-cross-platform-evidence-missing |
-| A02 Installable TypeScript SDK | verified | unverified |
-| A03 Reconnect and replay | verified | unverified |
-| A04 Real model-plus-Docker loop | verified | unverified |
-| A05 Zero permanent container secrets | verified | unverified |
-| A06 One writer with fencing | verified | unverified |
-| A07 Limits always | verified | unverified |
-| A08 Cleanup and reconciliation | verified | unverified |
-| A09 Workspace durability | verified | unverified |
-| A10 Automatic encrypted cold restore | verified | unverified |
-| A11 Previous-good recovery | verified | unverified |
-| A12 Artifact ownership | verified | unverified |
-| A13 Cache isolation | verified | unverified |
-| A14 Doctor | verified | unverified |
-| A15 Recovery and export | verified | unverified |
+| A02 Installable TypeScript SDK | unverified | evidence artifact is missing: evidence/m1/packaged-artifacts.json |
+| A03 Reconnect and replay | unverified | evidence artifact is missing: evidence/m2/reconnect-replay.json |
+| A04 Real model-plus-Docker loop | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A05 Zero permanent container secrets | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A06 One writer with fencing | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A07 Limits always | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A08 Cleanup and reconciliation | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A09 Workspace durability | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A10 Automatic encrypted cold restore | unverified | evidence artifact is missing: evidence/m4/automatic-workspace-lifecycle.json |
+| A11 Previous-good recovery | unverified | evidence artifact is missing: evidence/m4/workspace-recovery.json |
+| A12 Artifact ownership | unverified | evidence artifact is missing: evidence/m2/packaged-auth.json |
+| A13 Cache isolation | unverified | evidence artifact is missing: evidence/m9/optional-composition.json |
+| A14 Doctor | unverified | evidence artifact is missing: evidence/m11/doctor.json |
+| A15 Recovery and export | unverified | evidence artifact is missing: evidence/m4/workspace-recovery.json |
 | A16 Provider conformance | blocked-external | external-provider-credentials-and-live-evidence-missing |
-| A17 Routing and usage | verified | unverified |
-| A18 Plugin lifecycle | verified | unverified |
-| A19 Skills | verified | unverified |
-| A20 Managed browser | verified | unverified |
-| A21 MCP | verified | unverified |
-| A22 Disabled packs, offline, and scale-to-zero | verified | unverified |
+| A17 Routing and usage | unverified | evidence artifact is missing: evidence/m5/provider-conformance.json |
+| A18 Plugin lifecycle | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A19 Skills | unverified | evidence artifact is missing: evidence/m9/optional-composition.json |
+| A20 Managed browser | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A21 MCP | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
+| A22 Disabled packs, offline, and scale-to-zero | unverified | evidence artifact is missing: evidence/m3/required-real-runtime.json |
 
 ## Roadmap exits
 
@@ -81,13 +81,13 @@ The repository is a pre-alpha work in progress. A file, class, unit test, or pri
 
 ## Open release-blocking defects
 
-- Critical: 0
-- High: 2
+- Critical: 8
+- High: 54
 
 ## Defect closures lacking current evidence
 
-- Critical: 0
-- High: 2
+- Critical: 8
+- High: 54
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.
 

@@ -6,11 +6,11 @@
 
 **NOT YET A VERIFIED ALPHA.** Local implementation and verification work remains, so no external input is the sole blocker yet.
 
-- Alpha-required rows without verified status: 6 of 54
+- Alpha-required rows without verified status: 52 of 54
 - Alpha-required rows blocked only by external evidence: 2
 - Non-alpha rows retained in ledger: 868
-- Open or unproven critical defects: 0
-- Open or unproven high defects: 2
+- Open or unproven critical defects: 8
+- Open or unproven high defects: 54
 - Critical/high defects blocked only by external evidence: 2
 - Missing required test command surfaces: 0
 

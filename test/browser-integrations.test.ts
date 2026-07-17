@@ -51,6 +51,13 @@ describe("managed browser broker", () => {
       .rejects.toThrow(/private or metadata/);
   });
 
+  it("recognizes Docker's host-gateway alias as private during policy validation", async () => {
+    await expect(assertBrowserUrlAllowed("http://host.docker.internal:8080", { allowPrivateNetworks: true }))
+      .resolves.toMatchObject({ hostname: "host.docker.internal" });
+    await expect(assertBrowserUrlAllowed("http://host.docker.internal:8080", {}))
+      .rejects.toThrow(/private or metadata/);
+  });
+
   it("isolates owners, audits actions, and removes an idle driver", async () => {
     const drivers: FakeBrowserDriver[] = [];
     const audit: Array<{ allowed: boolean; action: string }> = [];

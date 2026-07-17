@@ -581,7 +581,7 @@ function doctorRemediation(report: {
   credentials: { osStoreAvailable: boolean; providerConfigured: boolean };
   runtimeImage: { ok: boolean };
   gateway: { ok: boolean };
-  configuration: { ok: boolean; mode?: string; runtime?: string };
+  configuration: { ok: boolean; mode?: string; provider?: string; runtime?: string };
 }): Array<{ check: string; remediation: string }> {
   const remediation: Array<{ check: string; remediation: string }> = [];
   if (!report.node.ok) remediation.push({ check: "node", remediation: "Install the pinned Node 24 runtime." });
@@ -594,7 +594,12 @@ function doctorRemediation(report: {
   if (!report.disk.ok) remediation.push({ check: "disk", remediation: "Free disk space or move LITE_HARNESS_DATA_DIR to a volume with the required reserve." });
   if (!report.database.ok) remediation.push({ check: "database", remediation: "Restore from the previous-good database or run the ordered migration repair workflow." });
   if (report.configuration.mode === "production" && !report.snapshotKey.ok) remediation.push({ check: "snapshotKey", remediation: "Configure a valid base64-encoded 32-byte snapshot key in the OS store or environment." });
-  if (!report.credentials.osStoreAvailable || !report.credentials.providerConfigured) remediation.push({ check: "credentials", remediation: "Configure the OS credential store and the selected provider profile." });
+  const requiresProviderCredential = report.configuration.ok && report.configuration.provider !== "fake";
+  const requiresOsCredentialStore = report.configuration.ok && report.configuration.mode === "production";
+  if ((requiresProviderCredential && !report.credentials.providerConfigured) ||
+      (requiresOsCredentialStore && !report.credentials.osStoreAvailable)) {
+    remediation.push({ check: "credentials", remediation: "Configure the OS credential store and the selected provider profile." });
+  }
   if (!report.runtimeImage.ok) remediation.push({ check: "runtimeImage", remediation: "Install the exact digest-pinned runtime image." });
   if (!report.gateway.ok) remediation.push({ check: "gateway", remediation: "Start Gateway and Manager locally, then verify loopback /readyz health." });
   return remediation;

@@ -997,6 +997,11 @@ function browserProfileOwner(owner: BrowserOwner): Omit<BrowserOwner, "runId"> {
 }
 
 async function defaultResolver(hostname: string): Promise<readonly string[]> {
+  // Docker injects this alias into managed browser containers with --add-host,
+  // but Linux CI hosts do not resolve it through their own DNS. Treat it as a
+  // private host-gateway address for the policy check; the browser egress
+  // container performs the actual resolution through Docker's host-gateway.
+  if (hostname.toLowerCase() === "host.docker.internal") return ["127.0.0.1"];
   return (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
 }
 

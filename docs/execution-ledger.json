@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "branch": "lite-main",
   "startingCommit": "786b8621f90dcde9300da25a8ca92e684e5938a9",
-  "candidateCommit": "9ac35d314ea0b66f981245926b1a90569632d82c",
+  "candidateCommit": "2e39af5ffbb8a1d86c2cd6aa724c78744088c5ef",
   "authority": {
     "architecturePlan": "LITE_HARNESS_ARCHITECTURE_PLAN.md",
     "requirementsLedger": "docs/requirements/alpha-ledger.yaml",

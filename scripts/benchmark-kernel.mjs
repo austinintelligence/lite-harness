@@ -41,6 +41,22 @@ try {
   const managerHealth = await fetchManagerHealth(managerSocket);
   assertMemoryMetric("Gateway", health.rssBytes);
   assertMemoryMetric("Manager", managerHealth.rssBytes);
+  await fetchJson(`http://127.0.0.1:${port}/v1/agents`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${appToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ id: "coder", name: "coder" }),
+  });
+  await fetchJson(`http://127.0.0.1:${port}/v1/workspaces`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${appToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ id: "benchmark", mode: "managed" }),
+  });
   const runStartedAt = performance.now();
   const created = await fetchJson(`http://127.0.0.1:${port}/v1/runs`, {
     method: "POST",

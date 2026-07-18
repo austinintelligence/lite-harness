@@ -34,4 +34,4 @@ Build a shared provider conformance suite, run it live through owner-approved ro
 
 ## Release impact
 
-Missing required direct OpenAI, Anthropic, or delegated Codex evidence blocks verified alpha; preview breadth does not.
+Missing required direct OpenAI, Anthropic, or delegated Codex evidence keeps those external lanes NOT_QUALIFIED_EXTERNAL; it does not block Windows-local alpha, whose real-model route is the localhost Hermes proxy.

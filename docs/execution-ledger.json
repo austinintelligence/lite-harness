@@ -221,7 +221,7 @@
       "purpose": "One clean candidate commit with compiled artifacts, package/image checks, and release truth.",
       "commands": ["pnpm release:check", "pnpm check:schemas -- --referenced-evidence", "pnpm check:secrets -- --include evidence --evidence", "pnpm check:provenance"],
       "state": "passed",
-      "claimsAllowed": ["VERIFIED_LOCAL_ALPHA_CANDIDATE; all locally actionable gates passed on the candidate, while unavailable Docker host/provider/naming/signing/registry authorities remain blocked-external"]
+      "claimsAllowed": ["VERIFIED_WINDOWS_LOCAL_ALPHA; all Windows-local gates passed on the exact candidate, while unavailable external platform/provider/naming/signing/registry authorities remain future NOT_QUALIFIED_EXTERNAL lanes"]
     },
     "externalEvidence": {
       "purpose": "Provider and platform evidence from the configured external workflows.",

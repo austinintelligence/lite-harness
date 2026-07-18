@@ -1,6 +1,6 @@
 # Research and contradiction ADRs
 
-These records use primary/official sources retrieved 2026-07-14. Provisional and blocked decisions remain release blockers until their stated evidence or owner input exists.
+These records use primary/official sources retrieved 2026-07-14. Provisional and blocked decisions remain future qualification or release-tier blockers until their stated evidence or owner input exists; they do not override the Windows-local alpha boundary.
 
 | ADR | Decision | Status | Covers |
 | --- | --- | --- | --- |

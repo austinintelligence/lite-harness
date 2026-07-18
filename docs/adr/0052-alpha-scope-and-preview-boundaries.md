@@ -33,4 +33,4 @@ Remove WebSocket promises, relabel breadth consistently, gate browser/HTTP/MCP n
 
 ## Release impact
 
-Resolves the plan contradictions without weakening A01-A22; missing core lanes still block verified alpha.
+Resolves the plan contradictions without weakening A01-A22. Windows-local alpha is the currently verified tier; missing Linux/macOS/direct-provider lanes remain future NOT_QUALIFIED_EXTERNAL qualification and do not block it.

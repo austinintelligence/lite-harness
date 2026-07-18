@@ -31,4 +31,4 @@ Link each requirement to ADR/code/test/CI/evidence, add an amendment index, and 
 
 ## Release impact
 
-The generated verdict may report a VERIFIED LOCAL ALPHA CANDIDATE when all locally actionable rows and defects have current evidence; unavailable platform, provider, naming, signing, and registry authorities remain explicitly blocked-external until their own evidence exists.
+The generated verdict may report VERIFIED_WINDOWS_LOCAL_ALPHA when all Windows-local rows and defects have current evidence. Unavailable platform and direct-provider authorities remain NOT_QUALIFIED_EXTERNAL and non-blocking for this tier; naming, signing, registries, and cloud deployment remain later work.

@@ -37,23 +37,11 @@ removes only its own labeled containers and volume. A run that returns prose
 without tool calls is recorded as a failed qualification; it is not converted
 into a successful Docker result.
 
-For an explicitly selected direct provider, use the same public-path probe
-without the Hermes wrapper. The provider, base URL, model, and key are
-process-scoped; the key is never written to the repository or evidence:
-
-```powershell
-$env:LITE_HARNESS_PROVIDER = 'openrouter'
-$env:LITE_HARNESS_PROVIDER_BASE_URL = 'https://openrouter.ai/api/v1/'
-$env:LITE_HARNESS_MODEL = 'openrouter/free'
-$env:LITE_HARNESS_PROVIDER_API_KEY = '<operator-supplied-key>'
-$env:LITE_HARNESS_MODEL_INPUT_USD_PER_MILLION = '0'
-$env:LITE_HARNESS_MODEL_OUTPUT_USD_PER_MILLION = '0'
-pnpm evaluate:provider:docker
-```
-
-`openrouter/free` is a variable upstream router, not a fixed model. Record the
-route as `openrouter/free` and treat any upstream model name as an observation;
-do not compare one sampled free model as if it were a fixed GPT benchmark.
+Direct OpenAI, direct Anthropic, delegated Codex, and other hosted-provider
+probes are future external qualification lanes. They require owner-supplied
+credentials and are intentionally not part of the Windows-local alpha run.
+Do not use OpenRouter or require an OpenRouter key for the final qualification;
+the only real model-backed route used here is the localhost Hermes route above.
 
 ## CI and release automation
 
@@ -108,6 +96,10 @@ GitHub-hosted runners cannot reach the maintainer workstation's localhost-only
 Hermes proxy. Model-backed tests are therefore intentionally excluded from
 hosted CI and must be run locally with `pnpm test:hermes`; their evidence belongs
 in the release-evidence ledger. CI must never substitute a direct provider key.
+
+The Windows-local verdict is `VERIFIED_WINDOWS_LOCAL_ALPHA` and requires the
+exact Windows 11 x64 + WSL2 + Docker Desktop journey, while the broader
+platform/provider workflows remain `NOT_QUALIFIED_EXTERNAL` future lanes.
 
 The runtime-image workflow separates validation from publication. Manual runs
 execute the strict release gate but never publish. A `v*` tag can publish only

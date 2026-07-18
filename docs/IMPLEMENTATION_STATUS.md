@@ -5,9 +5,9 @@
 Baseline reviewed: `f9d522289b500174e4e387b6078f907ea4ac56fa` on `lite-main`.
 Architecture contract SHA-256: `cfdddc9214ff0192d48bf899b70947f35937945e7c1403b5b59a85f454f2408f`.
 
-## Verdict: VERIFIED_LOCAL_ALPHA_CANDIDATE
+## Verdict: VERIFIED_WINDOWS_LOCAL_ALPHA
 
-The repository is a VERIFIED LOCAL ALPHA CANDIDATE: every locally actionable row has current zero-skip evidence and no locally actionable blocker/high defect remains. The remaining platform, provider, naming, signing, and registry authorities require external handoff.
+Windows 11 x64 with WSL2 and Docker Desktop is the verified product environment: every Windows-local row has current zero-skip evidence and no Windows-local blocker or critical/high defect remains. Cross-platform and direct-provider rows remain NOT_QUALIFIED_EXTERNAL and are non-blocking for this tier.
 
 ## Requirement ledger
 
@@ -91,11 +91,12 @@ The repository is a VERIFIED LOCAL ALPHA CANDIDATE: every locally actionable row
 
 The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.
 
-## Explicit external blockers
+## Future external qualification
 
-- Alpha requirements blocked only by external evidence: 2
-- Critical/high defects blocked only by external evidence: 2
+- Platform/provider verdict: `NOT_QUALIFIED_EXTERNAL` (non-blocking for `VERIFIED_WINDOWS_LOCAL_ALPHA`)
+- Alpha requirements retained for future external qualification: 2
+- Critical/high defects retained for future external qualification: 2
 
 ## Evidence policy
 
-A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. Explicit `blocked-external` rows are excluded from local qualification only when every blocker is an external-* authority that has no safe local substitute.
+A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. Explicit `blocked-external` rows remain visible as future qualification and are excluded from the Windows-local verdict only when every blocker is an external-* authority that has no safe local substitute.

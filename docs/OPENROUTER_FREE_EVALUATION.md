@@ -1,4 +1,9 @@
-# OpenRouter free-route evaluation
+# Historical OpenRouter free-route evaluation
+
+> This is an archival experiment, not a current qualification instruction.
+> Do not rerun it for Windows-local alpha and do not require an OpenRouter key.
+> The verified local route is Hermes `gpt-5.6-luna` through
+> `http://127.0.0.1:8645/v1`.
 
 The live evaluation route was process-scoped to:
 

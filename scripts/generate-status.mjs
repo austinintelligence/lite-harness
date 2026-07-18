@@ -40,7 +40,7 @@ function render() {
   const verdict = fullyQualified
     ? "VERIFIED ALPHA"
     : localQualified
-      ? "VERIFIED_LOCAL_ALPHA_CANDIDATE"
+      ? "VERIFIED_WINDOWS_LOCAL_ALPHA"
       : "NOT YET A VERIFIED ALPHA";
   const lines = [
     "# Implementation status", "",
@@ -51,7 +51,7 @@ function render() {
     fullyQualified
       ? "Every required row has current zero-skip evidence and no blocker/high defect remains."
       : localQualified
-        ? "The repository is a VERIFIED LOCAL ALPHA CANDIDATE: every locally actionable row has current zero-skip evidence and no locally actionable blocker/high defect remains. The remaining platform, provider, naming, signing, and registry authorities require external handoff."
+        ? "Windows 11 x64 with WSL2 and Docker Desktop is the verified product environment: every Windows-local row has current zero-skip evidence and no Windows-local blocker or critical/high defect remains. Cross-platform and direct-provider rows remain NOT_QUALIFIED_EXTERNAL and are non-blocking for this tier."
         : "The repository is a pre-alpha work in progress. A file, class, unit test, or prior green workflow is not treated as proof of an integrated product requirement.",
     "", "## Requirement ledger", "",
     `- Total ledger rows: ${requirements.length}`,
@@ -94,9 +94,9 @@ function render() {
   lines.push("", "## Open release-blocking defects", "", `- Critical: ${severity.critical ?? 0}`, `- High: ${severity.high ?? 0}`, "",
     "## Defect closures lacking current evidence", "", `- Critical: ${unprovenSeverity.critical ?? 0}`, `- High: ${unprovenSeverity.high ?? 0}`, "",
     "The authoritative details, reproduction IDs, regression IDs, fix commits, and evidence references are in `docs/requirements/defect-ledger.yaml`.", "",
-    "## Explicit external blockers", "", `- Alpha requirements blocked only by external evidence: ${externalRequirements.length}`, `- Critical/high defects blocked only by external evidence: ${externalDefects.length}`, "",
+    "## Future external qualification", "", "- Platform/provider verdict: `NOT_QUALIFIED_EXTERNAL` (non-blocking for `VERIFIED_WINDOWS_LOCAL_ALPHA`)", `- Alpha requirements retained for future external qualification: ${externalRequirements.length}`, `- Critical/high defects retained for future external qualification: ${externalDefects.length}`, "",
     "## Evidence policy", "",
-    "A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. Explicit `blocked-external` rows are excluded from local qualification only when every blocker is an external-* authority that has no safe local substitute.");
+    "A row becomes verified only when it maps to production paths, runnable test IDs, a required CI job, and evidence captured for the current commit with `result: pass` and `skips: 0`. Explicit `blocked-external` rows remain visible as future qualification and are excluded from the Windows-local verdict only when every blocker is an external-* authority that has no safe local substitute.");
   return `${lines.join("\n")}\n`;
 }
 

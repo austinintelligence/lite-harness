@@ -1,5 +1,11 @@
 # Providers and credentials
 
+The currently verified Windows-local route is Hermes `gpt-5.6-luna` through
+`http://127.0.0.1:8645/v1` with the non-empty local placeholder
+`sk-hermes-local`. Direct OpenAI, direct Anthropic, and delegated Codex routes
+remain pending live credentialed qualification and are `NOT_QUALIFIED_EXTERNAL`
+for the Windows-local alpha. Do not use OpenRouter for final qualification.
+
 Agent Runtime speaks one normalized model protocol. Model Registry filters
 routes by required capabilities before cost scoring. A frozen Route Plan names
 the selected model, fallbacks, registry generation, and credential profile.
@@ -15,7 +21,7 @@ Direct routes:
   the native OpenAI endpoint.
 - Anthropic Messages HTTP endpoint
 - OpenRouter, Gemini OpenAI compatibility, xAI/Grok, Moonshot/Kimi, and MiniMax
-  presets with fixed official origins
+  presets with fixed official origins (preview/future qualification only)
 - Deterministic fake provider for tests and offline demos
 
 Manager resolves `LITE_HARNESS_CREDENTIAL_PROFILE` through a single-flight

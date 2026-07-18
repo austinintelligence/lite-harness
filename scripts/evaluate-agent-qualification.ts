@@ -15,10 +15,9 @@ const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : unde
 const provider = process.env.LITE_HARNESS_PROVIDER?.trim();
 const model = process.env.LITE_HARNESS_MODEL?.trim();
 const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "https://openrouter.ai/api/v1/";
-const isOpenRouter = provider === "openrouter" && model === "openrouter/free" && /^https:\/\/openrouter\.ai\/api\/v1\/?$/i.test(providerBaseUrl);
 const isHermes = provider === "openai-compatible" && model === "gpt-5.6-luna" && providerBaseUrl === "http://127.0.0.1:8645/v1";
-if (!isOpenRouter && !isHermes) {
-  throw new Error("Qualification requires either OpenRouter openrouter/free or the exact local Hermes gpt-5.6-luna route");
+if (!isHermes) {
+  throw new Error("Windows-local qualification requires the exact Hermes gpt-5.6-luna route at http://127.0.0.1:8645/v1");
 }
 if (!process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()) throw new Error("LITE_HARNESS_PROVIDER_API_KEY must be supplied in the process environment");
 const evaluationRoute = isHermes ? "local-hermes-openai-compatible" : "openrouter";
@@ -106,7 +105,7 @@ try {
   const client = new LiteHarnessClient({ baseUrl: `http://127.0.0.1:${port}`, token: appToken });
   await client.createAgent({
     id: agentId,
-    name: "OpenRouter free qualification agent",
+    name: "Hermes local qualification agent",
     instructions: "You are being evaluated on exact tool use. Follow each task literally, use only the allowed tools, verify outputs before finishing, and never claim a step succeeded unless its tool result proves it.",
     modelCapabilities: ["text", "tools"],
     allowedTools: toolSet,

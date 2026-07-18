@@ -1,10 +1,11 @@
 # Architecture
 
-> **VERIFIED_LOCAL_ALPHA_CANDIDATE.** The architecture contract remains evidence-qualified;
-> current local and external proof is generated in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)
-> and [../BLOCKERS.md](../BLOCKERS.md). All locally actionable rows have current clean
-> evidence; unavailable platform, direct-provider, naming, signing, and registry gates
-> remain explicitly external and block a full `VERIFIED_ALPHA` claim.
+> **VERIFIED_WINDOWS_LOCAL_ALPHA.** Windows 11 x64 with WSL2 and Docker Desktop is the
+> currently verified product environment. Current Windows-local proof is generated in
+> [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [../BLOCKERS.md](../BLOCKERS.md).
+> Cross-platform and direct-provider lanes remain `NOT_QUALIFIED_EXTERNAL` and are
+> non-blocking for this tier; Docker is a local containment boundary, not hostile
+> public multi-tenant isolation.
 
 Lite-Harness keeps five durable concepts separate: Agent, Session, Workspace,
 Run, and Runtime. A container is never the owner of conversation or workspace

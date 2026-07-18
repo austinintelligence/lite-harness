@@ -13,7 +13,7 @@
 
 ## Decision
 
-The verified-alpha matrix is Node 24 LTS on Ubuntu 24.04 LTS amd64/arm64, macOS versions currently supported by Docker Desktop on Intel and Apple silicon, and Windows 11 with a current WSL2 kernel and Docker Desktop Linux containers. Ubuntu 24.04 rootless Docker is a required separate lane. Debian 12/13 and newer Linux distributions are compatible-but-unverified until evidence exists. Compose is not required.
+The currently verified product tier is Node 24 on Windows 11 x64 with a current WSL2 kernel and Docker Desktop Linux containers. Linux rootful/rootless and arm64, plus macOS Intel/Apple silicon, remain future manual qualification lanes. Debian 12/13 and newer Linux distributions are compatible-but-unverified until evidence exists. Compose is not required.
 
 ## Alternatives considered
 
@@ -29,8 +29,8 @@ Unlisted platforms may work but are unsupported. Alpha claims require exact OS, 
 
 ## Migration plan
 
-Create external lanes for Linux rootful/rootless arm64, macOS Intel/Apple silicon, and Windows 11 WSL2; narrow docs automatically when a required lane is missing.
+Keep external lanes for Linux rootful/rootless arm64, macOS Intel/Apple silicon, and Windows 11 WSL2 as future manual qualification; do not let their absence block the Windows-local alpha verdict.
 
 ## Release impact
 
-Provisional until every named lane has current zero-skip packaged-boundary evidence.
+Windows-local alpha is qualified by exact Windows 11 + WSL2 + Docker Desktop evidence. The broader portable matrix remains NOT_QUALIFIED_EXTERNAL until every named lane has current zero-skip packaged-boundary evidence.

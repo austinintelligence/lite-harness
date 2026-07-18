@@ -14,10 +14,9 @@ const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : unde
 const provider = process.env.LITE_HARNESS_PROVIDER?.trim();
 const model = process.env.LITE_HARNESS_MODEL?.trim();
 const providerBaseUrl = process.env.LITE_HARNESS_PROVIDER_BASE_URL?.trim() ?? "https://openrouter.ai/api/v1/";
-const isOpenRouter = provider === "openrouter" && model === "openrouter/free" && /^https:\/\/openrouter\.ai\/api\/v1\/?$/i.test(providerBaseUrl);
 const isHermes = provider === "openai-compatible" && model === "gpt-5.6-luna" && providerBaseUrl === "http://127.0.0.1:8645/v1";
-if (!isOpenRouter && !isHermes) {
-  throw new Error("Concurrency qualification requires either OpenRouter openrouter/free or the exact local Hermes gpt-5.6-luna route");
+if (!isHermes) {
+  throw new Error("Windows-local concurrency qualification requires the exact Hermes gpt-5.6-luna route at http://127.0.0.1:8645/v1");
 }
 if (!process.env.LITE_HARNESS_PROVIDER_API_KEY?.trim()) throw new Error("LITE_HARNESS_PROVIDER_API_KEY must be supplied in the process environment");
 const evaluationRoute = isHermes ? "local-hermes-openai-compatible" : "openrouter";

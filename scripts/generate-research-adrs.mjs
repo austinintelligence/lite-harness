@@ -29,12 +29,12 @@ const records = [
       ["Docker Desktop for Windows", "https://docs.docker.com/desktop/setup/install/windows-install/", "WSL2 backend"],
       ["Docker rootless mode", "https://docs.docker.com/engine/security/rootless/", "current Docker Engine"],
     ],
-    decision: "The verified-alpha matrix is Node 24 LTS on Ubuntu 24.04 LTS amd64/arm64, macOS versions currently supported by Docker Desktop on Intel and Apple silicon, and Windows 11 with a current WSL2 kernel and Docker Desktop Linux containers. Ubuntu 24.04 rootless Docker is a required separate lane. Debian 12/13 and newer Linux distributions are compatible-but-unverified until evidence exists. Compose is not required.",
+    decision: "The currently verified product tier is Node 24 on Windows 11 x64 with a current WSL2 kernel and Docker Desktop Linux containers. Linux rootful/rootless and arm64, plus macOS Intel/Apple silicon, remain future manual qualification lanes. Debian 12/13 and newer Linux distributions are compatible-but-unverified until evidence exists. Compose is not required.",
     alternatives: "Claiming all modern Linux distributions; treating WSL2 as native Windows containers; supporting macOS architectures without Docker Desktop evidence.",
     security: "A bounded matrix makes filesystem, socket, credential-store, rootless, sleep/resume, and daemon-restart assumptions testable.",
     compatibility: "Unlisted platforms may work but are unsupported. Alpha claims require exact OS, architecture, Docker client/server, context, and kernel evidence.",
-    migration: "Create external lanes for Linux rootful/rootless arm64, macOS Intel/Apple silicon, and Windows 11 WSL2; narrow docs automatically when a required lane is missing.",
-    release: "Provisional until every named lane has current zero-skip packaged-boundary evidence.",
+    migration: "Keep external lanes for Linux rootful/rootless arm64, macOS Intel/Apple silicon, and Windows 11 WSL2 as future manual qualification; do not let their absence block the Windows-local alpha verdict.",
+    release: "Windows-local alpha is qualified by exact Windows 11 + WSL2 + Docker Desktop evidence. The broader portable matrix remains NOT_QUALIFIED_EXTERNAL until every named lane has current zero-skip packaged-boundary evidence.",
   },
   {
     number: 35, slug: "node-build-and-sdk-targets", title: "Node, TypeScript, and SDK build targets", status: "accepted", items: "Research 3",
@@ -166,7 +166,7 @@ const records = [
     security: "Capability admission before dispatch prevents silent tool loss, unsafe retry, credential-domain confusion, and unbounded streams.",
     compatibility: "Each route publishes a tested capability vector and native-version notes. Preview routes may change or be removed without alpha compatibility promises.",
     migration: "Build a shared provider conformance suite, run it live through owner-approved routes, persist results by commit/model, and promote one provider at a time.",
-    release: "Missing required direct OpenAI, Anthropic, or delegated Codex evidence blocks verified alpha; preview breadth does not.",
+    release: "Missing required direct OpenAI, Anthropic, or delegated Codex evidence keeps those external lanes NOT_QUALIFIED_EXTERNAL; it does not block Windows-local alpha, whose real-model route is the localhost Hermes proxy.",
   },
   {
     number: 44, slug: "mcp-version-transports-auth", title: "MCP version, transports, lifecycle, and auth", status: "accepted", items: "Research 12",
@@ -278,7 +278,7 @@ const records = [
     security: "Immutable baseline plus explicit amendments prevents silent erosion of trust boundaries and release gates.",
     compatibility: "Contributors can distinguish baseline intent, accepted amendments, implementation status, and external blockers.",
     migration: "Link each requirement to ADR/code/test/CI/evidence, add an amendment index, and reject status changes lacking current production-path proof.",
-    release: "The generated verdict may report a VERIFIED LOCAL ALPHA CANDIDATE when all locally actionable rows and defects have current evidence; unavailable platform, provider, naming, signing, and registry authorities remain explicitly blocked-external until their own evidence exists.",
+    release: "The generated verdict may report VERIFIED_WINDOWS_LOCAL_ALPHA when all Windows-local rows and defects have current evidence. Unavailable platform and direct-provider authorities remain NOT_QUALIFIED_EXTERNAL and non-blocking for this tier; naming, signing, registries, and cloud deployment remain later work.",
   },
   {
     number: 52, slug: "alpha-scope-and-preview-boundaries", title: "Alpha scope, networking, services, and preview boundaries", status: "accepted", items: "Plan contradictions: networking, breadth, service managers, WebSocket, provider/integration tiers",
@@ -293,7 +293,7 @@ const records = [
     security: "No networked capability is promoted without enforceable egress/auth policy, and service/background claims cannot exceed tested lifecycle evidence.",
     compatibility: "REST+SSE, versioned IPC, and named core provider/MCP contracts are alpha surfaces. Preview packs are clearly labeled and excluded from A01-A22 evidence.",
     migration: "Remove WebSocket promises, relabel breadth consistently, gate browser/HTTP/MCP networking, keep service generation preview, and promote each pack only through its own conformance evidence.",
-    release: "Resolves the plan contradictions without weakening A01-A22; missing core lanes still block verified alpha.",
+    release: "Resolves the plan contradictions without weakening A01-A22. Windows-local alpha is the currently verified tier; missing Linux/macOS/direct-provider lanes remain future NOT_QUALIFIED_EXTERNAL qualification and do not block it.",
   },
 ];
 
@@ -343,6 +343,6 @@ function renderIndex() {
     return `| ${number} | [${record.title}](./${number}-${record.slug}.md) | ${record.status} | ${record.items} |`;
   }).join("\n");
   return `# Research and contradiction ADRs\n\n` +
-    `These records use primary/official sources retrieved ${retrieved}. Provisional and blocked decisions remain release blockers until their stated evidence or owner input exists.\n\n` +
+    `These records use primary/official sources retrieved ${retrieved}. Provisional and blocked decisions remain future qualification or release-tier blockers until their stated evidence or owner input exists; they do not override the Windows-local alpha boundary.\n\n` +
     `| ADR | Decision | Status | Covers |\n| --- | --- | --- | --- |\n${rows}\n`;
 }

@@ -195,6 +195,7 @@ if (existsSync(resolve(root, "sdks/python/pyproject.toml"))) {
 const architecture = readFileSync(resolve(root, "docs/ARCHITECTURE.md"), "utf8");
 if (!architecture.includes("NOT YET A VERIFIED ALPHA") &&
     !architecture.includes("VERIFIED LOCAL ALPHA CANDIDATE / EXTERNAL GATES BLOCKED") &&
+    !architecture.includes("VERIFIED_WINDOWS_LOCAL_ALPHA") &&
     !architecture.includes("VERIFIED_LOCAL_ALPHA_CANDIDATE") &&
     !architecture.includes("EXTERNAL_HANDOFF_REQUIRED") &&
     !architecture.includes("VERIFIED ALPHA")) {

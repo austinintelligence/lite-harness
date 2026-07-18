@@ -4,14 +4,14 @@
 
 ## Current verdict
 
-**VERIFIED_LOCAL_ALPHA_CANDIDATE.** The repository is a VERIFIED LOCAL ALPHA CANDIDATE; locally actionable release truth is complete and the remaining inputs are explicitly external.
+**VERIFIED_WINDOWS_LOCAL_ALPHA.** Windows 11 x64 + WSL2 + Docker Desktop is the verified product environment; all Windows-local release truth is complete. Cross-platform and direct-provider lanes remain NOT_QUALIFIED_EXTERNAL and are non-blocking for this tier.
 
 - Alpha-required rows without verified status: 0 of 54
-- Alpha-required rows blocked only by external evidence: 2
+- Future external rows not included in the Windows-local verdict: 2
 - Non-alpha rows retained in ledger: 868
 - Open or unproven critical defects: 0
 - Open or unproven high defects: 0
-- Critical/high defects blocked only by external evidence: 2
+- Critical/high defects retained for future external qualification: 2
 - Missing required test command surfaces: 0
 
 ## Highest-priority local blockers
@@ -24,7 +24,7 @@
 
 - None.
 
-## External evidence and owner inputs still required
+## Future external qualification (non-blocking for Windows local alpha)
 
 | Input | Blocks | Completion evidence |
 | --- | --- | --- |
@@ -33,4 +33,4 @@
 | Owner-approved collision-checked product, npm, PyPI, GitHub/container, domain, and trademark identity | P00, BD-064, publication | Accepted ADR 0033 and matching package/registry configuration. |
 | Signing authority and registry promotion access | M11 publication | SBOM, provenance, signatures, and promotion of the exact tested hashes/digests. |
 
-External inputs do not pause locally actionable work. Publication and the verified-alpha verdict remain blocked until each applicable row above has real evidence.
+These inputs remain future qualification lanes and are recorded without blocking VERIFIED_WINDOWS_LOCAL_ALPHA. Do not use them to qualify the Windows-local product tier or substitute them for Hermes-backed local evidence.

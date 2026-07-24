@@ -1,0 +1,90 @@
+name: Source export
+
+on:
+  pull_request:
+    branches: [lite-main]
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    if: ${{ github.head_ref == 'agent/source-export-20260724' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.7.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Patch vulnerable transitive dependencies
+        shell: bash
+        run: |
+          mkdir -p patched
+          cat >> pnpm-workspace.yaml <<'YAML'
+
+          overrides:
+            "fast-uri@3.1.3": "3.1.4"
+            "fast-uri@4.1.0": "4.1.1"
+            "find-my-way@9.6.0": "9.7.0"
+          YAML
+          set +e
+          pnpm install --lockfile-only > patched/pnpm-install.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > patched/pnpm-install.exit-code
+          cp package.json pnpm-workspace.yaml pnpm-lock.yaml patched/
+      - name: Capture production audit after patch
+        shell: bash
+        run: |
+          if [[ "$(cat patched/pnpm-install.exit-code)" -ne 0 ]]; then
+            printf '%s\n' 99 > patched/pnpm-audit.exit-code
+            printf '%s\n' 'audit skipped because lockfile generation failed' > patched/pnpm-audit.stderr
+            printf '%s\n' '{}' > patched/pnpm-audit.json
+          else
+            set +e
+            pnpm audit --prod --json > patched/pnpm-audit.json 2> patched/pnpm-audit.stderr
+            status=$?
+            set -e
+            printf '%s\n' "$status" > patched/pnpm-audit.exit-code
+          fi
+      - name: Export exact base tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          base_commit="$(git rev-parse "refs/remotes/origin/${{ github.base_ref }}^{commit}")"
+          base_tree="$(git rev-parse "${base_commit}^{tree}")"
+          printf '%s\n' "${base_commit}" > base-commit.txt
+          printf '%s\n' "${base_tree}" > base-tree.txt
+          git archive --format=tar "${base_commit}" | gzip -9 > lite-harness-source.tar.gz
+          sha256sum lite-harness-source.tar.gz > lite-harness-source.tar.gz.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: lite-harness-source-export
+          path: |
+            base-commit.txt
+            base-tree.txt
+            lite-harness-source.tar.gz
+            lite-harness-source.tar.gz.sha256
+            patched/package.json
+            patched/pnpm-workspace.yaml
+            patched/pnpm-lock.yaml
+            patched/pnpm-install.log
+            patched/pnpm-install.exit-code
+            patched/pnpm-audit.json
+            patched/pnpm-audit.stderr
+            patched/pnpm-audit.exit-code
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce clean lockfile and production audit
+        shell: bash
+        run: |
+          test "$(cat patched/pnpm-install.exit-code)" -eq 0
+          test "$(cat patched/pnpm-audit.exit-code)" -eq 0

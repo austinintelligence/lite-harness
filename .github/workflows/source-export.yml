@@ -31,7 +31,7 @@ jobs:
           overrides:
             "fast-uri@3.1.3": "3.1.4"
             "fast-uri@4.1.0": "4.1.1"
-            "find-my-way@9.6.0": "9.6.1"
+            "find-my-way@9.6.0": "9.7.0"
           YAML
           set +e
           pnpm install --lockfile-only > patched/pnpm-install.log 2>&1

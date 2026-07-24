@@ -25,6 +25,7 @@ jobs:
       - name: Patch vulnerable transitive dependencies
         shell: bash
         run: |
+          mkdir -p patched
           cat >> pnpm-workspace.yaml <<'YAML'
 
           overrides:
@@ -32,17 +33,26 @@ jobs:
             "fast-uri@4.1.0": "4.1.1"
             "find-my-way@9.6.0": "9.6.1"
           YAML
-          pnpm install --lockfile-only
-          mkdir -p patched
+          set +e
+          pnpm install --lockfile-only > patched/pnpm-install.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > patched/pnpm-install.exit-code
           cp package.json pnpm-workspace.yaml pnpm-lock.yaml patched/
       - name: Capture production audit after patch
         shell: bash
         run: |
-          set +e
-          pnpm audit --prod --json > patched/pnpm-audit.json 2> patched/pnpm-audit.stderr
-          status=$?
-          set -e
-          printf '%s\n' "$status" > patched/pnpm-audit.exit-code
+          if [[ "$(cat patched/pnpm-install.exit-code)" -ne 0 ]]; then
+            printf '%s\n' 99 > patched/pnpm-audit.exit-code
+            printf '%s\n' 'audit skipped because lockfile generation failed' > patched/pnpm-audit.stderr
+            printf '%s\n' '{}' > patched/pnpm-audit.json
+          else
+            set +e
+            pnpm audit --prod --json > patched/pnpm-audit.json 2> patched/pnpm-audit.stderr
+            status=$?
+            set -e
+            printf '%s\n' "$status" > patched/pnpm-audit.exit-code
+          fi
       - name: Export exact base tree
         shell: bash
         run: |
@@ -66,11 +76,15 @@ jobs:
             patched/package.json
             patched/pnpm-workspace.yaml
             patched/pnpm-lock.yaml
+            patched/pnpm-install.log
+            patched/pnpm-install.exit-code
             patched/pnpm-audit.json
             patched/pnpm-audit.stderr
             patched/pnpm-audit.exit-code
           if-no-files-found: error
           retention-days: 1
-      - name: Enforce clean production audit
+      - name: Enforce clean lockfile and production audit
         shell: bash
-        run: test "$(cat patched/pnpm-audit.exit-code)" -eq 0
+        run: |
+          test "$(cat patched/pnpm-install.exit-code)" -eq 0
+          test "$(cat patched/pnpm-audit.exit-code)" -eq 0

@@ -22,14 +22,33 @@ jobs:
       - run: corepack enable
       - run: corepack prepare pnpm@11.7.0 --activate
       - run: pnpm install --frozen-lockfile
-      - name: Capture production audit
+      - name: Patch vulnerable transitive dependencies
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          manifest.pnpm = manifest.pnpm ?? {};
+          manifest.pnpm.overrides = {
+            ...(manifest.pnpm.overrides ?? {}),
+            'fast-uri@3.1.3': '3.1.4',
+            'fast-uri@4.1.0': '4.1.1',
+            'find-my-way@9.6.0': '9.6.1',
+          };
+          fs.writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          pnpm install --lockfile-only
+          mkdir -p patched
+          cp package.json pnpm-lock.yaml patched/
+      - name: Verify production audit after patch
         shell: bash
         run: |
           set +e
-          pnpm audit --prod --json > pnpm-audit.json 2> pnpm-audit.stderr
+          pnpm audit --prod --json > patched/pnpm-audit.json 2> patched/pnpm-audit.stderr
           status=$?
           set -e
-          printf '%s\n' "$status" > pnpm-audit.exit-code
+          printf '%s\n' "$status" > patched/pnpm-audit.exit-code
+          test "$status" -eq 0
       - name: Export exact base tree
         shell: bash
         run: |
@@ -49,8 +68,10 @@ jobs:
             base-tree.txt
             lite-harness-source.tar.gz
             lite-harness-source.tar.gz.sha256
-            pnpm-audit.json
-            pnpm-audit.stderr
-            pnpm-audit.exit-code
+            patched/package.json
+            patched/pnpm-lock.yaml
+            patched/pnpm-audit.json
+            patched/pnpm-audit.stderr
+            patched/pnpm-audit.exit-code
           if-no-files-found: error
           retention-days: 1

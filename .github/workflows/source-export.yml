@@ -25,21 +25,16 @@ jobs:
       - name: Patch vulnerable transitive dependencies
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          manifest.pnpm = manifest.pnpm ?? {};
-          manifest.pnpm.overrides = {
-            ...(manifest.pnpm.overrides ?? {}),
-            'fast-uri@3.1.3': '3.1.4',
-            'fast-uri@4.1.0': '4.1.1',
-            'find-my-way@9.6.0': '9.6.1',
-          };
-          fs.writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`);
-          NODE
+          cat >> pnpm-workspace.yaml <<'YAML'
+
+          overrides:
+            "fast-uri@3.1.3": "3.1.4"
+            "fast-uri@4.1.0": "4.1.1"
+            "find-my-way@9.6.0": "9.6.1"
+          YAML
           pnpm install --lockfile-only
           mkdir -p patched
-          cp package.json pnpm-lock.yaml patched/
+          cp package.json pnpm-workspace.yaml pnpm-lock.yaml patched/
       - name: Capture production audit after patch
         shell: bash
         run: |
@@ -69,6 +64,7 @@ jobs:
             lite-harness-source.tar.gz
             lite-harness-source.tar.gz.sha256
             patched/package.json
+            patched/pnpm-workspace.yaml
             patched/pnpm-lock.yaml
             patched/pnpm-audit.json
             patched/pnpm-audit.stderr

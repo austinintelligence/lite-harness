@@ -40,7 +40,7 @@ jobs:
           pnpm install --lockfile-only
           mkdir -p patched
           cp package.json pnpm-lock.yaml patched/
-      - name: Verify production audit after patch
+      - name: Capture production audit after patch
         shell: bash
         run: |
           set +e
@@ -48,7 +48,6 @@ jobs:
           status=$?
           set -e
           printf '%s\n' "$status" > patched/pnpm-audit.exit-code
-          test "$status" -eq 0
       - name: Export exact base tree
         shell: bash
         run: |
@@ -61,6 +60,7 @@ jobs:
           git archive --format=tar "${base_commit}" | gzip -9 > lite-harness-source.tar.gz
           sha256sum lite-harness-source.tar.gz > lite-harness-source.tar.gz.sha256
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
           name: lite-harness-source-export
           path: |
@@ -75,3 +75,6 @@ jobs:
             patched/pnpm-audit.exit-code
           if-no-files-found: error
           retention-days: 1
+      - name: Enforce clean production audit
+        shell: bash
+        run: test "$(cat patched/pnpm-audit.exit-code)" -eq 0

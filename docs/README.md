@@ -27,8 +27,7 @@ The root [`README.md`](../README.md) explains the project in plain language. Thi
 
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — what the local Docker boundary does and does not protect against.
 - [`TESTING.md`](TESTING.md) — deterministic and maintainer-only verification.
-- [`RELEASES.md`](RELEASES.md) — release and provenance expectations.
+- [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) — current release-readiness evidence and support boundaries.
 - [`SECURITY.md`](../SECURITY.md) — private vulnerability reporting.
 
 The `adr/`, `requirements/`, and `evidence/` directories preserve project decisions and implementation evidence. They are useful when you need the history behind a design, not just the current usage path.
-
